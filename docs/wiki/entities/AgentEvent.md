@@ -1,57 +1,60 @@
 ---
 title: AgentEvent
 type: entity
-tags: [events, pydantic, payload, streaming]
-created: 2026-06-22
-updated: 2026-06-22
-sources: ["[[Source - SDK Overview]]"]
+tags: [sdk, events, streaming]
+created: 2026-07-07
+updated: 2026-07-07
+verified_commit: 6a5625d
+paths:
+  - "sdk/events/_models.py"
+  - "sdk/events/__init__.py"
 ---
 
 # AgentEvent
 
 ## Overview
 
-`AgentEvent` (in `sdk/events/_models.py`) is the top-level event envelope emitted during a turn. It carries a single discriminated-union payload plus metadata for attribution (agent name, agent ID, depth). These events are streamed as JSONL to the frontend.
+`AgentEvent` is the top-level event envelope emitted during a turn. It wraps a single typed `AgentEventPayload` and carries shared metadata (agent attribution, timestamp, depth). The entire agent-to-UI communication is expressed as a stream of `AgentEvent` objects serialized as JSONL.
+
+## Location
+
+Defined in `sdk/events/_models.py`. Re-exported from `sdk/events/__init__.py`.
 
 ## Details
 
-**Envelope fields:**
-- `payload: AgentEventPayload` — discriminated union on `type` field
-- `timestamp: datetime` — UTC creation time
-- `agent_name: str | None` — human-readable agent name
-- `agent_id: str | None` — hierarchical context ID (e.g., "root.sub1")
-- `depth: int | None` — nesting depth (0 = root, 1+ = sub-agents)
+```python
+class AgentEvent(BaseModel):
+    payload: AgentEventPayload   # discriminated union, keyed on payload.type
+    timestamp: datetime          # UTC creation time
+    agent_name: str | None       # emitting agent's name
+    agent_id: str | None         # hierarchical dot-notation context id
+    depth: int | None            # nesting depth (0 = root)
+```
 
-**Payload types (discriminated on `type`):**
+`AgentEventPayload` is a discriminated union selecting one of:
 
-| Type | Payload Class | Description |
-|------|--------------|-------------|
-| `content` | `ContentPayload` | LLM text + optional thinking; `delta=True` for streaming |
-| `turn_end` | `TurnEndPayload` | Signals end of turn |
-| `tool_call` | `ToolCallPayload` | Tool invocation notification (name, args) |
-| `browser_screenshot` | `BrowserScreenshotPayload` | Tab URL, title, base64 PNG, tab/open tab IDs |
-| `file_output` | `FileOutputPayload` | Generated file (name, MIME type, path) |
-| `tool_created` | `ToolCreatedPayload` | New custom tool created |
-| `audio_playback` | `AudioPlaybackPayload` | Base64 audio for browser playback |
-| `terminal_output` | `TerminalOutputPayload` | Bash command running/streaming/completed |
-| `generation_preview` | `GenerationPreviewPayload` | Image/video generation progress |
-| `context_usage` | `ContextUsagePayload` | Context window fill ratio after each LLM call |
+| `type` value | Payload class | Purpose |
+|---|---|---|
+| `content` | `ContentPayload` | LLM text delta or complete chunk |
+| `turn_end` | `TurnEndPayload` | Root agent finished |
+| `tool_call` | `ToolCallPayload` | Tool invocation notification |
+| `browser_screenshot` | `BrowserScreenshotPayload` | Viewport capture |
+| `file_output` | `FileOutputPayload` | File produced in virtual computer |
+| `terminal_output` | `TerminalOutputPayload` | Bash command start/end |
+| `context_usage` | `ContextUsagePayload` | Token fill ratio after each LLM call |
+| `agent_started` | `AgentStartedPayload` | Agent span opened |
+| `agent_completed` | `AgentCompletedPayload` | Agent span closed |
+| `spawn_requested` | `SpawnRequestedPayload` | Sub-agent spawn initiated |
+| `generation_preview` | `GenerationPreviewPayload` | Image/video progress |
+| `audio_playback` | `AudioPlaybackPayload` | Base64 audio to play in browser |
 | `desktop_active` | `DesktopActivePayload` | Desktop environment started |
-| `agent_started` | `AgentStartedPayload` | Sub-agent began execution |
-| `agent_completed` | `AgentCompletedPayload` | Sub-agent finished (success/error/stopped) |
-| `spawn_requested` | `SpawnRequestedPayload` | spawn_agent tool about to spawn a sub-agent |
-
-**Serialization:** `event.model_dump(mode="json", exclude_none=True, exclude_defaults=True)` sent as JSONL line
+| `tool_created` | `ToolCreatedPayload` | New custom tool created |
 
 ## Related Entities
 
-- [[EventDispatcher]] (distributes events)
-- [[turn_scope]] (lifecycle, triggers `TurnEndPayload` on exit)
-- [[ContentPayload]] (main content streaming type)
-- [[ContextUsagePayload]] (published by [[ContextManager]])
-- [[TerminalOutputPayload]] (published by [[run_bash_cmd]])
-- [[BrowserScreenshotPayload]] (published by browser tools)
+- [[Event System]] — how events flow from agent to UI
+- [[AgentProfile]] — the profile whose turn emitted the event
 
 ## Sources
 
-- [[Source - SDK Overview]]
+- `sdk/events/_models.py`

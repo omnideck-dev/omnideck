@@ -1,81 +1,68 @@
----
-title: Wiki Overview
-type: overview
-created: 2026-06-22
-updated: 2026-06-22
----
+# Overview
 
-# Wiki Overview
+## What is Omnideck?
 
-## What Is Omnideck
+Omnideck is a self-hosted agentic workbench that runs as a single container. Users bring their own LLMs — local via Ollama or cloud-hosted (OpenAI, Anthropic, OpenRouter, or any OpenAI-compatible endpoint) — and connect integrations (Gmail, Google Calendar, custom MCP servers). The agent can browse the web with a full Chromium instance, write and run code in a sandboxed virtual computer, and execute autonomous background tasks (goals/routines) on a schedule.
 
-Omnideck (internal codename: Computron 9000) is a self-hosted agentic workbench that runs as a single container. Users bring their own LLM providers (cloud: OpenAI, Anthropic, OpenRouter, or any OpenAI-compatible endpoint; local: Ollama) and connect integrations (Gmail, Calendar, Drive, custom MCP servers). The agent can browse the web with a real browser, write and execute code, remember facts across conversations, run autonomous background tasks, and work with external services — all on user hardware.
+The system is designed to run on user hardware with full data ownership: conversations, memory, agent profiles, and generated files all live in `~/Omnideck` on the host and survive container restarts and upgrades.
 
-The system is installed and managed by a separate Go CLI (`omnideck`), which wraps Docker/Podman and provides guided install, update, and health-check commands.
-
-## Architecture at a Glance
+## Architecture in one diagram
 
 ```
-Container
-  aiohttp server (:8080)
-    agents/        — profile registry + agent builder
-    sdk/           — agent loop, providers, hooks, context, events, skills
-    server/        — HTTP API + React UI
-    tools/         — browser, virtual_computer, memory, web, generation
-    integrations/  — supervisor/broker credential isolation
-    conversations/ — conversation persistence
-    tasks/         — autonomous background task engine
-    config/        — static YAML config
-    settings.py    — mutable runtime settings (JSON)
-  Desktop (Xfce + VNC + noVNC)
-  GPU inference models
+Browser (React UI)
+      │  SSE (JSONL event stream)
+      ▼
+aiohttp server :8080
+      │
+      ├── server/message_handler.py  ← chat request entry point
+      │          │
+      │          ├── agents/          ← load AgentProfile → build Agent
+      │          ├── sdk/turn/        ← run_turn() → LLM provider loop
+      │          ├── sdk/hooks/       ← persistence, context, loop detection, budget
+      │          ├── sdk/events/      ← EventDispatcher → SSE to UI
+      │          └── tools/           ← browser, virtual_computer, memory, integrations...
+      │
+      ├── tasks/                      ← autonomous background task engine
+      ├── conversations/              ← history + event persistence
+      ├── integrations/               ← supervisor + brokers (email, calendar)
+      └── migrations/                 ← one-time data migrations on startup
 
-Host
-  Ollama (LLM inference via --network=host)
-  Docker/Podman (container runtime)
+Host: Ollama :11434 (local LLM inference, accessed via --network=host)
+Container: Chromium + Xfce desktop (VNC :5900), GPU inference server
 ```
 
-## Current Wiki State
+## Key concepts
 
-The wiki was created on 2026-06-22 from a full source exploration. Coverage is substantive across all major subsystems.
+**AgentProfile** — a saved configuration: model, system prompt, skills, inference parameters, and tool settings. Profiles drive both chat sessions and autonomous tasks.
 
-**Well-documented areas:**
-- Agent loop mechanics (`run_turn`, tool-call cycle, retry, parallel execution)
-- Turn lifecycle (`turn_scope`, ContextVars, stop signaling, event routing)
-- Hook system (all shipped hooks documented with their phases and behavior)
-- Provider abstraction (all five providers documented with their specific behaviors)
-- Context compaction (full algorithm, serialization rules, VRAM management)
-- Skill system (baseline vs. runtime-loaded, cross-turn persistence)
-- Browser automation (two modes, guard rails, screenshot events)
-- Integration supervisor/broker pattern (credential isolation, LLM proxying)
-- Config vs settings distinction (AppConfig immutable; settings.py mutable)
-- Event system (publisher, dispatcher, ContextVar routing, JSONL streaming)
+**Turn** — one user message → agent response cycle. The SDK's `run_turn()` drives the LLM in a loop (call → tool executions → call) until the model stops issuing tool calls or a stop condition fires. Hooks observe and can modify each phase.
 
-**Partially documented (open questions noted):**
-- Execution policy (`tools/virtual_computer/_policy.py` deny patterns not fully read)
-- Integration broker details (full list of supported brokers not confirmed)
-- Vault encryption mechanism not explored
-- `spawn_agent` tool internals not fully read (`sdk/tools/_spawn_agent.py`)
-- Sub-agent parallelism behavior not fully confirmed
-- `events.json` append vs rewrite behavior
-- `preview_state.json` exact schema
+**Events** — a discriminated-union stream of typed payloads (`ContentPayload`, `ToolCallPayload`, `BrowserScreenshotPayload`, `FileOutputPayload`, etc.) flowing from the agent loop to the frontend via Server-Sent Events.
 
-**Not yet covered:**
-- Desktop agent (`tools/desktop/`) — Xfce + VNC integration
-- Generation tools (`tools/generation/`) — image/music/video (feature-flagged)
-- Custom tools (`tools/custom_tools/`) — user-defined tools
-- Scratchpad (`tools/scratchpad/`)
-- `sdk/skills/default_skills/` — what default skills are shipped
-- React UI source (`server/ui/`) — frontend architecture
-- Migration system (`migrations/`)
-- Test suite (`tests/`)
+**Integrations** — credentialed external services (Gmail, iCloud) running as isolated broker subprocesses under a separate OS user, with AES-256-GCM encrypted credentials and a write-permission gate.
 
-## Key Design Decisions
+**Virtual Computer** — a directory on disk (`/home/computron`) that the agent reads, writes, and executes code in via sandboxed bash commands.
 
-1. **ContextVars for implicit context** — EventDispatcher, stop events, agent identity, and conversation ID flow implicitly through the async call stack without parameter threading
-2. **Hooks as duck-typed protocol** — no base class; hooks just implement methods matching phase names
-3. **Provider registry with lazy loading** — provider SDKs (heavy) only imported when first used
-4. **Credential isolation via supervisor** — app server never holds decrypted credentials
-5. **Profiles are snapshots** — baseline skills re-derived each turn so profile edits take effect immediately
-6. **Atomic writes everywhere** — memory.json, settings.json, and all conversation files use tempfile+rename
-7. **LRU conversation cache** — disk is authoritative; in-memory cache is evictable; active turns are eviction-protected
+**Skills** — reusable named instruction blocks the user or agent can load into a conversation, augmenting the system prompt mid-turn.
+
+**Goals / Routines** — autonomous tasks defined by name, prompt, schedule, and profile. The `TaskRunner` polls pending goals and dispatches them through the same SDK turn loop, without a human in the loop.
+
+## Tech stack
+
+| Layer | Technology |
+|-------|-----------|
+| Backend | Python 3.12, aiohttp, Pydantic v2, uv |
+| Frontend | React 18 (JSX), Vite, Vitest, CSS Modules |
+| Container | Podman / Docker; single image with Xfce desktop + Chromium |
+| LLM inference | Ollama (host) or cloud providers via HTTP |
+| Testing | pytest (unit/integration), Playwright (e2e) |
+| Config | `config.yaml` with `${ENV_VAR:-default}` interpolation |
+
+## Where to go next
+
+- [[codemap]] — file-by-file navigation
+- [[Turn Lifecycle]] — how a chat message becomes a model response
+- [[Event System]] — how the agent communicates with the UI
+- [[Integrations Architecture]] — how external service credentials and brokers work
+- [[AgentProfile]] — what drives an agent's behavior
+- [[Frontend Architecture]] — React component structure and data flow

@@ -269,6 +269,7 @@ Full documentation is available at **[omnideck.dev](https://omnideck.dev)**:
 
 Developer references maintained in this repository:
 
+- [Codebase wiki](docs/wiki/overview.md) — navigable architecture and concept reference; start at [`overview.md`](docs/wiki/overview.md) or [`codemap.md`](docs/wiki/codemap.md)
 - [Integrations and brokering](docs/integrations.md) — terminology, package boundaries, grants, and connection lifecycle
 - [Data migrations](docs/migrations.md) — upgrading persisted application and vault data
 - [Integration testing](tests/integration/integrations/README.md) — local fake services and test-suite boundaries

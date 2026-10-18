@@ -1,61 +1,70 @@
 ---
 title: Context Compaction
 type: concept
-tags: [context, compaction, summarization, llm, tokens]
-created: 2026-06-22
-updated: 2026-06-22
-sources: ["[[Source - SDK Overview]]"]
+tags: [sdk, context, compaction, memory, llm]
+created: 2026-07-07
+updated: 2026-07-07
+verified_commit: 6a5625d
+paths:
+  - "sdk/context/"
 ---
 
 # Context Compaction
 
 ## Overview
 
-Context Compaction is the mechanism Omnideck uses to prevent the agent from running out of context window space on long tasks. When the context fill ratio exceeds a configurable threshold, older messages are summarized by an LLM and replaced with a compact summary, while recent messages are kept verbatim.
+Context compaction is the process of reducing conversation history when it approaches the model's context window limit, so the agent can continue working without hitting a hard token cap. The SDK implements this via a pluggable `ContextManager` that tracks token usage and fires registered strategies when a configurable threshold is crossed.
 
 ## How It Works
 
-**Trigger:** `LLMCompactionStrategy` runs at `BEFORE_MODEL_CALL`; fires when `context_used / context_limit >= threshold` (default 0.75)
+### ContextManager
 
-**What is preserved:**
-- System message (always)
-- The first user message (pinned) — may be updated with extracted intent history
-- The 2 most recent "assistant message groups" (an assistant turn + all its tool results)
-- The summary itself (inserted at the compactable range boundary)
+`sdk/context/_manager.py:ContextManager` is constructed per-turn. It holds:
+- A reference to the `ConversationHistory`
+- The context window size (in tokens) and compaction threshold (fill ratio, default 0.75)
+- A list of `CompactionStrategy` objects to try in order
+- A `TokenEstimator` for counting tokens without calling the model
 
-**What is summarized:**
-- Everything else — the older conversation body
+The `ContextHook` (one of the default hooks) calls `ctx_manager.maybe_compact(history, iteration)` in its `before_model` phase. If the estimated fill ratio exceeds the threshold, it fires the first strategy that can run.
 
-**Summarization process:**
-1. Serialize messages for the LLM (truncating tool results, deduplicating browser snapshots, including thinking excerpts)
-2. If content fits in one LLM call: single pass
-3. If too large: chunk, summarize each chunk, merge chunk summaries
-4. Extract user intent history (if multiple user messages exist)
-5. Replace compactable range with an `assistant` message prefixed with `[Conversation summary — earlier messages were compacted]\n\n{summary}`
-6. Unload the compaction model from Ollama (VRAM recovery)
+### Token Estimation
 
-**Intent extraction:** when the user has sent multiple messages (topic changes), extracts a concise history of how their requests evolved; replaces the pinned first user message with `[User intent history]\n{history}`
+`sdk/context/_estimator.py` estimates token counts using tiktoken's `cl100k_base` encoding (a reasonable approximation across most contemporary LLMs). It counts the current history and divides by the context window to get the fill ratio.
 
-**Compaction model:** configured via `settings.compaction_provider/model/options`; independent of the main chat model; can use a smaller/faster model for summarization
+### LLMCompactionStrategy
 
-**Evaluation:** every compaction persists a `SummaryRecord` (id, created_at, model, input_messages, summary_text, fill_ratio, elapsed_seconds, conversation_id) for quality evaluation
+`sdk/context/_strategy.py:LLMCompactionStrategy` is the default strategy. It:
+1. Identifies **message groups** — each assistant message plus its associated tool-call results — so tool results are never orphaned from the call that created them.
+2. Keeps the most recent N groups verbatim (a fixed count to preserve recent context).
+3. Summarizes older groups by calling the LLM with a summarization prompt.
+4. Replaces the old groups in history with a single summary message.
 
-**VRAM management:** after compaction, shells out `ollama stop {model}` to free GPU memory before the main agent's next LLM call
+### Message Groups
+
+A message group is defined as one assistant message plus all immediately-following tool result messages. Compaction counts backward from the tail of history, preserving the K most recent groups. Groups earlier than K are summarized or dropped.
+
+This invariant — tool results never split from their tool calls — prevents a class of LLM confusion where the model sees a tool result with no prior call to explain it.
+
+## Where It Lives
+
+| File | Role |
+|------|------|
+| `sdk/context/_manager.py` | `ContextManager` |
+| `sdk/context/_strategy.py` | `LLMCompactionStrategy`, `_count_kept_by_assistant_groups` |
+| `sdk/context/_estimator.py` | Token counting |
+| `sdk/context/_history.py` | `ConversationHistory` (the data structure) |
+| `sdk/hooks/_context_hook.py` | `ContextHook` — calls `maybe_compact()` before each model call |
 
 ## Key Details
 
-- Token estimation uses `chars / 4` approximation (not a real tokenizer)
-- `keep_recent_groups=2` means the 2 most recent assistant turns are always preserved verbatim
-- Tool results are truncated per-tool: `read_file`/`grep`/`run_bash_cmd` → 1500 chars; unknown → 200 chars
-- Browser page snapshots are deduplicated (only the last per URL)
-- Trivial tool results (`{"success": true}`, empty stdout) are entirely omitted from serialization
-- Summarization prompt enforces a 3-section structure: Completed Work, Key Data, Current State
+- **Per-profile threshold:** `compaction_threshold` is set on the `AgentProfile` and passed to `ContextManager`, so different profiles can have different aggressiveness (e.g., a research agent that wants a large window vs. a quick-task agent with a tight budget).
+- **Context usage events:** after each model call, a `ContextUsagePayload` event is emitted with `context_used`, `context_limit`, `fill_ratio`, and `compaction_threshold`. The UI's `ContextMeter` component renders these as a fill bar.
+- **`ToolResultCapHook`** is a complementary mechanism: it truncates individual tool results that are individually oversized, preventing a single large result from filling the window before compaction can fire.
 
 ## Open Questions
 
-- Does the `keep_recent_groups` count include tool results, or only assistant messages? The code says assistant messages only, with interleaved user/tool messages included automatically.
-- What happens if the compaction LLM is the same as the main model? Potential VRAM contention.
+- The compaction summarization call counts against the same model and conversation, meaning the summary is injected mid-turn; if the summary itself is long it could trigger another compaction cycle.
 
 ## Sources
 
-- [[Source - SDK Overview]]
+- `docs/sdk_semantics.md` — Message Group definition

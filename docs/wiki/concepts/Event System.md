@@ -1,68 +1,87 @@
 ---
 title: Event System
 type: concept
-tags: [events, pub-sub, dispatcher, streaming, sse, context-var]
-created: 2026-06-22
-updated: 2026-06-22
-sources: ["[[Source - SDK Overview]]", "[[Source - Server Overview]]"]
+tags: [sdk, events, streaming, sse, ui]
+created: 2026-07-07
+updated: 2026-07-07
+verified_commit: 6a5625d
+paths:
+  - "sdk/events/"
+  - "server/aiohttp_app.py"
 ---
 
 # Event System
 
 ## Overview
 
-The Event System is how Omnideck communicates from deep inside the agent loop back to the HTTP response stream and the browser UI. It uses a ContextVar-stored `EventDispatcher` so any code can publish events without receiving a dispatcher handle as a parameter. Events flow as JSONL via chunked HTTP responses.
+The event system is the mechanism by which agent activity — text output, tool calls, browser screenshots, file outputs, terminal commands, generation progress — flows from the backend to the React UI in real time. It uses a ContextVar-scoped `EventDispatcher` that fans events out to subscribers, bridged over Server-Sent Events (SSE) as JSONL.
 
 ## How It Works
 
-**Publishing (anywhere in the call stack):**
-```python
-from sdk.events import publish_event, AgentEvent, ContentPayload
+### Event Types
 
-publish_event(AgentEvent(payload=ContentPayload(
-    type="content",
-    content="Hello!",
-    delta=True,
-)))
-```
-`publish_event` reads `_current_dispatcher` ContextVar and calls `dispatcher.publish(event)`.
+All events are instances of `AgentEvent`, a thin envelope wrapping one `AgentEventPayload`. Payloads are a discriminated union on the `type` field:
 
-**Subscription (in `turn_scope`):**
-```python
-async with turn_scope(handler=my_handler, conversation_id=...):
-    ...
-```
-`my_handler(event: AgentEvent)` is called for every published event.
+| Payload type | When emitted |
+|---|---|
+| `content` | LLM text delta or complete chunk (with optional `thinking`) |
+| `turn_end` | Root agent finished responding |
+| `tool_call` | Before a tool executes |
+| `browser_screenshot` | After a browser action captures the viewport |
+| `file_output` | When a file is produced in the virtual computer |
+| `terminal_output` | Bash command start/end in the virtual computer |
+| `context_usage` | After each LLM call — token counts and fill ratio |
+| `agent_started` | An agent span begins (root or sub-agent) |
+| `agent_completed` | An agent span ends |
+| `spawn_requested` | The `spawn_agent` tool begins spawning a sub-agent |
+| `generation_preview` | Image/video generation progress |
+| `audio_playback` | Agent wants to play audio in the browser |
+| `desktop_active` | Desktop environment started |
+| `tool_created` | A new custom tool was created |
 
-**Routing to HTTP (in `message_handler`):**
-```python
-async def _queue_handler(evt: AgentEvent) -> None:
-    await queue.put(evt)
-```
-An asyncio `Queue` bridges the event system to the HTTP streaming response.
+### Publishing
 
-**HTTP streaming (`stream_events`):**
-- `StreamResponse` with `Transfer-Encoding: chunked`
-- Each event: `event.model_dump(mode="json", exclude_none=True, exclude_defaults=True)` → JSON string + `\n`
-- JSONL format: one JSON object per line
-- `TurnEndPayload` signals the client to close the stream
+Tools and the turn loop call `publish_event(payload)` from `sdk/events/_context.py`. The function:
+1. Reads the current `AgentEvent` context (dispatcher + agent span) from ContextVars
+2. Wraps the payload in an `AgentEvent` envelope with `agent_name`, `agent_id`, and `depth`
+3. Calls `dispatcher.dispatch(event)` which delivers to all registered subscribers
 
-**Agent attribution (`agent_span`):**
-- `async with agent_span(name, instruction, agent_state, profile_name):` 
-- Sets ContextVars: `_current_agent_name`, `_current_agent_id`, `_current_depth`
-- Publishes `AgentStartedPayload` on enter, `AgentCompletedPayload` on exit
-- All events published within the span are enriched with `agent_name`, `agent_id`, `depth` by `publish_event`
+### Dispatch
 
-**Sub-agent inheritance:** ContextVars propagate to child asyncio tasks; sub-agents automatically publish to the parent turn's dispatcher
+`EventDispatcher` (`sdk/events/_dispatcher.py`) maintains a list of async subscriber callables. Subscribers are per-turn — a new dispatcher is created for each turn inside `turn_scope()`. Multiple subscribers can be active simultaneously (e.g., the SSE bridge and the `AgentEventBufferHook` that saves events for conversation resume).
+
+### SSE Bridge
+
+In `server/message_handler.py:handle_user_message()`, a subscriber bridges the dispatcher to an `asyncio.Queue`. The queue is drained by `stream_events()` in `server/aiohttp_app.py`, which serializes each event as `model_dump(mode="json") + "\n"` and writes it to the HTTP response stream.
+
+The frontend reads the SSE stream in `useStreamingChat.js` and dispatches each event to the React agent reducer.
+
+### Agent Span Attribution
+
+Every published event automatically carries the emitting agent's `agent_name`, `agent_id` (a hierarchical dot-notation ID like `root.browser_agent.1`), and `depth` (0 = root, 1+ = sub-agents). This lets the UI route events to the correct agent card in the network view without the tool code knowing anything about the UI layout.
+
+## Where It Lives
+
+| File | Role |
+|------|------|
+| `sdk/events/_models.py` | `AgentEvent` + all payload types |
+| `sdk/events/_dispatcher.py` | `EventDispatcher` |
+| `sdk/events/_context.py` | `agent_span()`, `publish_event()`, ContextVar management |
+| `sdk/events/__init__.py` | Re-exports for consumers |
+| `server/aiohttp_app.py:stream_events()` | SSE serialization |
+| `server/ui/src/hooks/useStreamingChat.js` | Frontend SSE consumer |
 
 ## Key Details
 
-- `EventDispatcher.drain()` called at `turn_scope` exit ensures all async handlers complete before teardown
-- Sync handlers run via `loop.call_soon` — deferred but not truly async
-- Handler errors are logged but NOT propagated to the publisher
-- `AgentEventBufferHook` subscribes as a handler to buffer lifecycle events for persistence (file outputs, screenshots)
+- **JSONL format:** each event is one JSON object per line, flushed immediately. The UI can render partial output as it arrives.
+- **`exclude_none=True, exclude_defaults=True`** in serialization keeps the wire format lean — fields that weren't set don't appear.
+- **`AgentEventBufferHook`** accumulates events during the turn and saves them to `events.json` after the turn completes, so the preview panel (browser tabs, terminal output, file blocks) can be restored when a conversation is resumed.
+- **Disconnection handling:** `ConnectionResetError` during stream write is caught silently — the agent turn continues even if the user closes the browser tab.
+
+## Open Questions
+
+- There is no backpressure from the SSE stream back to the agent loop. A very fast agent could theoretically fill the queue unboundedly on a slow client.
 
 ## Sources
 
-- [[Source - SDK Overview]]
-- [[Source - Server Overview]]
+- `docs/sdk_semantics.md` — canonical description of Event concept
