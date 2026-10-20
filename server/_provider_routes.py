@@ -458,7 +458,7 @@ async def handle_update_provider(request: web.Request) -> web.Response:
             # honor it as-is instead of falling back to the cached value.
             new_base_url = spec.base_url or None
         else:
-            new_base_url = settings.get("brokered_provider_urls", {}).get(name)
+            new_base_url = (settings.get("brokered_provider_urls") or {}).get(name)
         if new_base_url:
             try:
                 _validate_base_url(new_base_url)

@@ -332,6 +332,33 @@ async def test_brokered_provider_update_omitted_base_url_keeps_cached_value(monk
 
 
 @pytest.mark.asyncio
+async def test_brokered_provider_update_tolerates_a_null_url_cache(monkeypatch) -> None:
+    """settings.json can have "brokered_provider_urls": null, not just an absent key."""
+    data: dict = {"brokered_provider_urls": None}
+
+    async def _supervisor(verb, args):
+        if verb == "list":
+            return {"connections": [{"id": "llm_openai_compat-id", "slug": "llm_openai_compat"}]}
+        return {}
+
+    class _Provider:
+        async def list_models(self):
+            return []
+
+    monkeypatch.setattr("server._provider_routes._supervisor_call", _supervisor)
+    monkeypatch.setattr("server._provider_routes.load_settings", lambda: dict(data))
+    monkeypatch.setattr("server._provider_routes.save_settings", lambda patch: data.update(patch))
+    monkeypatch.setattr("server._provider_routes.get_provider", lambda _name: _Provider())
+    monkeypatch.setattr("server._provider_routes.reset_provider", lambda _name: None)
+    request = MagicMock()
+    request.match_info = {"name": "openai_compat"}
+    request.json = AsyncMock(return_value={"api_key": "sk-new-key"})
+
+    response = await handle_update_provider(request)
+    assert response.status == 200
+
+
+@pytest.mark.asyncio
 async def test_brokered_provider_update_explicit_empty_base_url_clears_cache(monkeypatch) -> None:
     """An empty string is a deliberate clear, not "field omitted"."""
     data: dict = {"brokered_provider_urls": {"openai_compat": "https://old-proxy.example.com/v1"}}
