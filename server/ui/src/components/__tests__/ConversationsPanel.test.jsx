@@ -2,6 +2,7 @@ import { fireEvent, render as _render, screen, waitFor, within } from '@testing-
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ConversationsPanel from '../ConversationsPanel.jsx';
+import { GoalsProvider } from '../../features/goals/GoalsState.jsx';
 import { ToastProvider } from '../ToastProvider.jsx';
 import { ConversationCatalogProvider } from '../../features/conversation/catalog/ConversationCatalog.jsx';
 
@@ -10,7 +11,7 @@ import { ConversationCatalogProvider } from '../../features/conversation/catalog
 function Providers({ children }) {
     return (
         <ToastProvider>
-            <ConversationCatalogProvider>{children}</ConversationCatalogProvider>
+            <ConversationCatalogProvider><GoalsProvider>{children}</GoalsProvider></ConversationCatalogProvider>
         </ToastProvider>
     );
 }

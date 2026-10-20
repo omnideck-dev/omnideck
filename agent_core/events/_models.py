@@ -324,6 +324,16 @@ class UserAttachment(BaseModel):
     path: str
 
 
+class GoalWakeupPayload(BaseModel):
+    """A goal continuation requested by its agent or the user."""
+
+    type: Literal["goal_wakeup"]
+    goal_id: str
+    wake_id: str
+    reason: str
+    next_action: str
+
+
 class UserMessagePayload(BaseModel):
     """User-authored input to an agent — the prompt that opens a turn,
     or a nudge injected mid-turn into a running agent (root or sub-agent).
@@ -503,6 +513,7 @@ AgentEventPayload = Annotated[
     | AgentCompletedPayload
     | SpawnRequestedPayload
     | UserMessagePayload
+    | GoalWakeupPayload
     | IterationPayload
     | ToolResultPayload
     | CompactionPayload
@@ -571,6 +582,7 @@ __all__ = [
     "ErrorPayload",
     "FileOutputPayload",
     "GenerationPreviewPayload",
+    "GoalWakeupPayload",
     "IterationPayload",
     "IterationToolCall",
     "SpawnRequestedPayload",

@@ -24,7 +24,7 @@ from agent_core.providers import ChatDelta, ChatResponse, ProviderError, ToolCal
 from agent_core.agent_capabilities import AgentCapabilities
 from agent_core.tools import _execute_tool_call
 
-from agent_core.control import StopRequestedError
+from agent_core.control import StopRequestedError, get_execution_control
 from ._turn import check_stop
 from ._models import ExecutionContext, ExecutionResult, ToolLoopError
 
@@ -215,14 +215,17 @@ class AgentExecutor:
         if max_parallel_tools < 1:
             raise ValueError("max_parallel_tools must be positive")
         with context.bind(agent.name, capabilities):
-            return await self._execute(
-                history=history,
-                agent=agent,
-                capabilities=capabilities,
-                provider=provider,
-                hooks=hooks or [],
-                max_parallel_tools=max_parallel_tools,
-            )
+            try:
+                return await self._execute(
+                    history=history,
+                    agent=agent,
+                    capabilities=capabilities,
+                    provider=provider,
+                    hooks=hooks or [],
+                    max_parallel_tools=max_parallel_tools,
+                )
+            finally:
+                context.control.accepting_nudges = False
 
     async def _execute(
         self,
@@ -366,6 +369,12 @@ class AgentExecutor:
                         final_content = content
 
                     if not tool_calls:
+                        # Input arriving during the final response still belongs
+                        # to this execution. Let the nudge hook deliver it before
+                        # completing, rather than silently dropping the reply.
+                        control = get_execution_control()
+                        if control is not None and control.nudges:
+                            continue
                         return ExecutionResult("success", final_content, response.done_reason, usage)
 
                     tool_names = [tc.function.name for tc in tool_calls]

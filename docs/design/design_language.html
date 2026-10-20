@@ -4960,14 +4960,20 @@ body {
     <div class="section-title">26. Chat Input</div>
     <div class="section-desc">
       The composer at the bottom of the chat column. Wrapped textarea with focus glow, button bar below
-      (profile selector + attach + send / stop). Streaming-state placeholder ("Send a nudge to the
+      (profile selector + add menu + send / stop). The add menu includes file attachments and
+      enabled chat actions such as Goal. The <code>/goal</code> command opens the same goal dialog;
+      an optional objective prefills it. Streaming-state placeholder ("Send a nudge to the
       agent..."). Optional inline attachment preview area sits above the textarea.
+      An assigned goal appears in a quiet strip immediately above the composer, aligned to its
+      width. Goal details use the shared viewport-aware popover at that same width, opening
+      above when space allows. Steps and next actions use two columns when there is room;
+      on narrow screens they stack. Questions needing a reply remain visible above the message box.
     </div>
 
     <div class="m-chat-input" style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);max-width:640px">
       <textarea class="m-chat-textarea" placeholder="Send a message..." rows="2" style="background:transparent;border:none;resize:none">Scrape the API reference from docs.example.com</textarea>
       <div class="m-chat-actions">
-        <button class="btn-icon" title="Attach file"><i class="bi bi-paperclip"></i></button>
+        <button class="btn-icon" title="Add to chat" aria-label="Add to chat" aria-haspopup="menu" aria-expanded="false"><i class="bi bi-plus-lg"></i></button>
         <button class="select" type="button" role="combobox" aria-expanded="false" aria-label="Agent" style="min-width:140px;height:26px;font-size:11px;font-family:var(--font-brand);padding-left:8px">ollama-agent</button>
         <span class="spacer"></span>
         <button class="btn-icon" title="Stop" style="color:var(--danger)"><i class="bi bi-stop-circle"></i></button>

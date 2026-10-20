@@ -157,6 +157,7 @@ export type LiveIteration = {
 };
 
 export type TranscriptItem =
+    | { kind: 'goal_wakeup'; id: string; reason: string; nextAction: string; timestamp: string | null }
     | {
         kind: 'user_prompt';
         id: string;

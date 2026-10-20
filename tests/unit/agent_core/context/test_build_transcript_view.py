@@ -88,3 +88,19 @@ def test_transcript_view_walks_nudges_tools_and_thinking():
         {"role": "user", "content": "also do X"},
         {"role": "assistant", "content": "done", "agent_name": "COMPUTRON"},
     ]
+
+
+def test_wakeup_first_conversation_keeps_output_before_later_user_message():
+    wake = {**_user(ROOT, ""), "type": "goal_wakeup", "goal_id": "goal-1", "wake_id": "wake-1",
+            "reason": "Goal assigned", "next_action": "Create a plan"}
+    events = [
+        _started(ROOT, "COMPUTRON"), wake,
+        _iter(ROOT, 0, content="Created a household plan"),
+        _user(ROOT, "Add the school pickup"),
+        _iter(ROOT, 1, content="Added the pickup"),
+    ]
+    assert build_transcript_view(events) == [
+        {"role": "assistant", "content": "Created a household plan", "agent_name": "COMPUTRON"},
+        {"role": "user", "content": "Add the school pickup"},
+        {"role": "assistant", "content": "Added the pickup", "agent_name": "COMPUTRON"},
+    ]

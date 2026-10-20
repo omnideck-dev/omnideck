@@ -7,6 +7,7 @@ import {
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Sidebar from '../Sidebar.jsx';
+import { GoalsProvider } from '../../features/goals/GoalsState.jsx';
 import { ToastProvider } from '../ToastProvider.jsx';
 import { ConversationCatalogProvider } from '../../features/conversation/catalog/ConversationCatalog.jsx';
 import { AppEffectsProvider } from '../../features/app/AppEffects.jsx';
@@ -58,7 +59,7 @@ const Wrapper = ({ children }) => (
     <ToastProvider>
         <AppEffectsProvider>
             <ThemeProvider>
-                <ConversationCatalogProvider>{children}</ConversationCatalogProvider>
+                <ConversationCatalogProvider><GoalsProvider>{children}</GoalsProvider></ConversationCatalogProvider>
             </ThemeProvider>
         </AppEffectsProvider>
     </ToastProvider>

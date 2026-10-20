@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from ._base import BaseAPIProvider
+from ._prompt_cache import cache_stable_prefix
 from ._models import ChatDelta, ChatMessage, ChatResponse, ModelInfo, ProviderError, TokenUsage, ToolCall, ToolCallFunction
 from agent_core.tools import callable_to_json_schema
 
@@ -98,10 +99,12 @@ class AnthropicProvider(BaseAPIProvider):
             budget = budget_map.get(thinking_budget, max_tok // 2)
             kwargs["thinking"] = {"type": "enabled", "budget_tokens": max(1024, budget)}
 
-        # Automatic prompt caching — Anthropic places a cache breakpoint at
-        # the end of the cacheable prefix. Subsequent turns with the same
-        # prefix read from cache at 90% discount.
-        kwargs["cache_control"] = {"type": "ephemeral"}
+        # A transient suffix disappears on the next call, so caching only its end
+        # would leave no reusable written boundary. Cache the conversation before it.
+        if messages and messages[-1].get("_runtime_context"):
+            cache_stable_prefix(converted)
+        else:
+            kwargs["cache_control"] = {"type": "ephemeral"}
 
         return kwargs
 

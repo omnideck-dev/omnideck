@@ -14,6 +14,7 @@ import { useWorkspaceDispatch } from '../../workspace/WorkspaceState.jsx';
 import { getConversationRestorePlan } from '../events/conversationRestore.js';
 import { useAppEffectDispatch } from '../../app/AppEffects.jsx';
 import { APP_EFFECT_TYPES } from '../../app/appEffectTypes.js';
+import { isGoalOpen, useGoals } from '../../goals/GoalsState.jsx';
 
 const ConversationSessionStateContext = createContext(null);
 const ActiveConversationIdContext = createContext(undefined);
@@ -27,16 +28,18 @@ export function ConversationSessionProvider({ children }) {
     const { addToast } = useToast();
     const [conversationProfileId, setConversationProfileId] = useState(null);
     const isFreshConversationRef = useRef(true);
+    const { enabled: goalsEnabled, goalsByConversation } = useGoals();
 
     const session = useConversationSessionController({
         agentDispatch,
         workspaceDispatch,
         appEffectDispatch,
+        keepRunningConversation: (id) => goalsEnabled && isGoalOpen(goalsByConversation[id]),
     });
 
-    const sendMessage = useCallback((message, attachments, profileId) => {
+    const sendMessage = useCallback((message, attachments, profileId, goalAnswers) => {
         if (!message && !attachments?.length) {
-            return session.sendMessage(message, attachments, profileId);
+            return session.sendMessage(message, attachments, profileId, goalAnswers);
         }
         if (session.isOffline) return null;
         if (isFreshConversationRef.current) {
@@ -46,7 +49,7 @@ export function ConversationSessionProvider({ children }) {
                 firstMessage: message || '',
             });
         }
-        return session.sendMessage(message, attachments, profileId);
+        return session.sendMessage(message, attachments, profileId, goalAnswers);
     }, [
         addStartedConversation,
         session.activeConversationId,
@@ -54,8 +57,8 @@ export function ConversationSessionProvider({ children }) {
         session.sendMessage,
     ]);
 
-    const sendNudge = useCallback(async (message, agentId) => {
-        const result = await session.sendNudge(message, agentId);
+    const sendNudge = useCallback(async (message, agentId, goalAnswers) => {
+        const result = await session.sendNudge(message, agentId, goalAnswers);
         if (!result) return result;
         if (result.ok) {
             addToast('Nudge sent', { type: 'info', duration: 3000 });
@@ -172,6 +175,15 @@ export function ConversationSessionProvider({ children }) {
         session.turns,
     ]);
 
+    const refreshActiveConversation = useCallback(async () => {
+        const loaded = await session.refreshActiveConversation();
+        if (loaded) {
+            isFreshConversationRef.current = false;
+            if (loaded.profileId) setConversationProfileId(loaded.profileId);
+        }
+        return loaded;
+    }, [session.refreshActiveConversation]);
+
     const commands = useMemo(() => ({
         sendMessage,
         sendNudge,
@@ -181,6 +193,7 @@ export function ConversationSessionProvider({ children }) {
         setDraft: session.setDraft,
         composeFromSource,
         setConversationProfileId,
+        refreshActiveConversation,
     }), [
         composeFromSource,
         loadConversation,
@@ -189,6 +202,7 @@ export function ConversationSessionProvider({ children }) {
         sendNudge,
         session.setDraft,
         session.stopGeneration,
+        refreshActiveConversation,
     ]);
 
     return (

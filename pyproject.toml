@@ -150,6 +150,7 @@ include = [
     "repls*",
     "server*",
     "tasks*",
+    "goals*",
     "tools*",
     "utils*",
 ]

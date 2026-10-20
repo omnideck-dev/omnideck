@@ -13,12 +13,14 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from agent_runtime import RunConflictError
+from goals import GoalStore
 from server._agent_run_routes import (
     chat_handler,
     chat_run_events_handler,
     stop_handler,
 )
 from server._agent_runtime import AGENT_RUNTIME_KEY
+from server._goals import GOAL_STORE_KEY
 from server._ui_routes import index_handler, manifest_handler
 
 
@@ -129,11 +131,11 @@ async def test_stop_empty_conversation_id_returns_400() -> None:
 
 
 @pytest.mark.unit
-async def test_stop_targets_active_run_manager() -> None:
+async def test_stop_targets_active_run_manager(tmp_path) -> None:
     """Stop sets the manager-owned signal rather than an HTTP-task signal."""
     manager = MagicMock()
     req = _make_request(query={"conversation_id": "conversation-1"})
-    req.app = {AGENT_RUNTIME_KEY: manager}
+    req.app = {AGENT_RUNTIME_KEY: manager, GOAL_STORE_KEY: GoalStore(tmp_path / "goals")}
 
     resp = await stop_handler(req)
 

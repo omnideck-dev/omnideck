@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 # log forever (real logs were >90% screenshots before the split).
 _PERSISTED_TYPES: frozenset[str] = frozenset({
     "user_message",
+    "goal_wakeup",
     "iteration",
     "tool_result",
     "compaction",

@@ -438,3 +438,25 @@ def test_sub_history_subscribe_unsubscribe_lifecycle():
                     if e["type"] == "user_message"]
     assert sub_contents == ["first"]
     assert parent._observers == []
+
+
+def test_runtime_context_is_model_only_replaced_and_removable():
+    history = ConversationHistory(system_message="Stable instructions", conversation_id="test")
+    history.seed_events([_agent_started(), _user("Hello"), _iter("Working")])
+    events = history.recorded_events
+    body = history.derived_messages
+    before = history.messages
+    history.set_runtime_context('Current goal: revision 1')
+    first = history.messages
+    assert first[:-1] == before
+    assert first[-1] == {"role": "user", "content": "Current goal: revision 1", "_runtime_context": True}
+    history.set_runtime_context('Current goal: revision 2')
+    assert history.messages[:-1] == before
+    assert len(history.messages) == len(first)
+    assert history.recorded_events == events
+    assert history.derived_messages == history.non_system_messages == body
+    restored = ConversationHistory(conversation_id="test")
+    restored.seed_events(history.recorded_events)
+    assert restored.messages == body
+    history.set_runtime_context(None)
+    assert history.messages == before

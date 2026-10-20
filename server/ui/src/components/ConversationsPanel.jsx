@@ -18,6 +18,8 @@ import {
     buildSections,
 } from './conversationSections.js';
 import styles from './ConversationsPanel.module.css';
+import { useGoals } from '../features/goals/GoalsState.jsx';
+import GoalStatus from '../features/goals/GoalStatus.jsx';
 
 function pointRect(event) {
     return {
@@ -37,6 +39,7 @@ function pointRect(event) {
  * Searching drops the structure and shows a flat, recency-sorted list.
  */
 export default function ConversationsPanel({ onLoadConversation, onNewConversation, activeConversationId }) {
+    const { enabled: goalsEnabled, goalsByConversation } = useGoals();
     const { addToast } = useToast();
     const {
         items, setItems, loading, deleting, handleDelete,
@@ -276,6 +279,7 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
                 data-folder-id={convo.folder_id || ''}
             >
                 <span className={styles.itemTitle}>{label(convo)}</span>
+                {goalsEnabled && <GoalStatus goal={goalsByConversation[id]} compact />}
                 {showAge && (
                     <span className={styles.itemAge} data-testid="recent-item-age">
                         {relativeAge(convo.started_at)}

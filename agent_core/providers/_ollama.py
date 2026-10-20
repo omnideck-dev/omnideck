@@ -12,6 +12,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 
+from agent_core.tools import callable_to_json_schema
+
 from ._models import ChatDelta, ChatMessage, ChatResponse, LLMConfig, ModelInfo, ProviderError, TokenUsage, ToolCall, ToolCallFunction
 
 logger = logging.getLogger(__name__)
@@ -40,7 +42,7 @@ def _build_ollama_kwargs(
         "think": think,
     }
     if tools:
-        kwargs["tools"] = tools
+        kwargs["tools"] = [callable_to_json_schema(tool) for tool in tools]
     if options:
         kwargs["options"] = options
     return kwargs
@@ -53,6 +55,7 @@ def _convert_messages_for_ollama(messages: list[dict[str, Any]]) -> list[dict[st
     """
     converted = []
     for msg in messages:
+        msg = {key: value for key, value in msg.items() if key != "_runtime_context"}
         images = msg.get("images")
         if images:
             ollama_images = [img["data"] for img in images]

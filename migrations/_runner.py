@@ -20,6 +20,7 @@ from migrations._012_computron_path_rename import migrate as _012_computron_path
 from migrations._013_goals_to_routines import migrate as _013_goals_to_routines
 from migrations._014_software_updates_setting import migrate as _014_software_updates_setting
 from migrations._015_browser_profiles import migrate as _015_browser_profiles
+from migrations._016_experimental_goals import migrate as _016_experimental_goals
 
 from migrations._engine import run_migration_plan
 
@@ -42,6 +43,7 @@ _MIGRATIONS: list[tuple[str, Callable[[Path], None]]] = [
     ("013_goals_to_routines", _013_goals_to_routines),
     ("014_software_updates_setting", _014_software_updates_setting),
     ("015_browser_profiles", _015_browser_profiles),
+    ("016_experimental_goals", _016_experimental_goals),
 ]
 
 

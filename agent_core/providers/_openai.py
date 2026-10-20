@@ -277,6 +277,7 @@ def _convert_messages_for_openai(messages: list[dict[str, Any]]) -> list[dict[st
     """
     converted = []
     for msg in messages:
+        msg = {key: value for key, value in msg.items() if key != "_runtime_context"}
         if msg.get("role") == "assistant" and msg.get("tool_calls"):
             openai_tcs = []
             for tc in msg["tool_calls"]:
@@ -350,7 +351,7 @@ def _extract_usage(usage: Any) -> TokenUsage:
     """Extract token counts including cache metrics from an OpenAI usage object.
 
     OpenAI includes cached prompt tokens in usage.prompt_tokens_details.cached_tokens.
-    OpenRouter may include similar fields. Gracefully degrade when absent.
+    OpenRouter also reports cache_write_tokens. Providers may omit these counters.
     """
     if usage is None:
         return TokenUsage()
@@ -360,17 +361,20 @@ def _extract_usage(usage: Any) -> TokenUsage:
 
     # OpenAI / OpenRouter: usage.prompt_tokens_details.cached_tokens
     cache_read = 0
+    cache_write = 0
     details = getattr(usage, "prompt_tokens_details", None)
     if details is not None:
         cache_read = getattr(details, "cached_tokens", 0) or 0
+        cache_write = getattr(details, "cache_write_tokens", 0) or 0
 
     result = TokenUsage(
         prompt_tokens=prompt,
         completion_tokens=completion,
         cache_read_tokens=cache_read,
+        cache_creation_tokens=cache_write,
     )
-    if cache_read:
-        logger.debug("cache tokens: read=%d (prompt=%d, completion=%d)", cache_read, prompt, completion)
+    if cache_read or cache_write:
+        logger.debug("cache tokens: read=%d creation=%d (prompt=%d, completion=%d)", cache_read, cache_write, prompt, completion)
     return result
 
 

@@ -17,7 +17,7 @@ _PROVIDER_PATHS: dict[str, str] = {
     "ollama": "agent_core.providers._ollama:OllamaProvider",
     "openai": "agent_core.providers._openai_responses:OpenAIResponsesProvider",
     "openai_compat": "agent_core.providers._openai:OpenAIProvider",
-    "openrouter": "agent_core.providers._openai:OpenAIProvider",
+    "openrouter": "agent_core.providers._openrouter:OpenRouterProvider",
     "anthropic": "agent_core.providers._anthropic:AnthropicProvider",
     "fake": "providers._fake:FakeProvider",
 }

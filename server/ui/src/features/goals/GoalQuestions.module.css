@@ -1,0 +1,7 @@
+.questions { display: grid; gap: var(--sp-2); padding: var(--sp-3) var(--sp-2) var(--sp-3) 0; border-bottom: 1px solid var(--border-subtle); min-width: 0; }
+.heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-2); color: var(--text-secondary); font-size: var(--font-size-small); }
+.navigation, .choices { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); }
+.question { margin: 0; color: var(--text-primary); font-weight: 500; white-space: pre-wrap; overflow-wrap: anywhere; }
+.notice { margin: 0; color: var(--text-secondary); font-size: var(--font-size-small); }
+.transcript { display: grid; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border-left: 2px solid var(--accent); margin: var(--sp-3) 0; }
+.transcript p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }

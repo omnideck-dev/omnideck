@@ -25,6 +25,8 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 from agent_runtime import AgentRuntime
 from config import load_config
+from goals import GOALS_SUBDIR, GoalStore
+from goals._scheduler import GoalScheduler
 from server._agent_run_routes import register_agent_run_routes
 from server._agent_runtime import AGENT_RUNTIME_KEY
 from server._artifacts_routes import register_artifacts_routes
@@ -36,6 +38,8 @@ from server._custom_app_routes import register_custom_app_routes
 from server._custom_tool_routes import register_custom_tool_routes
 from server._desktop_routes import register_desktop_routes
 from server._feature_routes import register_feature_routes
+from server._goal_routes import register_goal_routes
+from server._goals import GOAL_SCHEDULER_KEY, GOAL_STORE_KEY
 from server._integrations_oauth_routes import register_oauth_routes
 from server._integrations_routes import register_integrations_routes
 from server._memory_routes import register_memory_routes
@@ -49,6 +53,7 @@ from server._skill_routes import register_skill_routes
 from server._task_routes import ROUTINE_SERVICE_KEY, register_task_routes
 from server._tool_category_routes import register_tool_category_routes
 from server._ui_routes import register_ui_routes
+from settings import goals_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -58,14 +63,14 @@ logger = logging.getLogger(__name__)
 
 _CORS_HEADERS = {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "POST, PUT, OPTIONS, GET, DELETE",
+    "Access-Control-Allow-Methods": "POST, PUT, PATCH, OPTIONS, GET, DELETE",
     # X-Requested-With is intentionally NOT listed here — cross-origin requests
     # cannot set it (browser blocks them at preflight), so its presence signals
     # that a request is same-origin. This is a lightweight CSRF guard.
     "Access-Control-Allow-Headers": "Content-Type",
 }
 
-_CSRF_METHODS = {"POST", "PUT", "DELETE"}
+_CSRF_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 
 @web.middleware
@@ -120,10 +125,14 @@ def create_app(
     app[BROWSER_RUNTIME_KEY] = browser_runtime
     integration_cache = IntegrationConnectionCache(integration_service)
     app[INTEGRATION_CACHE_KEY] = integration_cache
+    goal_store = GoalStore(Path(load_config().settings.home_dir) / GOALS_SUBDIR)
+    app[GOAL_STORE_KEY] = goal_store
     app[AGENT_RUNTIME_KEY] = AgentRuntime(
         conversations=ConversationStore(), browser_runtime=browser_runtime,
         integration_cache=integration_cache,
+        goal_store=goal_store, goals_enabled=goals_enabled,
     )
+    app[GOAL_SCHEDULER_KEY] = GoalScheduler(goal_store, app[AGENT_RUNTIME_KEY], enabled=goals_enabled)
 
     # Agent-run HTTP channel adapter
     register_agent_run_routes(app)
@@ -169,6 +178,7 @@ def create_app(
 
     # Conversation sessions API
     register_conversation_routes(app)
+    register_goal_routes(app)
 
     # Artifacts hub API
     register_artifacts_routes(app)
@@ -345,6 +355,7 @@ async def _start_deferred_subsystems(app: web.Application) -> None:
             runner = app.get("task_runner")
             if runner:
                 await runner.start()
+            await app[GOAL_SCHEDULER_KEY].start()
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -384,6 +395,7 @@ async def _stop_deferred_subsystems(app: web.Application) -> None:
     runner = app.get("task_runner")
     if runner:
         await runner.stop()
+    await app[GOAL_SCHEDULER_KEY].stop()
 
 
 __all__ = ["AGENT_RUNTIME_KEY", "create_app"]

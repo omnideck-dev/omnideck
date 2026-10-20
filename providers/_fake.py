@@ -304,7 +304,7 @@ def _chunks(text: str, size: int = 24) -> list[str]:
 def _latest_task(messages: list[dict[str, Any]]) -> str:
     """Return the most recent user instruction in the history."""
     for msg in reversed(messages):
-        if msg.get("role") == "user":
+        if msg.get("role") == "user" and not msg.get("_runtime_context"):
             content = msg.get("content")
             if isinstance(content, str):
                 return content
@@ -319,7 +319,7 @@ def _completed_step_count(messages: list[dict[str, Any]]) -> int:
     """
     last_user = -1
     for i, msg in enumerate(messages):
-        if msg.get("role") == "user":
+        if msg.get("role") == "user" and not msg.get("_runtime_context"):
             last_user = i
     progress = messages[last_user + 1 :] if last_user >= 0 else []
     return sum(
@@ -466,7 +466,7 @@ def _model_response(
     pattern = re.compile(re.escape(prefix) + r"(\d+)_call_\d+$")
     # A new user input starts a new script even when identical text was used in
     # an earlier turn. A compaction retains the pinned input and recent results.
-    last_user = max((i for i, m in enumerate(messages) if m.get("role") == "user"), default=-1)
+    last_user = max((i for i, m in enumerate(messages) if m.get("role") == "user" and not m.get("_runtime_context")), default=-1)
     completed = [int(match.group(1)) for m in messages[last_user + 1:]
                  if m.get("role") == "tool"
                  and (match := pattern.fullmatch(str(m.get("tool_call_id", ""))))]
