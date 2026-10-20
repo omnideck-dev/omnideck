@@ -96,6 +96,28 @@ async def test_brokered_provider_add_has_no_integration_permissions(monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_brokered_provider_add_rejects_blocked_host_base_url(monkeypatch) -> None:
+    """A brokered base_url reaches a real network host too — same SSRF guard as direct."""
+    calls = []
+
+    async def _supervisor(verb, args):
+        calls.append((verb, args))
+        return {"id": "llm_openai_compat", "kind": "model_provider"}
+
+    monkeypatch.setattr("server._provider_routes._supervisor_call", _supervisor)
+    request = MagicMock()
+    request.json = AsyncMock(return_value={
+        "name": "openai_compat",
+        "api_key": "sk-test",
+        "base_url": "http://169.254.169.254/latest/meta-data/",
+    })
+
+    response = await handle_add_provider(request)
+    assert response.status == 400
+    assert calls == []
+
+
+@pytest.mark.asyncio
 async def test_provider_list_keeps_direct_providers_when_supervisor_is_down(monkeypatch) -> None:
     async def _unavailable():
         raise FileNotFoundError("supervisor down")
@@ -153,3 +175,33 @@ async def test_brokered_provider_update_uses_transactional_reconnect(monkeypatch
         },
     )
     assert all(verb != "remove" for verb, _args in calls)
+
+
+@pytest.mark.asyncio
+async def test_brokered_provider_update_rejects_blocked_host_base_url(monkeypatch) -> None:
+    calls = []
+
+    async def _supervisor(verb, args):
+        calls.append((verb, args))
+        if verb == "list":
+            return {
+                "connections": [{
+                    "id": "llm_openai_compat",
+                    "slug": "llm_openai_compat",
+                    "kind": "model_provider",
+                }],
+            }
+        raise AssertionError(f"unexpected supervisor call: {verb}")
+
+    monkeypatch.setattr("server._provider_routes._supervisor_call", _supervisor)
+    monkeypatch.setattr("server._provider_routes.load_settings", lambda: {})
+    request = MagicMock()
+    request.match_info = {"name": "openai_compat"}
+    request.json = AsyncMock(return_value={
+        "api_key": "sk-new",
+        "base_url": "http://metadata.google.internal/",
+    })
+
+    response = await handle_update_provider(request)
+    assert response.status == 400
+    assert all(verb != "reconnect" for verb, _args in calls)
