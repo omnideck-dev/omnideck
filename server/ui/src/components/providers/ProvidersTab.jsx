@@ -188,6 +188,7 @@ export default function ProvidersTab() {
                     existingNames={providers.map(p => p.name)}
                     onClose={() => setModalOpen(false)}
                     onAdded={handleAdded}
+                    onRefresh={fetchProviders}
                 />
             )}
         </div>
@@ -245,9 +246,17 @@ function DetailPane({ provider, status, modelCount, onSaved, onTested, onRemove 
     const view = _statusView(status);
     const isDirect = provider.kind === 'direct';
 
-    const [field, setField] = useState(provider.base_url || '');
-    // When the selected provider changes, reset the input.
-    useEffect(() => { setField(provider.base_url || ''); }, [provider.name, provider.base_url]);
+    // `field` is the direct base_url or the brokered API key, depending on
+    // kind — only the direct one is ever prefilled from provider.base_url.
+    // The brokered base_url (shown and editable regardless of kind) gets
+    // its own state so it never leaks into the API-key input.
+    const [field, setField] = useState(isDirect ? (provider.base_url || '') : '');
+    const [baseUrlField, setBaseUrlField] = useState(isDirect ? '' : (provider.base_url || ''));
+    // When the selected provider changes, reset both inputs.
+    useEffect(() => {
+        setField(isDirect ? (provider.base_url || '') : '');
+        setBaseUrlField(isDirect ? '' : (provider.base_url || ''));
+    }, [provider.name, provider.base_url, isDirect]);
 
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState(null);
@@ -259,7 +268,9 @@ function DetailPane({ provider, status, modelCount, onSaved, onTested, onRemove 
         setSaving(true);
         setSaveError(null);
         try {
-            const body = isDirect ? { base_url: field } : { api_key: field };
+            const body = isDirect
+                ? { base_url: field }
+                : { api_key: field, base_url: baseUrlField };
             const resp = await fetch(`/api/providers/${encodeURIComponent(provider.name)}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
@@ -277,7 +288,7 @@ function DetailPane({ provider, status, modelCount, onSaved, onTested, onRemove 
         } finally {
             setSaving(false);
         }
-    }, [field, isDirect, provider.name, onSaved]);
+    }, [field, baseUrlField, isDirect, provider.name, onSaved]);
 
     const handleTest = useCallback(async () => {
         setTesting(true);
@@ -315,6 +326,27 @@ function DetailPane({ provider, status, modelCount, onSaved, onTested, onRemove 
                     </div>
                 </div>
             </div>
+
+            {!isDirect && (
+                <div className={styles.detailSection}>
+                    <div className={styles.detailSectionLabel}>Base URL</div>
+                    <div className={styles.inputRow}>
+                        <input
+                            type="text"
+                            className={`${styles.input} ${styles.inputMono}`}
+                            value={baseUrlField}
+                            onChange={(e) => setBaseUrlField(e.target.value)}
+                            placeholder="Only needed for a custom OpenAI-compatible endpoint"
+                            autoComplete="off"
+                            data-testid="provider-base-url-input"
+                        />
+                    </div>
+                    <div className={styles.formHint}>
+                        Not a secret — cached locally so it can be shown and corrected here.
+                        Saved together with the API key below.
+                    </div>
+                </div>
+            )}
 
             <div className={styles.detailSection}>
                 <div className={styles.detailSectionLabel}>

@@ -118,6 +118,64 @@ async def test_brokered_provider_add_rejects_blocked_host_base_url(monkeypatch) 
 
 
 @pytest.mark.asyncio
+async def test_brokered_provider_add_rolls_back_connection_on_failed_probe(monkeypatch) -> None:
+    calls = []
+
+    async def _supervisor(verb, args):
+        calls.append((verb, args))
+        if verb == "add":
+            return {"id": "llm_openai-id", "kind": "model_provider"}
+        return {}
+
+    class _Provider:
+        async def list_models(self):
+            raise RuntimeError("401 unauthorized")
+
+    monkeypatch.setattr("server._provider_routes._supervisor_call", _supervisor)
+    monkeypatch.setattr("server._provider_routes.get_provider", lambda _name: _Provider())
+    monkeypatch.setattr("server._provider_routes.reset_provider", lambda _name: None)
+    request = MagicMock()
+    request.json = AsyncMock(return_value={"name": "openai", "api_key": "sk-bad-key"})
+
+    response = await handle_add_provider(request)
+    assert response.status == 503
+    assert [verb for verb, _args in calls] == ["add", "remove"]
+    assert calls[1][1] == {"id": "llm_openai-id"}
+
+
+@pytest.mark.asyncio
+async def test_direct_provider_add_rejects_failed_probe_without_persisting(monkeypatch) -> None:
+    data: dict = {}
+    monkeypatch.setattr("server._provider_routes.load_settings", lambda: dict(data))
+    monkeypatch.setattr("server._provider_routes.save_settings", lambda patch: data.update(patch))
+    monkeypatch.setattr(
+        "server._provider_routes.probe_direct_provider",
+        AsyncMock(side_effect=RuntimeError("connection refused")),
+    )
+    request = MagicMock()
+    request.json = AsyncMock(return_value={"name": "ollama", "base_url": "http://localhost:9999"})
+
+    response = await handle_add_provider(request)
+    assert response.status == 503
+    assert data.get("direct_providers", {}) == {}
+
+
+@pytest.mark.asyncio
+async def test_direct_provider_add_persists_after_successful_probe(monkeypatch) -> None:
+    data: dict = {}
+    monkeypatch.setattr("server._provider_routes.load_settings", lambda: dict(data))
+    monkeypatch.setattr("server._provider_routes.save_settings", lambda patch: data.update(patch))
+    monkeypatch.setattr("server._provider_routes.probe_direct_provider", AsyncMock(return_value=[]))
+    monkeypatch.setattr("server._provider_routes.reset_provider", lambda _name: None)
+    request = MagicMock()
+    request.json = AsyncMock(return_value={"name": "ollama", "base_url": "http://localhost:11434"})
+
+    response = await handle_add_provider(request)
+    assert response.status == 201
+    assert data["direct_providers"]["ollama"]["base_url"] == "http://localhost:11434"
+
+
+@pytest.mark.asyncio
 async def test_provider_list_keeps_direct_providers_when_supervisor_is_down(monkeypatch) -> None:
     async def _unavailable():
         raise FileNotFoundError("supervisor down")
@@ -133,6 +191,42 @@ async def test_provider_list_keeps_direct_providers_when_supervisor_is_down(monk
     assert response.status == 200
     assert '"name": "ollama"' in body
     assert '"brokered_available": false' in body
+
+
+@pytest.mark.asyncio
+async def test_provider_list_includes_cached_brokered_base_url(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "server._provider_routes.load_settings",
+        lambda: {"brokered_provider_urls": {"openai_compat": "https://my-proxy.example.com/v1"}},
+    )
+
+    async def _connections():
+        return [{"slug": "llm_openai_compat", "state": "running"}]
+
+    monkeypatch.setattr("server._provider_routes._brokered_provider_connections", _connections)
+
+    response = await handle_list_providers(MagicMock())
+    body = response.body.decode()
+    assert response.status == 200
+    assert '"base_url": "https://my-proxy.example.com/v1"' in body
+
+
+@pytest.mark.asyncio
+async def test_direct_provider_update_rejects_failed_probe_without_persisting(monkeypatch) -> None:
+    data: dict = {"direct_providers": {"ollama": {"base_url": "http://localhost:11434"}}}
+    monkeypatch.setattr("server._provider_routes.load_settings", lambda: dict(data))
+    monkeypatch.setattr("server._provider_routes.save_settings", lambda patch: data.update(patch))
+    monkeypatch.setattr(
+        "server._provider_routes.probe_direct_provider",
+        AsyncMock(side_effect=RuntimeError("connection refused")),
+    )
+    request = MagicMock()
+    request.match_info = {"name": "ollama"}
+    request.json = AsyncMock(return_value={"base_url": "http://localhost:9999"})
+
+    response = await handle_update_provider(request)
+    assert response.status == 503
+    assert data["direct_providers"]["ollama"]["base_url"] == "http://localhost:11434"
 
 
 @pytest.mark.asyncio
@@ -205,3 +299,64 @@ async def test_brokered_provider_update_rejects_blocked_host_base_url(monkeypatc
     response = await handle_update_provider(request)
     assert response.status == 400
     assert all(verb != "reconnect" for verb, _args in calls)
+
+
+@pytest.mark.asyncio
+async def test_brokered_provider_update_omitted_base_url_keeps_cached_value(monkeypatch) -> None:
+    data: dict = {"brokered_provider_urls": {"openai_compat": "https://old-proxy.example.com/v1"}}
+    captured_add_args: dict = {}
+
+    async def _supervisor(verb, args):
+        if verb == "list":
+            return {"connections": [{"id": "llm_openai_compat-id", "slug": "llm_openai_compat"}]}
+        captured_add_args.update(args)
+        return {}
+
+    class _Provider:
+        async def list_models(self):
+            return []
+
+    monkeypatch.setattr("server._provider_routes._supervisor_call", _supervisor)
+    monkeypatch.setattr("server._provider_routes.load_settings", lambda: dict(data))
+    monkeypatch.setattr("server._provider_routes.save_settings", lambda patch: data.update(patch))
+    monkeypatch.setattr("server._provider_routes.get_provider", lambda _name: _Provider())
+    monkeypatch.setattr("server._provider_routes.reset_provider", lambda _name: None)
+    request = MagicMock()
+    request.match_info = {"name": "openai_compat"}
+    request.json = AsyncMock(return_value={"api_key": "sk-new-key"})
+
+    response = await handle_update_provider(request)
+    assert response.status == 200
+    assert captured_add_args["auth_blob"]["base_url"] == "https://old-proxy.example.com/v1"
+    assert data["brokered_provider_urls"]["openai_compat"] == "https://old-proxy.example.com/v1"
+
+
+@pytest.mark.asyncio
+async def test_brokered_provider_update_explicit_empty_base_url_clears_cache(monkeypatch) -> None:
+    """An empty string is a deliberate clear, not "field omitted"."""
+    data: dict = {"brokered_provider_urls": {"openai_compat": "https://old-proxy.example.com/v1"}}
+    captured_add_args: dict = {}
+
+    async def _supervisor(verb, args):
+        if verb == "list":
+            return {"connections": [{"id": "llm_openai_compat-id", "slug": "llm_openai_compat"}]}
+        captured_add_args.update(args)
+        return {}
+
+    class _Provider:
+        async def list_models(self):
+            return []
+
+    monkeypatch.setattr("server._provider_routes._supervisor_call", _supervisor)
+    monkeypatch.setattr("server._provider_routes.load_settings", lambda: dict(data))
+    monkeypatch.setattr("server._provider_routes.save_settings", lambda patch: data.update(patch))
+    monkeypatch.setattr("server._provider_routes.get_provider", lambda _name: _Provider())
+    monkeypatch.setattr("server._provider_routes.reset_provider", lambda _name: None)
+    request = MagicMock()
+    request.match_info = {"name": "openai_compat"}
+    request.json = AsyncMock(return_value={"api_key": "sk-new-key", "base_url": ""})
+
+    response = await handle_update_provider(request)
+    assert response.status == 200
+    assert "base_url" not in captured_add_args["auth_blob"]
+    assert data.get("brokered_provider_urls", {}) == {}

@@ -8,7 +8,7 @@ from typing import Any, cast
 
 from config import load_config
 from settings import load_settings
-from agent_core.providers import LLMConfig, Provider
+from agent_core.providers import LLMConfig, ModelInfo, Provider
 from ._vision import vision_generate
 
 logger = logging.getLogger(__name__)
@@ -81,6 +81,18 @@ def _create_provider(provider_name: str) -> Provider:
     raise ValueError(msg)
 
 
+async def probe_direct_provider(provider_name: str, base_url: str) -> list[ModelInfo]:
+    """Test connectivity to a candidate direct-provider base URL.
+
+    Builds a throwaway instance instead of going through the cache, so a
+    failed probe leaves no configured provider behind — callers can probe
+    before persisting a new direct-provider entry.
+    """
+    cls = _provider_class(provider_name)
+    instance = cls.from_config(LLMConfig(provider=provider_name, base_url=base_url))
+    return await instance.list_models()
+
+
 def get_provider(provider_name: str) -> Provider:
     """Return a cached provider instance for the given provider name.
 
@@ -111,4 +123,4 @@ def reset_provider(provider_name: str | None = None) -> None:
         _provider_cache.pop(provider_name, None)
 
 
-__all__ = ["get_provider", "reset_provider", "vision_generate"]
+__all__ = ["get_provider", "probe_direct_provider", "reset_provider", "vision_generate"]

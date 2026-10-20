@@ -1,10 +1,10 @@
 """Tests for the provider registry and get_provider factory."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from providers import _proxy_socket_path, get_provider, reset_provider
+from providers import _proxy_socket_path, get_provider, probe_direct_provider, reset_provider
 
 
 @pytest.fixture(autouse=True)
@@ -115,6 +115,35 @@ class TestGetProvider:
              patch("providers.load_config", return_value=_fake_config()):
             with pytest.raises(ValueError, match="not configured"):
                 get_provider("anthropic")
+
+
+@pytest.mark.unit
+class TestProbeDirectProvider:
+    """probe_direct_provider builds a throwaway instance, bypassing the cache."""
+
+    async def test_returns_models_on_success(self):
+        fake_instance = AsyncMock()
+        fake_instance.list_models.return_value = ["model-a"]
+        fake_cls = MagicMock()
+        fake_cls.from_config.return_value = fake_instance
+
+        with patch("providers._provider_class", return_value=fake_cls):
+            result = await probe_direct_provider("openai_compat", "http://localhost:1234/v1")
+
+        assert result == ["model-a"]
+        fake_instance.list_models.assert_awaited_once()
+
+    async def test_propagates_a_failed_probe(self):
+        fake_instance = AsyncMock()
+        fake_instance.list_models.side_effect = RuntimeError("connection refused")
+        fake_cls = MagicMock()
+        fake_cls.from_config.return_value = fake_instance
+
+        with (
+            patch("providers._provider_class", return_value=fake_cls),
+            pytest.raises(RuntimeError, match="connection refused"),
+        ):
+            await probe_direct_provider("openai_compat", "http://localhost:9999/v1")
 
 
 @pytest.mark.unit
