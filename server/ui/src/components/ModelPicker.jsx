@@ -12,10 +12,22 @@ const _inFlight = new Map();
 // also updates another open picker showing the same provider.
 const _cacheListeners = new Set();
 
-async function _fetchModels(provider) {
-    if (_modelsCache.has(provider)) return _modelsCache.get(provider);
+async function _fetchModels(provider, refresh = false) {
+    if (!refresh && _modelsCache.has(provider)) return _modelsCache.get(provider);
     if (_inFlight.has(provider)) return _inFlight.get(provider);
-    const p = fetch(`/api/models?provider=${encodeURIComponent(provider)}`)
+    // Explicit refresh must expire the provider's server-side cache before
+    // loading models. Keep both requests in the shared in-flight promise.
+    const reset = refresh
+        ? fetch(`/api/models/refresh?provider=${encodeURIComponent(provider)}`, { method: 'POST' })
+            .then(async (response) => {
+                if (!response.ok) {
+                    const data = await response.json().catch(() => ({}));
+                    throw new Error(data?.message || data?.error || 'Failed to refresh models');
+                }
+            })
+        : Promise.resolve();
+    const p = reset
+        .then(() => fetch(`/api/models?provider=${encodeURIComponent(provider)}`))
         .then((r) => r.json().then((data) => ({ ok: r.ok, status: r.status, data })))
         .then(({ ok, data }) => {
             if (!ok) throw new Error(data?.message || data?.error || 'Failed to load models');
@@ -236,6 +248,8 @@ export default function ModelPicker({
 
     const handleRefresh = useCallback(() => {
         if (!activeTab || loading) return;
+        // Subscribers observe this shared request and display any failure.
+        _fetchModels(activeTab, true).catch(() => {});
         invalidateModelCache(activeTab);
     }, [activeTab, loading]);
 
