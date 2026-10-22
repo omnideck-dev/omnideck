@@ -7,10 +7,12 @@ where the agent now is.
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from playwright.async_api import Error as PlaywrightError
 
 from browser.core.browser import Browser
 from tests.unit.tools.browser.support.playwright_stubs import EventEmitterStub
@@ -34,6 +36,7 @@ class FakePage(EventEmitterStub):
 
     async def close(self) -> None:
         self._closed = True
+        self.emit("close", self)
 
     async def set_viewport_size(self, size: dict[str, int]) -> None:
         return None
@@ -318,6 +321,83 @@ class TestCoordinateActionNewTab:
 
         assert not new_page._listeners.get("response", [])
 
+    async def test_closed_blank_popup_returns_source_tab(self) -> None:
+        old_page = FakePage()
+        ctx = FakeContext([old_page])
+        browser = _make_browser(ctx)
+
+        async def click():
+            popup = FakePage(url="about:blank")
+            ctx.open_tab(popup)
+            await popup.close()
+
+        result = await browser.coordinate_action(
+            click, source_tab=browser.get_tab(1), wait_for_navigation=False,
+        )
+
+        assert result.tab is browser.get_tab(1)
+        assert result.download is None
+
+    @pytest.mark.parametrize("source_response", [False, True])
+    @pytest.mark.parametrize("close_popup", [False, True])
+    async def test_popup_download_is_reported_from_source(
+        self, tmp_path: Path, source_response: bool, close_popup: bool,
+    ) -> None:
+        old_page = FakePage()
+        ctx = FakeContext([old_page])
+        browser = _make_browser(ctx, downloads_dir=str(tmp_path))
+        opaque_path = tmp_path / "opaque-report"
+        opaque_path.write_bytes(b"report")
+        download = AsyncMock()
+        download.path.return_value = str(opaque_path)
+        download.suggested_filename = "report.csv"
+
+        async def click():
+            popup = FakePage(url="about:blank")
+            ctx.open_tab(popup)
+            popup.emit("download", download)
+            if close_popup:
+                await popup.close()
+            if source_response:
+                old_page.emit("response", _fake_response(url=old_page.url, frame=old_page.main_frame))
+
+        source_tab = browser.get_tab(1)
+        result = await browser.coordinate_action(
+            click, source_tab=source_tab, wait_for_navigation=False,
+        )
+
+        assert result.tab is source_tab
+        assert result.download is not None
+        assert result.download.filename == "report.csv"
+        assert Path(result.download.path).read_bytes() == b"report"
+
+    @pytest.mark.parametrize("close_popup", [False, True])
+    async def test_source_download_with_popup_is_reported(self, tmp_path: Path, close_popup: bool) -> None:
+        old_page = FakePage()
+        ctx = FakeContext([old_page])
+        browser = _make_browser(ctx, downloads_dir=str(tmp_path))
+        opaque_path = tmp_path / "opaque-report"
+        opaque_path.write_bytes(b"report")
+        download = AsyncMock()
+        download.path.return_value = str(opaque_path)
+        download.suggested_filename = "report.csv"
+
+        async def click():
+            popup = FakePage(url="https://example.com/report")
+            ctx.open_tab(popup)
+            popup.emit("response", _fake_response(url=popup.url, frame=popup.main_frame))
+            old_page.emit("download", download)
+            if close_popup:
+                await popup.close()
+
+        result = await browser.coordinate_action(
+            click, source_tab=browser.get_tab(1), wait_for_navigation=False,
+        )
+
+        assert result.tab is browser.get_tab(1)
+        assert result.download is not None
+        assert result.download.filename == "report.csv"
+
 
 @pytest.mark.unit
 @pytest.mark.asyncio
@@ -405,3 +485,96 @@ class TestDownloadFilename:
         assert result.download is not None
         info = result.download
         assert info.filename == "some-uuid-name"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("navigate", [False, True], ids=["click", "goto"])
+async def test_parallel_tab_downloads_are_reported_to_their_own_actions(tmp_path: Path, navigate: bool) -> None:
+    pages = [FakePage(url=f"https://example.com/report-{i}") for i in range(2)]
+    browser = _make_browser(FakeContext(pages), downloads_dir=str(tmp_path))
+    both_started = asyncio.Event()
+    started = 0
+
+    async def download_report(index: int):
+        path = tmp_path / f"opaque-{index}"
+        path.write_bytes(f"report {index}".encode())
+
+        async def completed_path():
+            nonlocal started
+            started += 1
+            if started == 2:
+                both_started.set()
+            await both_started.wait()
+            return str(path)
+
+        download = AsyncMock()
+        download.path.side_effect = completed_path
+        download.suggested_filename = f"report-{index}.csv"
+
+        async def click_download():
+            pages[index].emit("download", download)
+
+        if navigate:
+            async def goto_download(*args, **kwargs):
+                await click_download()
+                raise PlaywrightError("net::ERR_ABORTED")
+
+            pages[index].goto = goto_download
+            pages[index].wait_for_event = AsyncMock()
+            return await browser.navigate(
+                f"https://example.com/report-{index}.csv", tab=browser.get_tab(index + 1),
+            )
+
+        return await browser.coordinate_action(
+            click_download,
+            source_tab=browser.get_tab(index + 1),
+            wait_for_navigation=False,
+        )
+
+    results = await asyncio.wait_for(
+        asyncio.gather(download_report(0), download_report(1)), timeout=2,
+    )
+
+    for index, result in enumerate(results):
+        assert result.download is not None, f"tab {index + 1} lost its download"
+        assert result.download.filename == f"report-{index}.csv"
+        assert Path(result.download.path).read_bytes() == f"report {index}".encode()
+
+
+@pytest.mark.asyncio
+async def test_other_tab_action_does_not_wait_for_unrelated_download(tmp_path: Path) -> None:
+    pages = [FakePage(), FakePage()]
+    browser = _make_browser(FakeContext(pages), downloads_dir=str(tmp_path))
+    started = asyncio.Event()
+    complete = asyncio.Event()
+    path = tmp_path / "opaque-report"
+    path.write_bytes(b"report")
+
+    async def completed_path():
+        started.set()
+        await complete.wait()
+        return str(path)
+
+    download = AsyncMock()
+    download.path.side_effect = completed_path
+    download.suggested_filename = "report.csv"
+
+    async def click_download():
+        pages[0].emit("download", download)
+
+    downloading = asyncio.create_task(browser.coordinate_action(
+        click_download, source_tab=browser.get_tab(1), wait_for_navigation=False,
+    ))
+    try:
+        await asyncio.wait_for(started.wait(), timeout=1)
+        other_result = await asyncio.wait_for(browser.coordinate_action(
+            AsyncMock(), source_tab=browser.get_tab(2), wait_for_navigation=False,
+        ), timeout=1)
+        assert other_result.download is None
+        assert not downloading.done()
+    finally:
+        complete.set()
+        download_result = await downloading
+
+    assert download_result.download is not None
+    assert download_result.download.filename == "report.csv"

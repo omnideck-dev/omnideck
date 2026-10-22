@@ -7,7 +7,7 @@ import logging
 import secrets
 import time
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -33,6 +33,20 @@ if TYPE_CHECKING:  # Imported only for type checking to avoid runtime dependency
     from browser.core.host import BrowserHost
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(slots=True)
+class _PageDownloads:
+    """Keep each tab's download results and completion waits independent."""
+
+    pending: list[DownloadInfo] = field(default_factory=list)
+    tasks: set[asyncio.Task[None]] = field(default_factory=set)
+    event: asyncio.Event = field(default_factory=asyncio.Event)
+
+    def drain(self) -> list[DownloadInfo]:
+        downloads = list(self.pending)
+        self.pending.clear()
+        return downloads
 
 
 @dataclass(slots=True)
@@ -83,11 +97,8 @@ class Browser:
         self._tabs_by_id: dict[int, Tab] = {}
         self._tabs_by_page: dict[Page, Tab] = {}
         self._next_tab_id: int = 0
-        self._pending_downloads: list[DownloadInfo] = []
         self._downloads_dir = downloads_dir
-        self._download_listener_pages: set[int] = set()  # page id() tracking
-        self._download_tasks: set[asyncio.Task[None]] = set()
-        self._download_event: asyncio.Event = asyncio.Event()
+        self._downloads_by_page: dict[Page, _PageDownloads] = {}
 
         # Track every page the context creates (opened by us, by a link, or
         # target=_blank) the moment it exists: stable tab id + download + close.
@@ -97,15 +108,15 @@ class Browser:
 
     def _attach_download_listener(self, page: Page) -> None:
         """Attach a download event listener to a page if not already attached."""
-        page_id = id(page)
-        if page_id in self._download_listener_pages:
+        if page in self._downloads_by_page:
             return
-        self._download_listener_pages.add(page_id)
+        downloads = _PageDownloads()
+        self._downloads_by_page[page] = downloads
 
         def _on_download(download: Any) -> None:
-            task = asyncio.ensure_future(self._handle_download(download))
-            self._download_tasks.add(task)
-            task.add_done_callback(self._download_tasks.discard)
+            task = asyncio.ensure_future(self._handle_download(download, downloads))
+            downloads.tasks.add(task)
+            task.add_done_callback(downloads.tasks.discard)
 
         page.on("download", _on_download)
 
@@ -135,12 +146,13 @@ class Browser:
         def _on_close(_p: Any) -> None:
             self._tabs_by_page.pop(page, None)
             self._tabs_by_id.pop(tab.id, None)
+            self._downloads_by_page.pop(page, None)
             tab._invalidate_document()
 
         page.on("framenavigated", _on_frame_navigated)
         page.on("close", _on_close)
 
-    async def _handle_download(self, download: Any) -> None:
+    async def _handle_download(self, download: Any, downloads: _PageDownloads) -> None:
         """Process a Playwright download event and record the result."""
         try:
             path = await download.path()
@@ -167,8 +179,8 @@ class Browser:
             from browser.core.downloads import build_download_info_from_path
 
             info = build_download_info_from_path(path)
-            self._pending_downloads.append(info)
-            self._download_event.set()
+            downloads.pending.append(info)
+            downloads.event.set()
             logger.info(
                 "Download captured: %s (%s, %d bytes)",
                 info.filename,
@@ -177,12 +189,6 @@ class Browser:
             )
         except Exception:
             logger.exception("Failed to process download event")
-
-    def _drain_downloads(self) -> list[DownloadInfo]:
-        """Return and clear any pending downloads captured since the last drain."""
-        downloads = list(self._pending_downloads)
-        self._pending_downloads.clear()
-        return downloads
 
     @classmethod
     async def start(
@@ -381,7 +387,8 @@ class Browser:
         # Any cached dominant iframe belongs to the old DOM; drop it
         # so the post-nav settle re-detects against the new one.
         tab._invalidate_document()
-        self._pending_downloads.clear()
+        self._downloads_by_page[page].pending.clear()
+        self._downloads_by_page[page].event.clear()
         initial_url = getattr(page, "url", "")
         try:
             try:
@@ -571,11 +578,12 @@ class Browser:
         """
         # 1. Download detection
         download_info: DownloadInfo | None = None
+        downloads = self._downloads_by_page[page]
 
-        if self._download_tasks:
-            await asyncio.gather(*self._download_tasks, return_exceptions=True)
+        if downloads.tasks:
+            await asyncio.gather(*downloads.tasks, return_exceptions=True)
 
-        pending = self._drain_downloads()
+        pending = downloads.drain()
         if pending:
             download_info = pending[0]
 
@@ -599,9 +607,9 @@ class Browser:
         # stabilization happens at the render-return boundary, after the selected
         # document has been resolved and immediately before its DOM walk.
         if download_info is None:
-            if self._download_tasks:
-                await asyncio.gather(*self._download_tasks, return_exceptions=True)
-            late_downloads = self._drain_downloads()
+            if downloads.tasks:
+                await asyncio.gather(*downloads.tasks, return_exceptions=True)
+            late_downloads = downloads.drain()
             if late_downloads:
                 download_info = late_downloads[0]
 
@@ -611,12 +619,12 @@ class Browser:
         # on normal interactions.
         if download_info is None and saw_download_response:
             try:
-                await asyncio.wait_for(self._download_event.wait(), timeout=2.0)
+                await asyncio.wait_for(downloads.event.wait(), timeout=2.0)
             except asyncio.TimeoutError:
                 logger.debug("Download grace period expired despite attachment header")
-            if self._download_tasks:
-                await asyncio.gather(*self._download_tasks, return_exceptions=True)
-            grace_downloads = self._drain_downloads()
+            if downloads.tasks:
+                await asyncio.gather(*downloads.tasks, return_exceptions=True)
+            grace_downloads = downloads.drain()
             if grace_downloads:
                 download_info = grace_downloads[0]
                 logger.info(
@@ -665,14 +673,14 @@ class Browser:
             document_transition=document_transition,
         )
 
-    async def _probe_file_url(self, url: str) -> None:
+    async def _probe_file_url(self, url: str, *, page: Page) -> None:
         """Record *url* as a pending download when it turns out to be a file.
 
         Chrome's PDF viewer extension (non-headless) can silently handle file
         URLs without firing Playwright response or download events.  This
         method fetches the URL directly via the API request context, saves
         the file if it's a non-HTML content-type, and appends a
-        ``DownloadInfo`` to ``_pending_downloads``.
+        ``DownloadInfo`` to that page's pending downloads.
 
         The pending-download list is the whole signal; there is nothing to
         return.  Whether or not the URL was a file, the tab holding it is where
@@ -694,7 +702,7 @@ class Browser:
                     api_resp,
                     downloads_dir=self._downloads_dir or ".",
                 )
-                self._pending_downloads.append(info)
+                self._downloads_by_page[page].pending.append(info)
                 logger.info(
                     "Probed file URL in new tab: %s (%s, %d bytes)",
                     info.filename,
@@ -726,8 +734,9 @@ class Browser:
         source_page = source_tab._page_for_browser()
         initial_url = source_tab.url
 
-        self._pending_downloads.clear()
-        self._download_event.clear()
+        source_downloads = self._downloads_by_page[source_page]
+        source_downloads.pending.clear()
+        source_downloads.event.clear()
         captured_responses: list[Response] = []
 
         # Track tabs the interaction opens (target=_blank, window.open) and
@@ -735,6 +744,7 @@ class Browser:
         # are detected properly.
         new_pages: list[Page] = []
         responses_by_new_page: dict[Page, list[Response]] = {}
+        downloads_by_new_page: dict[Page, _PageDownloads] = {}
         _np_listeners: list[tuple[Page, Callable[..., Any]]] = []
 
         _saw_download_response = False
@@ -752,6 +762,7 @@ class Browser:
 
         def _on_new_page(new_page: Page) -> None:
             new_pages.append(new_page)
+            downloads_by_new_page[new_page] = self._downloads_by_page[new_page]
             responses = responses_by_new_page.setdefault(new_page, [])
 
             def _on_np_response(resp: Response) -> None:
@@ -820,8 +831,10 @@ class Browser:
         # (no document response of its own), that tab is where the agent now is,
         # so work out what landed in it: an ordinary page, which is simply where
         # it went, or a file, which is a download.
+        new_pages = [page for page in new_pages if not page.is_closed()]
         if new_pages and response is None:
             new_page = new_pages[-1]
+            new_downloads = self._downloads_by_page[new_page]
             # Only this tab's own responses.  The listener appends into this
             # same list, so it stays current across the wait below.
             new_page_responses = responses_by_new_page.get(new_page, [])
@@ -835,7 +848,7 @@ class Browser:
                     pass
             # The tab announced what it is — a document response, or a download
             # already under way.  Either way the agent is in it.
-            if new_page_responses or self._pending_downloads or self._download_tasks:
+            if new_page_responses or new_downloads.pending or new_downloads.tasks:
                 settled_page = new_page
                 response = new_page_responses[-1] if new_page_responses else None
 
@@ -848,10 +861,10 @@ class Browser:
             # Whichever it was, the agent is in the new tab.  Answering with the
             # tab it clicked *from* is what used to make the click look like it
             # did nothing.
-            if settled_page is source_page and not self._pending_downloads:
+            if settled_page is source_page and not source_downloads.pending:
                 new_url = getattr(new_page, "url", "")
                 if new_url and not new_url.startswith(("about:", "chrome:")):
-                    await self._probe_file_url(new_url)
+                    await self._probe_file_url(new_url, page=new_page)
                     settled_page = new_page
 
         # Clean up response listeners on new pages
@@ -860,6 +873,20 @@ class Browser:
                 np.remove_listener("response", listener)
             except Exception:  # noqa: BLE001
                 pass
+
+        # Include popup downloads when the action returns to its source page.
+        # Retain captured state for popups that close before settlement.
+        for new_page, downloads in downloads_by_new_page.items():
+            if settled_page is source_page or new_page.is_closed():
+                if downloads.tasks:
+                    await asyncio.gather(*downloads.tasks, return_exceptions=True)
+                source_downloads.pending.extend(downloads.drain())
+
+        # Chromium can attribute a popup's download to its opener. Keep that
+        # result with this action even when the click also opened a live page.
+        if settled_page is not source_page and (source_downloads.pending or source_downloads.tasks):
+            settled_page = source_page
+            response = captured_responses[-1] if captured_responses else None
 
         result = await self._finalize_action(
             settled_page,
