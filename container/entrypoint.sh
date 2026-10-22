@@ -152,7 +152,10 @@ if [ "${DEV_MODE:-false}" = "true" ]; then
 
     wait
 else
-    trap 'kill -TERM "$SUPERVISOR_PID" "$APP_PID" 2>/dev/null || true; wait' EXIT
+    # wait also includes Xvfb and optional desktop jobs started above. Stop
+    # every background job before waiting so shutdown and fail-fast recovery
+    # cannot hang on a healthy auxiliary service.
+    trap 'kill -TERM $(jobs -pr) 2>/dev/null || true; wait' EXIT
 
     echo "Starting integrations supervisor..."
     gosu broker python3.12 -m brokering.supervisor &
