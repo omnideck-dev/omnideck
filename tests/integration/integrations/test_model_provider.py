@@ -6,14 +6,17 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer
 
 from brokering import supervisor_client
-from brokering.brokers.llm_proxy.catalog import ModelProviderCatalogEntry
-from brokering.drivers import BrokerDriver
+from brokering.brokers.llm_proxy.catalog import model_provider_catalog
 from agent_core.providers._models import ChatDelta, ChatResponse
 from agent_core.providers._openai import OpenAIProvider
 
 
 async def test_model_requests_use_replaced_credentials_without_tool_grants(integration_app):
     seen = []
+
+    async def models(request):
+        assert request.headers.get("Authorization") == "Bearer old-local-key"
+        return web.json_response({"object": "list", "data": [{"id": "local"}]})
 
     async def completion(request):
         body = await request.json()
@@ -51,19 +54,10 @@ async def test_model_requests_use_replaced_credentials_without_tool_grants(integ
         )
 
     app = web.Application()
+    app.router.add_get("/v1/models", models)
     app.router.add_post("/v1/chat/completions", completion)
     async with TestServer(app) as upstream:
-        entry = ModelProviderCatalogEntry(
-            slug="llm_openai",
-            title="Local model",
-            provider_protocol="openai",
-            driver=BrokerDriver(
-                id="test.llm",
-                command=("python", "-m", "brokering.brokers.llm_proxy"),
-                env_injection={"api_key": "LLM_API_KEY"},
-            ),
-            driver_config={"LLM_PROVIDER": "openai", "LLM_BASE_URL": str(upstream.make_url("/"))},
-        )
+        entry = model_provider_catalog()["llm_openai_compat"]
         async with integration_app({entry.slug: entry}) as h:
 
             async def rpc(verb, args):
@@ -75,17 +69,29 @@ async def test_model_requests_use_replaced_credentials_without_tool_grants(integ
                     "slug": entry.slug,
                     "kind": "model_provider",
                     "label": "Local model",
-                    "auth_blob": {"api_key": "old-local-key"},
+                    "auth_blob": {
+                        "api_key": "old-local-key",
+                        "base_url": str(upstream.make_url("/v1/")),
+                    },
                 },
             )
             provider = OpenAIProvider(proxy_socket=added["socket"])
             proc = h.supervisor._registry.get(entry.slug).broker.proc
             messages = [{"role": "user", "content": "Hello"}]
             try:
+                assert [model.name for model in await provider.list_models()] == ["local"]
                 before = await provider.chat(model="local", messages=messages)
                 assert before.message.content == "Before reconnect"
                 await rpc(
-                    "reconnect", {"id": entry.slug, "kind": "model_provider", "auth_blob": {"api_key": "new-local-key"}}
+                    "reconnect",
+                    {
+                        "id": entry.slug,
+                        "kind": "model_provider",
+                        "auth_blob": {
+                            "api_key": "new-local-key",
+                            "base_url": str(upstream.make_url("/")),
+                        },
+                    },
                 )
                 assert h.supervisor._registry.get(entry.slug).broker.proc is proc
                 # Reuse the same SDK client after the live credential update.

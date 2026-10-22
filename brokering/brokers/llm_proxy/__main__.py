@@ -35,6 +35,7 @@ from brokering._control import BrokerControl, run_with_control
 from brokering._session_slot import BrokerSessionSlot
 from brokering._perms import PROCESS_UMASK, SOCKET_MODE, disable_core_dumps
 from brokering._exit_codes import CLEAN_SHUTDOWN
+from brokering.brokers.llm_proxy._url import build_upstream_url
 
 os.umask(PROCESS_UMASK)
 disable_core_dumps()
@@ -127,7 +128,9 @@ async def _run() -> int:
         credentials = session_slot.current
         # Reconstruct the full upstream URL from the base plus the request's
         # relative URL (path + query string).
-        url = credentials.base_url + str(request.rel_url)
+        url = build_upstream_url(
+            credentials.base_url, str(request.rel_url), provider=credentials.provider,
+        )
 
         # Forward all request headers except hop-by-hop and auth placeholders;
         # then inject the real credentials.
