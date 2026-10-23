@@ -62,7 +62,8 @@ def resumed(browser, browser_context_args):
         and response.url.endswith(f"/api/conversations/sessions/{conv_id}/resume"),
     ) as resume_response:
         RecentConversations(page).open_by_id(conv_id)
-    snapshot = resume_response.value.json()
+    response = resume_response.value
+    snapshot = response.json()
 
     # Wait until the first restored user message bubble is visible
     # before yielding. Scoped to message-user so we don't false-match
@@ -71,7 +72,10 @@ def resumed(browser, browser_context_args):
         page.get_by_test_id("message-user").first.get_by_text(cw1),
     ).to_be_visible(timeout=10_000)
 
-    yield {"page": page, "cw1": cw1, "cw2": cw2, "snapshot": snapshot}
+    yield {
+        "page": page, "cw1": cw1, "cw2": cw2, "snapshot": snapshot,
+        "response_headers": response.headers,
+    }
 
     page.close()
     context.close()
@@ -85,6 +89,14 @@ def test_resume_payload_omits_duplicate_transcript(resumed):
     assert len(user_events) == 2
     assert resumed["cw1"] in user_events[0]["content"]
     assert resumed["cw2"] in user_events[1]["content"]
+
+
+def test_resume_response_is_compressed_and_decoded_by_browser(resumed):
+    """A normal browser loads compressed history without losing its content."""
+    assert resumed["response_headers"]["content-encoding"] == "gzip"
+    assert resumed["response_headers"]["vary"] == "Accept-Encoding"
+    assert resumed["snapshot"]["events"]
+    expect(resumed["page"].get_by_test_id("message-user")).to_have_count(2)
 
 
 # ── Turn 1 — assistant message with content + tool_call entries ─────

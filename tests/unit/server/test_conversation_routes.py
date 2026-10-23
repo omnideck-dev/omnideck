@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from multidict import CIMultiDict
 
 import conversations._store as _store
 from agent_runtime import RunSnapshot
@@ -58,6 +59,7 @@ def _make_request(
     """Build a minimal aiohttp.web.Request-ish double."""
     req = MagicMock()
     req.match_info = {"conversation_id": conversation_id}
+    req.headers = CIMultiDict()
     req.json = AsyncMock(return_value=json_body)
     manager = active_run_manager or MagicMock()
     if active_run_manager is None:
