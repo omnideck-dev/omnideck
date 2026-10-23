@@ -1,20 +1,4 @@
-"""Derive an agent's message list from an events.jsonl-shaped event sequence.
-
-Two pure views over the same flat event dicts (the shape persisted to
-events.jsonl), no I/O:
-
-- ``build_llm_view`` — the model-facing list: collapsed at the latest
-  compaction (first user message + summary marker + kept tail), with user
-  messages augmented with the [Attached files…] block the model needs to
-  locate uploads. This is what the provider is prompted with.
-- ``build_transcript_view`` — the user-facing list: the conversation as it
-  happened — no compaction collapse, user text verbatim. This is what the
-  frontend renders (it interleaves compaction chips itself).
-
-Both filter to one agent's thread via ``events_for_agent`` and emit message
-dicts in the same shape as today's history.json. The caller passes a single
-conversation's events.
-"""
+"""Derive model-facing messages from a conversation's recorded events."""
 
 from __future__ import annotations
 
@@ -109,22 +93,8 @@ def build_llm_view(
         except StopIteration:
             return messages
 
-    messages.extend(_walk(evs[start_idx:], agent_names, augment=True))
+    messages.extend(_walk(evs[start_idx:], agent_names))
     return messages
-
-
-def build_transcript_view(
-    events: list[dict[str, Any]],
-    agent_filter: str | None = None,
-) -> list[dict[str, Any]]:
-    """The user-facing message list for one agent.
-
-    The conversation as it actually happened — no compaction collapse, and
-    the user's messages verbatim (no [Attached files…] augmentation). The
-    frontend renders this and draws compaction chips at their points.
-    """
-    evs = events_for_agent(events, agent_filter)
-    return _walk(evs, _agent_names(events), augment=False)
 
 
 def _agent_names(events: list[dict[str, Any]]) -> dict[str, str | None]:
@@ -138,15 +108,8 @@ def _agent_names(events: list[dict[str, Any]]) -> dict[str, str | None]:
 def _walk(
     evs: list[dict[str, Any]],
     agent_names: dict[str, str | None],
-    *,
-    augment: bool,
 ) -> list[dict[str, Any]]:
-    """Emit user/assistant/tool messages for a slice of events.
-
-    ``augment``: append the [Attached files…] block to user messages — an
-    LLM-facing transformation that tells the model where uploads landed.
-    The transcript view passes False to show what the user actually typed.
-    """
+    """Emit model-facing user, assistant, and tool messages."""
     out: list[dict[str, Any]] = []
     for e in evs:
         t = e["type"]
@@ -154,10 +117,10 @@ def _walk(
             continue
         if t == "user_message":
             content = e["content"]
-            if e.get("attachments") and augment:
+            if e.get("attachments"):
                 content = _augment_with_attachments(content, e["attachments"])
             out.append({"role": "user", "content": content})
-        elif t == "goal_wakeup" and augment:
+        elif t == "goal_wakeup":
             out.append({"role": "user", "content": _goal_wakeup_content(e)})
         elif t == "iteration":
             # An assistant message with neither content nor tool calls (e.g.
@@ -214,4 +177,4 @@ def _augment_with_attachments(content: str, attachments: list[dict[str, Any]]) -
     return f"{content}\n\n[Attached files written to virtual computer]\n" + "\n".join(lines)
 
 
-__all__ = ["build_llm_view", "build_transcript_view", "events_for_agent"]
+__all__ = ["build_llm_view", "events_for_agent"]

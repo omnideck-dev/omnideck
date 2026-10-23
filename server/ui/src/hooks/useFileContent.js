@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useSyncExternalStore } from 'react';
 import { hasPreviewToggle, isImageFile, isPdfFile } from '../utils/fileTypes.js';
+import { containerFileUrl } from '../utils/containerFileUrl.js';
 import * as fileWatch from '../utils/fileWatchStore.js';
 import copyToClipboard from '../utils/copyToClipboard.js';
 import { bytesDownload, triggerDownload } from '../utils/downloads.js';
@@ -21,6 +22,7 @@ function _bust(url, nonce) {
 
 export default function useFileContent(item) {
     const { filename, content_type, content, path } = item || {};
+    const fileUrl = path ? containerFileUrl(path) : null;
 
     const [fetchedText, setFetchedText] = useState(null);
     const [draft, setDraft] = useState(null);
@@ -84,7 +86,7 @@ export default function useFileContent(item) {
         setSaving(true);
         setSaveError(null);
         try {
-            const res = await fetch(path, {
+            const res = await fetch(fileUrl, {
                 method: 'PUT',
                 headers: { 'Content-Type': content_type || 'text/plain; charset=utf-8' },
                 body: draft,
@@ -102,13 +104,13 @@ export default function useFileContent(item) {
         } finally {
             setSaving(false);
         }
-    }, [canSave, draft, path, content_type, watchKey]);
+    }, [canSave, draft, fileUrl, content_type, watchKey]);
 
     // Fetch remote text content (not for images or PDFs). Re-runs on refresh.
     useEffect(() => {
         if (isImage || isPdf || content || !path) return;
         let cancelled = false;
-        fetch(_bust(path, version)).then(r => {
+        fetch(_bust(fileUrl, version)).then(r => {
             if (!r.ok) throw new Error(`Failed to load ${path}: ${r.status}`);
             return r.text();
         }).then(t => {
@@ -117,7 +119,7 @@ export default function useFileContent(item) {
             if (!cancelled) setFetchedText(`Error loading file: ${err.message}`);
         });
         return () => { cancelled = true; };
-    }, [content, path, isImage, isPdf, version]);
+    }, [content, path, fileUrl, isImage, isPdf, version]);
 
     // Watch the disk-backed file for changes, independent of how it's rendered.
     // The stale flag lives in the shared store so every preview of this file
@@ -135,7 +137,7 @@ export default function useFileContent(item) {
             // no-store: the backend sends no Cache-Control, so without this the
             // browser serves a cached validator and the change goes unseen until
             // its heuristic freshness window expires.
-            const r = await fetch(watchKey, { method: 'HEAD', cache: 'no-store' });
+            const r = await fetch(containerFileUrl(watchKey), { method: 'HEAD', cache: 'no-store' });
             return r.headers.get('ETag') || r.headers.get('Last-Modified');
         };
 
@@ -163,18 +165,18 @@ export default function useFileContent(item) {
 
     // Blob URL for HTML iframe preview
     const iframeSrc = useMemo(() => {
-        if (isHtml && path) return _bust(path, version);
+        if (isHtml && path) return _bust(fileUrl, version);
         if (isHtml && text) {
             const blob = new Blob([text], { type: 'text/html' });
             return URL.createObjectURL(blob);
         }
         return null;
-    }, [isHtml, path, text, version]);
+    }, [isHtml, path, fileUrl, text, version]);
 
     // Blob/path URL for PDF preview
     const pdfSrc = useMemo(() => {
         if (!isPdf) return null;
-        if (path) return _bust(path, version);
+        if (path) return _bust(fileUrl, version);
         if (content) {
             const byteChars = atob(content);
             const bytes = new Uint8Array(byteChars.length);
@@ -183,13 +185,13 @@ export default function useFileContent(item) {
             return URL.createObjectURL(blob);
         }
         return null;
-    }, [isPdf, path, content, version]);
+    }, [isPdf, path, fileUrl, content, version]);
 
     // Path URL for image preview (inline base64 content takes precedence).
     const imageSrc = useMemo(() => {
         if (!isImage || content || !path) return null;
-        return _bust(path, version);
-    }, [isImage, content, path, version]);
+        return _bust(fileUrl, version);
+    }, [isImage, content, path, fileUrl, version]);
 
     useEffect(() => {
         return () => {
@@ -212,18 +214,18 @@ export default function useFileContent(item) {
         // regular browser keeps its existing text-blob behavior.
         const nativeHost = typeof window !== 'undefined' && !!window.omnideckHost;
         if (path && nativeHost) {
-            triggerDownload(path, filename || 'file');
+            triggerDownload(fileUrl, filename || 'file');
         } else if (text) {
             bytesDownload(text, content_type || 'text/plain', filename || 'file');
         } else if (path) {
-            triggerDownload(path, filename || 'file');
+            triggerDownload(fileUrl, filename || 'file');
         } else if (content) {
             const byteChars = atob(content);
             const bytes = new Uint8Array(byteChars.length);
             for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
             bytesDownload(bytes, content_type, filename || 'file');
         }
-    }, [text, content, content_type, path, filename]);
+    }, [text, content, content_type, path, fileUrl, filename]);
 
     return {
         text,

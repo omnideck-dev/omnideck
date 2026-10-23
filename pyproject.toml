@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "A modern, extensible AI assistant platform with a responsive chat UI and Python backend."
 requires-python = ">=3.12"
 dependencies = [
-    "aiohttp",
+    "aiohttp>=3.14.4",
     "pydantic",
     "pyyaml",
     "playwright==1.59.0",
@@ -17,7 +17,7 @@ dependencies = [
     "anthropic>=0.52.0",
     "openai>=1.40.0,<2",
     "croniter>=1.3",
-    "cryptography>=46.0.7",
+    "cryptography>=50.0.0",
     "caldav>=1.3",
     "trafilatura>=2.0",
     "google-auth>=2.30",
