@@ -102,7 +102,12 @@ def test_overflow_controls_scroll_and_reveal_the_selected_tab(page: Page):
     right_scroll.click()
     page.wait_for_timeout(300)
     desktop.tab("destination:conversation").evaluate("element => element.click()")
-    page.wait_for_timeout(300)
+    # The smooth scroll duration depends on distance. Wait for the first tab
+    # to reach the start before checking its bounds.
+    page.wait_for_function(
+        "element => element.scrollLeft === 0",
+        arg=tab_list.element_handle(),
+    )
 
     list_box = _rect(tab_list)
     tab_box = _rect(desktop.tab("destination:conversation"))

@@ -42,9 +42,11 @@ class BrowserControl:
     @property
     def fullscreen_btn(self) -> Locator:
         host = self.root.locator("xpath=ancestor::*[@data-view-id][1]")
-        view_id = host.get_attribute("data-view-id")
-        self.page.get_by_test_id(f"view-tab-actions-{view_id}").click()
-        return self.page.locator("[data-testid^='maximize-view-']")
+        host_testid = host.get_attribute("data-testid")
+        assert host_testid
+        view_key = host_testid.removeprefix("desktop-view-")
+        self.page.get_by_test_id(f"view-tab-actions-{view_key}").click()
+        return self.page.get_by_test_id(f"maximize-view-{view_key}")
 
     @property
     def tab_rail(self) -> Locator:
