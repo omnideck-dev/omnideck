@@ -2,7 +2,7 @@
 
 Verifies that conversations persist across "New conversation" and reload
 from the recent-conversations list with the full message history
-reconstructed from history.json — user messages, assistant content, and
+reconstructed from saved events — user messages, assistant content, and
 tool-call markers, in chronological order.
 """
 
@@ -57,7 +57,12 @@ def resumed(browser, browser_context_args):
     expect(page.get_by_test_id("activity-toggle")).to_have_count(0)
 
     # Resume the prior conversation by id, regardless of its row position.
-    RecentConversations(page).open_by_id(conv_id)
+    with page.expect_response(
+        lambda response: response.request.method == "POST"
+        and response.url.endswith(f"/api/conversations/sessions/{conv_id}/resume"),
+    ) as resume_response:
+        RecentConversations(page).open_by_id(conv_id)
+    snapshot = resume_response.value.json()
 
     # Wait until the first restored user message bubble is visible
     # before yielding. Scoped to message-user so we don't false-match
@@ -66,10 +71,20 @@ def resumed(browser, browser_context_args):
         page.get_by_test_id("message-user").first.get_by_text(cw1),
     ).to_be_visible(timeout=10_000)
 
-    yield {"page": page, "cw1": cw1, "cw2": cw2}
+    yield {"page": page, "cw1": cw1, "cw2": cw2, "snapshot": snapshot}
 
     page.close()
     context.close()
+
+
+def test_resume_payload_omits_duplicate_transcript(resumed):
+    """The restored chat receives its history once, as canonical events."""
+    snapshot = resumed["snapshot"]
+    assert "messages" not in snapshot
+    user_events = [event for event in snapshot["events"] if event["type"] == "user_message"]
+    assert len(user_events) == 2
+    assert resumed["cw1"] in user_events[0]["content"]
+    assert resumed["cw2"] in user_events[1]["content"]
 
 
 # ── Turn 1 — assistant message with content + tool_call entries ─────

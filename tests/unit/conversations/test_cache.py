@@ -222,7 +222,7 @@ async def test_resume_returns_empty_snapshot_without_persisted_events() -> None:
     """Loading before the first event returns the normal snapshot shape."""
     result = await cc.load_conversation_resume_state("just-reserved")
 
-    assert result.messages == []
+    assert "messages" not in result.model_dump()
     assert result.events == []
     assert "just-reserved" in cc._conversations
 
