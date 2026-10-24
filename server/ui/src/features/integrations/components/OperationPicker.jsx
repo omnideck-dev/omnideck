@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 
 import Button from '../../../components/primitives/Button.jsx';
 import SearchInput from '../../../components/primitives/SearchInput.jsx';
+import { operationDescription, operationTitle } from './operationDisplay.js';
 import styles from './OperationPicker.module.css';
 
 function operationGroups(operations, groups) {
@@ -65,8 +66,8 @@ export default function OperationPicker({
     const visibleGroups = useMemo(() => grouped.map(group => ({
         ...group,
         operations: group.operations.filter(operation => !normalizedQuery
-            || String(operation.title || operation.id).toLowerCase().includes(normalizedQuery)
-            || String(operation.description || '').toLowerCase().includes(normalizedQuery)),
+            || operationTitle(operation).toLowerCase().includes(normalizedQuery)
+            || operationDescription(operation).toLowerCase().includes(normalizedQuery)),
     })).filter(group => group.operations.length > 0), [grouped, normalizedQuery]);
 
     const emit = (next) => onChange?.([...next].sort());
@@ -182,9 +183,9 @@ export default function OperationPicker({
                                         data-testid={`integration-tool-${operation.id}`}
                                     />
                                     <span>
-                                        <span className={styles.operationTitle}>{operation.title || operation.id}</span>
-                                        {operation.description && (
-                                            <span className={styles.operationDescription}>{operation.description}</span>
+                                        <span className={styles.operationTitle}>{operationTitle(operation)}</span>
+                                        {operationDescription(operation) && (
+                                            <span className={styles.operationDescription}>{operationDescription(operation)}</span>
                                         )}
                                     </span>
                                 </label>

@@ -61,10 +61,14 @@ describe('IntegrationEditor', () => {
 
     it('shows a read-only grouped overview without tabs, inputs or operation IDs', () => {
         render(<IntegrationEditor {...props()} />);
+        expect(screen.queryByText('Connected')).not.toBeInTheDocument();
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
         expect(screen.getByRole('heading', { name: 'What omnideck can do' })).toBeInTheDocument();
         const group = screen.getByRole('region', { name: 'Email' });
         expect(group).toHaveTextContent('Read email message');
         expect(group).not.toHaveTextContent('Send email');
+        expect(screen.getAllByText(/1 tool selected/)).toHaveLength(1);
+        expect(screen.queryByRole('heading', { name: 'Email' })).not.toBeInTheDocument();
         expect(screen.queryAllByRole('tab')).toHaveLength(0);
         expect(screen.queryAllByRole('textbox')).toHaveLength(0);
         expect(screen.queryAllByRole('checkbox')).toHaveLength(0);
@@ -75,6 +79,17 @@ describe('IntegrationEditor', () => {
         render(<IntegrationEditor {...props({ record: { ...RECORD, operation_grants: [] }, catalogEntry: null })} />);
         expect(screen.getByRole('region', { name: 'Tools' })).toHaveTextContent('No tools selected');
         expect(screen.getByText('0 tools selected for this integration.')).toBeInTheDocument();
+    });
+
+    it('labels multiple tool groups without repeating their counts', () => {
+        render(<IntegrationEditor {...props({ catalogEntry: { ...ENTRY, operation_groups: [
+            { id: 'read', title: 'Reading', operation_ids: ['email.messages.get'] },
+            { id: 'write', title: 'Writing', operation_ids: ['email.messages.send'] },
+        ] } })} />);
+        expect(screen.getByRole('heading', { name: 'Reading' })).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: 'Writing' })).toBeInTheDocument();
+        expect(screen.getAllByText(/1 tool selected/)).toHaveLength(1);
+        expect(screen.queryByText('0 tools selected')).not.toBeInTheDocument();
     });
 
     it('opens the shared picker, searches, collapses groups and saves only grants', async () => {
@@ -187,12 +202,13 @@ describe('IntegrationEditor', () => {
         expect(p.onReconnect).toHaveBeenCalledOnce();
     });
 
-    it('allows rename and credential recovery for a broken connection, but not grant edits', () => {
-        render(<IntegrationEditor {...props({ record: { ...RECORD, state: 'broken' } })} />);
+    it.each(['broken', 'auth_failed', 'unknown'])('shows recovery without a duplicate status for %s connections', (state) => {
+        render(<IntegrationEditor {...props({ record: { ...RECORD, state } })} />);
         openSettings();
         expect(screen.getByRole('button', { name: 'Change tools' })).toBeDisabled();
         expect(screen.getByRole('button', { name: 'Rename' })).toBeEnabled();
         expect(screen.getByRole('button', { name: 'Update app password' })).toBeEnabled();
         expect(screen.getByRole('alert')).toHaveTextContent('This integration needs attention');
+        expect(screen.queryByTestId('integration-status')).not.toBeInTheDocument();
     });
 });

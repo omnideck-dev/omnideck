@@ -18,13 +18,15 @@ from agents._agent_profiles import (
 from browser.profile_store import EMPTY_BROWSER_PROFILE_ID
 from browser.profile_store import BrowserProfileStore
 from server._browser_runtime import BROWSER_RUNTIME_KEY
-from skills._policy import strip_reserved_skills
+from skills._policy import strip_reserved_skills, grants_restricted_tool_category
 
 logger = logging.getLogger(__name__)
 
 
 def _normalize_browser_settings(body: dict, profiles: BrowserProfileStore) -> None:
     body["skills"] = strip_reserved_skills(body.get("skills", []))
+    if grants_restricted_tool_category(body.get("tool_categories", [])):
+        raise ValueError("Browser access is configured on the agent")
     profile_id = body.get("browser_profile_id")
     if profile_id not in (None, EMPTY_BROWSER_PROFILE_ID):
         profiles.get(str(profile_id))

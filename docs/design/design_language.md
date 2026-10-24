@@ -42,20 +42,22 @@ Primitives live in `server/ui/src/components/primitives/`; the rest in
 | Need | Component | Import | Use when |
 |---|---|---|---|
 | Text button | `Button` | `primitives/Button.jsx` | `filled` for one primary action/surface; `ghost` for quiet secondary actions, including Cancel beside Save and collection bulk actions; `outline` when a peer action needs stronger definition; `danger` for destructive actions. The API defaults to `outline`, so choose the variant explicitly. Icon via children: `<Button><Icon/> Label</Button>`. For async actions pass `loading` and optionally `loadingLabel`. |
-| Icon-only button | `IconButton` | `primitives/IconButton.jsx` | `size="sm"`; icon as child |
+| Icon-only button | `IconButton` | `primitives/IconButton.jsx` | `size="sm"` (28px), `md` (32px) beside text buttons; icon as child. Match ghost buttons: `--radius-md`, `--text-secondary`, `--surface` hover. |
 | Icon picker popover | `IconPickerPopover` | `primitives/IconPickerPopover.jsx` | Curated Bootstrap icon selection shared by folders and profile identity controls. Anchor it with `anchorRef` or `anchorRect`; supply `icons`, `current`, `onPick`, and `onClose`. |
 | Select / dropdown | `Select` | `primitives/Select.jsx` | Canonical application-rendered select-only combobox. Pass `options`, `value`, `onChange`, and an accessible label. Native `<select>` is prohibited because host-rendered menus cannot satisfy the shared visual contract. |
-| Two-click destructive | `ConfirmButton` | `primitives/ConfirmButton.jsx` | delete/disconnect where a modal is overkill; arms on first click, fires on second |
+| Two-click destructive | `ConfirmButton` | `primitives/ConfirmButton.jsx` | delete/disconnect where a modal is overkill; arms on first click, fires on second. In action menus use `appearance="menuItem"`: quiet red text until armed, then filled danger. Standalone buttons retain their tinted resting background. |
 | Search field | `SearchInput` | `primitives/SearchInput.jsx` | `value`, `onChange(string)`, `placeholder`, `ariaLabel`, `testId`, `clearable`, `disabled`, `className`. Canonical `.input` + leading glyph + focus glow |
 | Ordinary dropdown | `Select` | `primitives/Select.jsx` | Canonical body-font, 32px select-only combobox. Consumers may specialize font size and width, but not family or height. Supports keyboard navigation, typeahead, portaled viewport-aware menus, and full-label hover text. |
 | Brand tabs | `BrandTabs` | `primitives/BrandTabs.jsx` | §14 uppercase primary tabs within a panel or settings page; `tabs=[{id,label,count?,disabled?,panelId?}]`, `activeTab`, `onTabChange`, `ariaLabel`, `idBase`. `idBase` links each tab to its tabpanel. Distinct from `LibraryHeader` and desktop `TabStrip` |
 | View tabs + scoped search | `LibraryHeader` | `primitives/LibraryHeader.jsx` | §27: in-content view switch (`views=[{id,label,count}]`, `activeView`, `onViewChange`, `searchValue`, `onSearchChange`, `actions`) |
 | Inline feedback message | `Callout` | `primitives/Callout.jsx` | §11 feedback (info/success/warning/danger banners) |
 | Modal scaffold | `Modal` | `primitives/Modal.jsx` | scrim + centered panel with Esc/backdrop dismiss + dialog semantics; pass `onClose`, `children`, optional `width`/`labelledBy`/`testId`. Caller supplies the contents. Default padding suits simple dialogs; `layout="contained"` supplies a padding-free, viewport-bounded flex shell for headers/scrolling bodies/footers. Both use the same shared surface |
-| Status / tag pill | `Badge` | `components/Badge.jsx` | Compact tags, counts, and statuses needing an enclosing shape, especially warning/error emphasis. Routine healthy status uses icon + text instead (see CSS patterns). `variant`: `neutral`(default)`\|success\|info\|warning\|danger`. Monospace, 10px, radius-sm. |
+| Status / tag pill | `Badge` | `components/Badge.jsx` | Discrete tags and counts needing an enclosing shape; not the default for connection status. Routine connection health stays quiet; problems use plain icon + text (see Exception-first status). `variant`: `neutral`(default)`\|success\|info\|warning\|danger`. Monospace, 10px, radius-sm. |
 | List row | `ListItem` | `components/ListItem.jsx` | `active`, `onClick`, optional `icon`, `name`/`description`/`badges` (or `children`). Rounded boundary with accent outline + muted background on selection; no feature-level restyling |
+| Expandable selected row | `ExpandableSelectionRow` | `components/ExpandableSelectionRow.jsx` | Selected skills, tools and integrations with wrapping `name`/`description`, leading `icon`, disclosed `children` and required `onRemove`. One centered header aligns the chevron and separate remove button in matching 32px slots. Row owns expansion and appearance; parent owns selection. |
+| Selected tool grid | `SelectionToolList` | `components/skills/SelectionToolList.jsx` | Read-only responsive columns inside an expanded selection row. MCP tools show titles only; native integration operations retain short descriptions. Clipped labels reveal plain text on hover, focus or tap through the shared Popover. No individual-tool disclosure or modal. |
 | Master-detail layout | `SplitPanel` | `components/SplitPanel.jsx` | `SplitPanel` + `.List` + `.Detail`; `.Header` takes a title as children and optional `actions`. Owns outer `--sp-5` gutters: hosts must not add duplicate outer padding. Spaced columns with one divider; list is 34% (min 260px), 250px below 860px. Below 640px, one stacked scroll area. **List-on-left/detail-on-right only** |
-| Connection status | `ConnectionStatus` | `components/ConnectionStatus.jsx` | Feature supplies the label and `tone` (`success`, `warning`, `danger`). Healthy states use a quiet checkmark + text; problems retain emphasized badges. Keep Configured distinct from verified Connected. Show healthy status in the detail header, not redundantly in the list; list badges are for actionable exceptions. |
+| Connection status | `ConnectionStatus` | `components/ConnectionStatus.jsx` | Existing explicit status/test-result component used by provider settings. Do not add it as permanent healthy reassurance on revised screens; use Exception-first status below. Keep Configured distinct from verified Connected. Existing consumers have not all migrated. |
 | Draggable split resizer | `SplitHandle` | `components/SplitHandle.jsx` | `onDrag(position)` — for resizable splits (e.g. chat + preview) |
 | Tab strip | `TabStrip` | `components/TabStrip.jsx` | Accessible tab chrome with overflow scrolling, keyboard selection, close controls, and per-tab action menus. Pass `tabs`, `activeTab`, `onTabChange`, and `onCloseTab`; content is owned separately. |
 | Sortable data table | `SortableTable` | `primitives/SortableTable.jsx` | sticky header with click-to-sort columns (caret) + hover/active rows. Presentational — caller sorts the rows + owns `sort`. `columns=[{key,header,sortable,render,cellClassName,headerClassName,revealOnHover}]`, `rows`, `rowKey`, `onSort`, `onRowClick`, `rowClassName`, `activeRowKey`, `rowTestId`, `testId`. |
@@ -71,6 +73,8 @@ uses it). These have **no shared primitive yet** — replicating is the establis
 pattern; consider extracting a primitive when 3 or more copies exist.
 | Pattern | Showcase section | How |
 |---|---|---|
+| Editor toolbar | `Editor Toolbar` | Leading ghost Back; trailing status, dirty-only ghost Discard, filled Save, then overflow. Anchor Save and overflow so transient feedback and Discard do not move them. New items use Create plus the item name and omit saved-item actions. Below 640px put status on a second, start-aligned line. Show success only after saving, fading out by 3s (no animation under reduced motion); unsaved/error feedback persists. |
+| Action menu | `Action Menu` | Use `Popover` with menu semantics; move initial focus through its `onOpen` callback after positioning makes the surface visible. `Button variant="menuItem"` and `ConfirmButton appearance="menuItem"` own the row appearance. Left-aligned icon/label, full-width 32px rows, readable primary text and surface hover. Caller supplies menuitem roles and keyboard handling: arrows/Home/End, Escape returning focus, Tab leaving the menu. Destructive actions last after a subtle divider; keep the menu open during confirmation. Use an ellipsis on actions opening another dialog. |
 | Text input | `Inputs` | `.input` spec (or use `SearchInput` if it's a search) |
 | Modal / dialog | `Modal / Dialog` | Use `Modal` for the enclosing surface. Separate header/body with spacing, not a mandatory rule; use `--border-subtle` if a footer divider is needed. Do not add nested boxes for ordinary content. Pair a filled primary action with ghost Cancel. Older hand-rolled modals have not all migrated. |
 | Data table | `Tables` | use the **`SortableTable` primitive** (sticky `--canvas` header, click-to-sort columns, `--border-subtle` row separators). Caller sorts the rows + owns the sort state |
@@ -78,8 +82,36 @@ pattern; consider extracting a primitive when 3 or more copies exist.
 | Card | `Cards` / `Display Card` / `File Output Card` | For distinct objects, use `--elevated` + `--border` + `--radius-lg`; hover lift only when interactive. Use spacing and headings for ordinary subsections, not nested cards. |
 | Empty state | `Empty State` | centered icon + message, `--text-tertiary` |
 | Chip / tag | `Chip / Tag` | Small pill for discrete metadata/tags; use `Badge` when appropriate, not as a wrapper for every status label. |
-| Quiet status | `Badges` / `Status Vocabulary` | Use `ConnectionStatus` for connection states. Routine healthy/ready state: decorative checkmark + sentence-case text (e.g. Connected), `--success`, body font, `--sp-2` gap, no pill/dot/background. Show once in the detail header; repeat in a list only if it helps comparison or flags an actionable exception. Retain distinct warning/error cues. |
+| Exception-first status | `Status Vocabulary` | Routine connection health stays quiet: no permanent Connected label, checkmark, pill or dot. List rows keep their useful secondary description when healthy; replace it with a decorative warning triangle and specific recovery text when attention is needed. Use `--warning`, inherited body typography and `--sp-1` gap, without background, border or pill. Selection styling remains independent. Unknown states must stay visible, not imply health. In details, explain the problem and recovery in a Callout without repeating a header badge. Keep unrelated errors distinct. Explicit user-requested connection-test results may still confirm success. |
 | Section / form section | `Sections` / `Form Section` / `Settings Row` | Group related settings with headings and spacing. Keep the main task visible; start optional, infrequently used settings collapsed under a descriptive disclosure. Do not hide required inputs or actionable errors; point to recovery when it sits inside a collapsed section. |
+
+## Action hierarchy rationale
+
+MCP tools use their supplied title, falling back to the tool name. Model-facing
+descriptions are not UI copy: omit them from setup/edit pickers, selected-tool
+lists, tooltips, and UI search. Preserve them unchanged for model use. Native
+integration operations may retain their curated short descriptions.
+
+Enabled ghost actions use `--text-secondary`, not tertiary text, to avoid looking
+disabled. Menu rows use `--text-primary` because their lack of a button boundary
+already provides secondary emphasis. Icon and text controls share corner and
+hover treatments instead of looking like unrelated families.
+
+Expandable selection rows are disclosures, not navigation links. Keep titles
+in `--text-primary` on hover; use `--surface` for the disclosure button's hover
+background and brighten its chevron to `--text-primary`. Use `--radius-md` and
+retain the accent keyboard-focus outline. The separate remove button keeps its
+own shared IconButton interaction states.
+
+**Deliberate exception to the tinted destructive-button resting state:** inside
+an action menu, Delete uses a red icon/label on a transparent background. A filled
+Delete among quiet peers overemphasizes the destructive choice. Keep the existing
+filled-danger confirmation state and two-activation protection. This exception
+belongs to `ConfirmButton`, not a feature-level style override.
+
+Editor feedback communicates changes, not permanent reassurance: leave a clean
+editor quiet; only a successful save earns a short confirmation. Save remains
+explicit, and failed saves must not clear the draft or unsaved warning.
 
 ## Token cheatsheet (`global.css`)
 

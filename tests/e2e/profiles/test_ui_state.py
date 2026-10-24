@@ -21,7 +21,7 @@ def test_profile_ui_reflects_saved_state(page: Page):
         "description": "Verifies UI reflects saved state",
         "model": model_name,
         "system_prompt": "You are a test agent for UI verification.",
-        "skills": ["coder", "browser"],
+        "skills": ["coder", "routine_planner"],
         "temperature": 0.3,
         "top_k": None,
         "top_p": None,
@@ -43,19 +43,15 @@ def test_profile_ui_reflects_saved_state(page: Page):
 
         # --- Model ---
         if model_name:
-            expect(builder.model_picker.input).to_have_value(model_name)
+            expect(builder.model_picker.trigger).to_have_attribute("data-selected-model", model_name)
 
         # --- System prompt ---
         expect(builder.system_prompt).to_have_value("You are a test agent for UI verification.")
 
-        # --- Skills: coder and browser should be active ---
-        for i in range(builder.skill_chips.count()):
-            btn = builder.skill_chips.nth(i)
-            text = btn.inner_text().replace("✓", "").strip()
-            if text in ("coder", "browser"):
-                expect(btn).to_have_class(re.compile(r"chipActive"))
-            else:
-                expect(btn).not_to_have_class(re.compile(r"chipActive"))
+        # --- Saved library skills should appear as selected rows ---
+        expect(page.locator('[data-testid^="selected-skill:"]')).to_have_count(2)
+        for skill_id in ("coder", "routine_planner"):
+            expect(builder.tools.row("skill", skill_id)).to_be_visible()
 
         # --- Inference preset: "Code" should be active (temp=0.3, think=true) ---
         expect(builder.preset("Code")).to_have_class(re.compile(r"presetActive"))

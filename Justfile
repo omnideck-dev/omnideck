@@ -519,12 +519,13 @@ _ui-build ctr:
     echo "📦 Copying dist/ into {{ctr}}..."
     tar -cf - dist | "$engine" exec -i {{ctr}} tar -xf - -C /opt/omnideck/{{UI_DIR}}
 
-# Bounce supervisor + app inside the dev container. The DEV_MODE entrypoint
-# runs each in a respawn loop, so killing the inner Python lets the loop
-# pick it back up with the freshly synced source.
+# Restart through the single migration barrier with both services stopped.
+# Refresh the fixed entrypoint too, including for containers from older images.
 _bounce-services ctr:
-    @bash scripts/container-engine.sh exec {{ctr}} pkill -f "python3.12 -m brokering.supervisor" 2>/dev/null || true
-    @bash scripts/container-engine.sh exec {{ctr}} pkill -f "python3.12 main.py" 2>/dev/null || true
+    @bash scripts/container-engine.sh cp container/entrypoint.sh {{ctr}}:/opt/entrypoint.sh.next
+    @bash scripts/container-engine.sh exec {{ctr}} chmod +x /opt/entrypoint.sh.next
+    @bash scripts/container-engine.sh exec {{ctr}} mv /opt/entrypoint.sh.next /opt/entrypoint.sh
+    @bash scripts/container-engine.sh restart {{ctr}}
 
 # Poll until the app responds on the given port (up to ~60s)
 _wait-ready port:

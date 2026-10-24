@@ -1,0 +1,15 @@
+.row { border-bottom: 1px solid var(--border-subtle); }
+.header { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3) 0; }
+.toggle { display: flex; align-items: center; gap: var(--sp-3); flex: 1; min-width: 0; padding: 0; border: 0; border-radius: var(--radius-md); background: transparent; color: var(--text-primary); font: inherit; text-align: left; cursor: pointer; }
+.toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.toggle:hover { background: var(--surface); }
+.toggle:hover .actionSlot { color: var(--text-primary); }
+.icon { display: grid; place-items: center; flex-shrink: 0; width: var(--sp-5); }
+.info { display: flex; flex: 1; flex-direction: column; gap: var(--sp-1); min-width: 0; overflow-wrap: anywhere; }
+.name { font-size: var(--font-size-body); font-weight: 500; }
+.description { color: var(--text-secondary); font-size: var(--font-size-small); }
+.meta { color: var(--text-secondary); font-size: var(--font-size-caption); }
+/* Match the canonical md IconButton's 32px action slot without restyling it. */
+.actionSlot { display: grid; place-items: center; flex-shrink: 0; width: var(--sp-8); height: var(--sp-8); color: var(--text-secondary); }
+.actionIcon { display: grid; place-items: center; font-size: var(--font-size-ui); line-height: 1; }
+.body { padding: 0 0 var(--sp-3) var(--sp-8); color: var(--text-secondary); font-size: var(--font-size-small); overflow-wrap: anywhere; }

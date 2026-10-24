@@ -318,7 +318,10 @@ class BrokerManager:
         client = oauth.client_info
         return {"endpoint": fields.get("endpoint", ""),
                 "client_id": client.client_id if client else "",
-                "issuer": str(client.issuer) if client and client.issuer else ""}
+                "issuer": str(client.issuer) if client and client.issuer else "",
+                # Older saved connections did not retain this choice. Do not
+                # substitute provider-advertised or granted scopes for it.
+                "scopes": fields.get("requested_scopes", "")}
 
     @_serialize_connection_mutation
     async def ensure_fresh_authorization(self, connection_id: str) -> None:

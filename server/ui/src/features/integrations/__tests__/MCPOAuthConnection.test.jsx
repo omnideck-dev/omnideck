@@ -10,6 +10,29 @@ const response = body => Promise.resolve({ ok: true, json: async () => body });
 afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 
 describe('MCP connection setup', () => {
+    it.each([undefined, 'tools.read files.read', ''])('preserves saved requested scopes unless explicitly edited (%s)', async edited => {
+        const connected = vi.fn();
+        const saved = 'tools.read';
+        globalThis.fetch = vi.fn((url, options) => {
+            if (url.includes('/connection-settings')) return response({
+                redirect_uri: 'http://localhost:9000/callback',
+                connection: { endpoint: 'https://example.test/mcp', client_id: 'client', issuer: 'https://example.test', scopes: saved },
+            });
+            expect(JSON.parse(options.body)).toMatchObject({
+                reconnect_id: 'mcp_existing', scopes: edited === undefined ? saved : edited,
+            });
+            return response({ state: 'mcp_attempt', status: 'success', integration_id: 'mcp_existing' });
+        });
+        render(<MCPOAuthConnection entry={{ id: 'mcp', title: 'MCP server' }}
+            existingConnection={{ id: 'mcp_existing', label: 'Work service' }} onBack={vi.fn()} onConnectedId={connected} />);
+        expect(screen.getByRole('button', { name: 'Connect' })).toBeDisabled();
+        await act(async () => {});
+        expect(screen.getByLabelText(/Requested access/)).toHaveValue(saved);
+        if (edited !== undefined) fireEvent.change(screen.getByLabelText(/Requested access/), { target: { value: edited } });
+        await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Connect' })); });
+        expect(connected).toHaveBeenCalledWith('mcp_existing');
+    });
+
     it('connects Slack with an internal app, not a token or client secret', async () => {
         vi.useFakeTimers();
         const connected = vi.fn();

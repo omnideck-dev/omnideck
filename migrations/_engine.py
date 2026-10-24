@@ -1,4 +1,4 @@
-"""Shared ordered migration execution; application and vault plans stay separate."""
+"""Ordered migration execution and the single application-state ledger."""
 
 from __future__ import annotations
 
@@ -17,11 +17,10 @@ def _load_applied(state_dir: Path) -> set[str]:
     path = state_dir / _APPLIED_FILE
     if not path.exists():
         return set()
-    try:
-        return set(json.loads(path.read_text(encoding="utf-8")))
-    except (json.JSONDecodeError, TypeError):
-        logger.warning("Corrupt %s, treating as empty", path)
-        return set()
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, list) or any(not isinstance(name, str) or not name for name in value):
+        raise ValueError(f"Invalid migration history: {path}")
+    return set(value)
 
 
 def _save_applied(state_dir: Path, applied: set[str]) -> None:

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { useAppData } from '../../contexts/AppData.jsx';
+import useToolCategories from '../../hooks/useToolCategories.js';
 import { importPackFile, importSummaryText } from '../../utils/packs.js';
 import Badge from '../Badge.jsx';
 import ProfileBuilder from '../ProfileBuilder.jsx';
@@ -13,6 +14,7 @@ import SearchInput from '../primitives/SearchInput.jsx';
 import Select from '../primitives/Select.jsx';
 import SortableTable from '../primitives/SortableTable.jsx';
 import ExportProfileModal from './ExportProfileModal.jsx';
+import { AgentIcon } from './agentIcons.jsx';
 import styles from './AgentsView.module.css';
 
 // Sortable columns, also shown in the toolbar's sort select.
@@ -27,7 +29,7 @@ function draftAgent(providers) {
         id: `custom_${Date.now()}`,
         name: 'New Agent',
         description: '',
-        icon: '🤖',
+        icon: 'bi-robot',
         provider: providers[0]?.name || '',
         model: '',
         system_prompt: '',
@@ -46,12 +48,12 @@ function draftAgent(providers) {
  * through the shared profilesHook so chat and this view stay in sync. The
  * detail is the existing ProfileBuilder editor.
  */
-export default function AgentsView() {
+export default function AgentsView({ onOpenIntegration, onOpenSkill }) {
     const { profilesHook, providersHook, skillsHook } = useAppData();
     const { providers } = providersHook;
     const { skills, addSkills } = skillsHook;
     const { addToast } = useToast();
-    const [categories, setCategories] = useState([]);
+    const categories = useToolCategories();
     const [draft, setDraft] = useState(null);
     const [openId, setOpenId] = useState(null);
     const [deleteConflict, setDeleteConflict] = useState(null);
@@ -62,16 +64,9 @@ export default function AgentsView() {
     const [exportProfile, setExportProfile] = useState(null);
     const importInputRef = useRef(null);
     // Unsaved-changes guard: the editor reports its dirty state up, and the
-    // back nav shows an inline warning instead of discarding silently.
+    // navigation actions ask before discarding edits, including Duplicate.
     const [builderDirty, setBuilderDirty] = useState(false);
-    const [showUnsaved, setShowUnsaved] = useState(false);
-
-    // Tool-category metadata for the skill picker (tool counts, connection dots).
-    useEffect(() => {
-        fetch('/api/tool-categories').then((r) => r.json()).then((data) => {
-            setCategories(Array.isArray(data) ? data : []);
-        }).catch(() => { });
-    }, []);
+    const [pendingLeave, setPendingLeave] = useState(null);
 
     // Drop any stale delete conflict when the open agent changes.
     useEffect(() => {
@@ -86,27 +81,26 @@ export default function AgentsView() {
         setOpenId(null);
         setDeleteConflict(null);
         setBuilderDirty(false);
-        setShowUnsaved(false);
+        setPendingLeave(null);
     };
 
-    // Back nav: warn first if the editor has unsaved edits, otherwise leave.
-    const requestBack = () => {
-        if (builderDirty) setShowUnsaved(true);
-        else backToList();
+    const requestLeave = action => {
+        if (builderDirty) setPendingLeave(() => action);
+        else action();
     };
 
     const openAgent = (id) => {
         setDraft(null);
         setOpenId(id);
         setBuilderDirty(false);
-        setShowUnsaved(false);
+        setPendingLeave(null);
     };
 
     const newAgent = () => {
         setDraft(draftAgent(providers));
         setOpenId(null);
         setBuilderDirty(false);
-        setShowUnsaved(false);
+        setPendingLeave(null);
     };
 
     const duplicateFromList = async (p) => {
@@ -181,7 +175,7 @@ export default function AgentsView() {
             cellClassName: styles.aname,
             render: (p) => (
                 <span className={styles.nameCell} data-testid={`profile-item-${p.id}`}>
-                    {p.icon && <span className={styles.avatar}>{p.icon}</span>}
+                    <span className={styles.avatar}><AgentIcon icon={p.icon} /></span>
                     <span className={styles.nameText}>
                         <span className={styles.nameLine}>{p.name}</span>
                         {p.description && <span className={styles.descLine}>{p.description}</span>}
@@ -262,18 +256,9 @@ export default function AgentsView() {
     if (selected) {
         return (
             <div className={styles.view} data-testid="agents-view">
-                <div className={styles.detailHead}>
-                    <Button
-                        variant="ghost"
-                        onClick={requestBack}
-                        data-testid="agent-detail-back"
-                    >
-                        <i className="bi bi-arrow-left" /> Agents
-                    </Button>
-                </div>
-                {showUnsaved && (
+                {pendingLeave && (
                     <Modal
-                        onClose={() => setShowUnsaved(false)}
+                        onClose={() => setPendingLeave(null)}
                         labelledBy="agent-unsaved-title"
                         testId="agent-unsaved-warning"
                     >
@@ -286,14 +271,14 @@ export default function AgentsView() {
                         <div className={styles.dialogActions}>
                             <Button
                                 variant="ghost"
-                                onClick={() => setShowUnsaved(false)}
+                                onClick={() => setPendingLeave(null)}
                                 data-testid="agent-unsaved-keep"
                             >
                                 Keep editing
                             </Button>
                             <Button
                                 variant="danger"
-                                onClick={backToList}
+                                onClick={() => { setPendingLeave(null); pendingLeave(); }}
                                 data-testid="agent-unsaved-discard"
                             >
                                 Discard changes
@@ -303,7 +288,9 @@ export default function AgentsView() {
                 )}
                 <div className={styles.detailBody} data-testid="agent-detail">
                     <ProfileBuilder
+                        key={selected.id}
                         profile={selected}
+                        onBack={() => requestLeave(backToList)}
                         onSave={async (updated) => {
                             if (updated._unsaved) {
                                 const { _unsaved, ...payload } = updated;
@@ -317,10 +304,6 @@ export default function AgentsView() {
                             return profilesHook.updateProfile(updated.id, updated);
                         }}
                         onDelete={async (id) => {
-                            if (draft && draft.id === id) {
-                                backToList();
-                                return;
-                            }
                             const result = await profilesHook.deleteProfile(id);
                             if (result?.conflict) {
                                 setDeleteConflict(result);
@@ -330,16 +313,17 @@ export default function AgentsView() {
                         }}
                         deleteConflict={deleteConflict}
                         onDismissDeleteConflict={() => setDeleteConflict(null)}
-                        onDuplicate={async (id) => {
-                            if (draft && draft.id === id) return;
+                        onDuplicate={id => requestLeave(async () => {
                             const result = await profilesHook.duplicateProfile(id);
                             if (result) openAgent(result.id);
-                        }}
+                        })}
                         onExport={() => setExportProfile(selected)}
                         onDirtyChange={setBuilderDirty}
                         providers={providers}
                         skills={skills}
                         categories={categories}
+                        onOpenIntegration={onOpenIntegration}
+                        onOpenSkill={onOpenSkill}
                     />
                 </div>
                 {exportModal}

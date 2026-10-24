@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
 from typing import Any
+import hashlib
 
-from integrations.connection_cache import ConnectionSnapshot, IntegrationConnection
+from agent_core.tools import SchemaTool, callable_to_json_schema
+
+from integrations.connection_cache import IntegrationConnection
 from tools.integrations._mcp_tools import build_mcp_tool
 from tools.integrations.contacts.list_contacts import build_list_contacts_tool
 from tools.integrations.contacts.search_contacts import build_search_contacts_tool
@@ -69,58 +71,40 @@ _BUILDERS: dict[str, ToolBuilder] = {
 }
 
 
-@dataclass(frozen=True)
-class OperationTools:
-    """Agent tools currently granted in one user-facing category."""
-
-    tools: list[Callable[..., Any]]
-    available: bool
-
-
-def _ids_granting(
-    operation_id: str,
-    connections: Iterable[IntegrationConnection],
-) -> frozenset[str]:
-    return frozenset(
-        connection.id
-        for connection in connections
-        if connection.kind == "integration"
-        and connection.state == "running"
-        and operation_id in connection.operation_grants
-    )
-
-
-def _tools_for_category(
-    category: str,
-    connections: Iterable[IntegrationConnection],
-) -> list[Callable[..., Any]]:
-    connections = list(connections)
+def connection_tools(connection: IntegrationConnection) -> list[Callable[..., Any]]:
+    """Bind approved operations to exactly one connection, with no routing input."""
+    if connection.kind != "integration" or connection.state != "running":
+        return []
     tools: list[Callable[..., Any]] = []
-    prefix = f"{category}."
     for operation_id, builder in _BUILDERS.items():
-        if not operation_id.startswith(prefix):
-            continue
-        ids = _ids_granting(operation_id, connections)
-        if ids:
-            tools.append(builder(ids))
+        if operation_id in connection.operation_grants:
+            tools.append(_bound_native(connection, operation_id, builder))
+    tools.extend(
+        build_mcp_tool(connection, operation)
+        for operation in connection.discovered_operations
+        if operation.id in connection.operation_grants
+    )
     return tools
 
 
-def integration_tools_by_category(connections: ConnectionSnapshot = ()) -> dict[str, OperationTools]:
-    categories = {operation_id.split(".", 1)[0] for operation_id in _BUILDERS}
-    result: dict[str, OperationTools] = {}
-    for category in categories:
-        tools = _tools_for_category(category, connections)
-        result[category] = OperationTools(tools=tools, available=bool(tools))
-    remote_tools = [
-        build_mcp_tool(connection, operation)
-        for connection in connections
-        if connection.kind == "integration" and connection.state == "running"
-        for operation in connection.discovered_operations
-        if operation.id in connection.operation_grants
-    ]
-    result["mcp"] = OperationTools(tools=list(remote_tools), available=bool(remote_tools))
-    return result
+def _bound_native(connection: IntegrationConnection, operation_id: str, builder: ToolBuilder) -> SchemaTool:
+    tool = builder([connection.id])
+    schema = callable_to_json_schema(tool)["function"]
+    parameters = schema["parameters"]
+    parameters["properties"].pop("integration_id", None)
+    parameters["required"] = [key for key in parameters.get("required", []) if key != "integration_id"]
+    suffix = hashlib.sha256(f"{connection.id}\0{operation_id}".encode()).hexdigest()[:16]
+
+    async def invoke(arguments: dict[str, Any]) -> Any:
+        if "integration_id" in arguments:
+            raise ValueError("Connection routing cannot be overridden")
+        return await tool(integration_id=connection.id, **arguments)
+
+    return SchemaTool(
+        f"{tool.__name__[:42]}_{suffix}",
+        f"{schema['description']}\nConnection: {connection.label or connection.slug}.",
+        parameters, invoke,
+    )
 
 
-__all__ = ["OperationTools", "integration_tools_by_category"]
+__all__ = ["connection_tools"]

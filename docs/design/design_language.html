@@ -452,7 +452,7 @@ body {
 
 .btn-ghost {
   background: transparent;
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
   border: none;
 }
 .btn-ghost:hover { background: var(--surface); color: var(--text-primary); }
@@ -474,7 +474,21 @@ body {
   background: var(--danger-muted);
   color: var(--danger);
 }
-.btn-danger:hover { background: rgba(220,38,38,0.15); }
+.btn-danger:hover { background: color-mix(in srgb, var(--danger) 15%, transparent); }
+.action-menu-example { width: 200px; padding: var(--sp-2); display: flex; flex-direction: column; gap: var(--sp-1); background: var(--elevated); border: 1px solid var(--border); border-radius: var(--radius-md); }
+.action-menu-example .btn { width: 100%; justify-content: flex-start; gap: var(--sp-2); padding: 0 var(--sp-3); background: transparent; color: var(--text-primary); }
+.action-menu-example .btn:hover { background: var(--surface); }
+.action-menu-example .destructive { color: var(--danger); }
+.action-menu-example .armed, .action-menu-example .armed:hover { background: var(--danger); color: var(--text-on-accent); }
+.action-menu-separator { border-top: 1px solid var(--border-subtle); margin: var(--sp-1) 0; }
+.editor-toolbar-example { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto; align-items: center; gap: var(--sp-2); padding: var(--sp-2); border-bottom: 1px solid var(--border-subtle); max-width: 760px; }
+.editor-toolbar-status { color: var(--warning); justify-self: end; font-size: var(--font-size-small); }
+.editor-toolbar-example .btn-icon { width: 32px; height: 32px; }
+@media (max-width: 640px) {
+  .editor-toolbar-example { grid-template-columns: auto minmax(0, 1fr) auto auto; gap: var(--sp-1); }
+  .editor-toolbar-status { grid-row: 2; grid-column: 1 / -1; justify-self: start; }
+  .editor-toolbar-discard { justify-self: end; }
+}
 
 .btn-spinner {
   width: 12px;
@@ -497,7 +511,7 @@ body {
   border-radius: var(--radius-md);
   background: transparent;
   border: none;
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -577,6 +591,32 @@ body {
   font: var(--font-size-body) var(--font-body);
   white-space: nowrap;
 }
+.connection-issue {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-1);
+  color: var(--warning);
+}
+.connection-row-examples {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  max-width: 360px;
+  margin-bottom: var(--sp-4);
+}
+.connection-row-example {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  font: var(--font-size-small) var(--font-body);
+}
+.connection-row-example > i { color: var(--text-secondary); }
+.connection-row-copy { display: flex; flex-direction: column; gap: var(--sp-1); }
+.connection-row-description { color: var(--text-secondary); font-size: var(--font-size-label); }
 
 /* ── Status Dots ── */
 .status-dot {
@@ -3359,11 +3399,26 @@ body {
       <div class="component-label">Status Vocabulary</div>
       <div style="font-size:12px;color:var(--text-secondary);margin-bottom:16px;max-width:680px;line-height:1.6">
         State colors stay consistent; the amount of decoration depends on the task.
-        Routine healthy status uses a checkmark and sentence-case text without a pill.
-        Active work may pulse; completed work is calm; errors remain unmistakable.
-        Use the optional dot and badge treatments below for compact or emphasized
-        contexts, not as mandatory wrappers. Show status once in a detail header;
-        repeat it in a list only when it helps comparison or exposes an actionable exception.
+        Routine connection health stays quiet: no permanent Connected label, checkmark,
+        pill or dot. Keep useful row descriptions (such as tools selected) when healthy;
+        replace them with a warning triangle and specific recovery text when attention is
+        needed. Use plain warning-colored text without background, border or pill.
+        Selection styling stays independent. Unknown states remain visible as
+        “Couldn’t check connection,” never silently treated as healthy.
+        In details, use a Callout explaining the problem and recovery without a duplicate
+        header badge. Separate problems still need separate feedback. Explicit connection
+        tests may confirm success. Task progress indicators below are distinct from routine
+        connection health; older screens have not all adopted this pattern.
+      </div>
+      <div class="connection-row-examples">
+        <div class="connection-row-example">
+          <i class="bi bi-slack" aria-hidden="true"></i>
+          <div class="connection-row-copy"><strong>Slack Foo</strong><span class="connection-row-description">27 tools selected</span></div>
+        </div>
+        <div class="connection-row-example">
+          <i class="bi bi-plug" aria-hidden="true"></i>
+          <div class="connection-row-copy"><strong>Local MCP demo</strong><span class="connection-row-description"><span class="connection-issue"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i>Sign in again</span></span></div>
+        </div>
       </div>
       <table class="status-vocab">
         <thead>
@@ -3375,7 +3430,7 @@ body {
             <td><code>--success</code></td>
             <td><span class="quiet-connected"><i class="bi bi-check-lg" aria-hidden="true"></i> Ready</span></td>
             <td><code>--success-muted</code></td>
-            <td>Connected integrations, enabled routines, healthy services</td>
+            <td>Explicit readiness or connection-test results, not permanent healthy reassurance</td>
           </tr>
           <tr>
             <td><span class="vocab-state">Running</span></td>
@@ -3470,7 +3525,7 @@ body {
         <code>filled</code> &gt; <code>outline</code> &gt; <code>ghost</code>, with <code>danger</code> as a parallel destructive track.<br>
         // <code>.btn-filled</code> &mdash; the single primary action on a surface (Save, Connect, Submit, Next). At most one per row.<br>
         // <code>.btn-outline</code> &mdash; use when a peer action needs stronger definition, such as a standalone Retry or Configure. Not the automatic choice for every secondary action.<br>
-        // <code>.btn-ghost</code> &mdash; quiet secondary actions, including Cancel beside Save, Back, Skip, and collection bulk actions. It can share a row with a primary action; it is not a disabled state.<br>
+        // <code>.btn-ghost</code> &mdash; quiet secondary actions, including Cancel beside Save, Back, Skip, and collection bulk actions. Enabled labels use <code>--text-secondary</code>, with <code>--text-primary</code> on <code>--surface</code> hover; quiet must not look disabled. Neighboring icon buttons use the same hover and <code>--radius-md</code> corners.<br>
         // <code>.btn-danger</code> &mdash; destructive (Delete, Disconnect, Remove). Use anywhere the action can&apos;t be cheaply undone.<br>
         // <strong style="color:var(--text-secondary)">Async actions:</strong> keep the action in place, replace its contents with a spinner and concise progress label, and disable it until the operation settles. In React, use <code>&lt;Button loading loadingLabel="Saving&hellip;"&gt;</code>; do not recreate the spinner locally.<br>
         // <strong style="color:var(--text-secondary)">Rule of thumb:</strong> distinguish primary from secondary through emphasis, not by outlining every action. A wizard footer of <code>[Back] [Cancel] [Save]</code> uses quiet Back/Cancel and filled Save. Retain readable labels, hover feedback, and keyboard focus.<br>
@@ -3480,14 +3535,47 @@ body {
       <div style="margin-top:16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <button class="btn btn-danger">Delete</button>
         <span style="color:var(--text-tertiary);font-family:var(--font-code);font-size:11px">&rarr;</span>
-        <button class="btn" style="background:var(--danger);color:#fff;border-color:var(--danger)">Confirm?</button>
+        <button class="btn" style="background:var(--danger);color:var(--text-on-accent);border-color:var(--danger)">Confirm?</button>
         <span style="color:var(--text-tertiary);font-family:var(--font-code);font-size:11px;margin-left:8px">click 1 arms; click 2 fires</span>
       </div>
       <div style="font-size:11px;color:var(--text-tertiary);font-family:var(--font-code);margin-top:8px;line-height:1.6;max-width:760px">
-        // <strong style="color:var(--text-secondary)">Click-twice-to-confirm pattern.</strong> Destructive actions that can&apos;t be cheaply undone use a two-stage confirm: resting renders as <code>btn-danger</code> (danger-muted background, danger text); click 1 escalates to a solid danger fill (<code>background: var(--danger); color: #fff</code>) and the label flips to "Confirm?"; click 2 within the timeout (default 3s) fires the action.<br>
+        // <strong style="color:var(--text-secondary)">Click-twice-to-confirm pattern.</strong> Standalone destructive actions use a two-stage confirm: resting renders as <code>btn-danger</code> (danger-muted background, danger text); click 1 escalates to a solid danger fill (<code>background: var(--danger); color: var(--text-on-accent)</code>) and the label flips to "Confirm?"; click 2 within the timeout (default 3s) fires the action.<br>
+        // <strong style="color:var(--text-secondary)">Menu exception and rationale:</strong> inside action menus the resting destructive item uses a red icon and text with no background, last after a subtle divider. A filled resting Delete would dominate its quieter peers. The armed state stays filled danger and the menu stays open. Use <code>ConfirmButton appearance="menuItem"</code>, not feature CSS overrides.<br>
         // The armed-state escalation is the affordance &mdash; resting state alone is not loud enough to signal "your next click is destructive." Don&apos;t replace this with a modal for inline row/panel actions; reserve modals for multi-field destructive forms.<br>
         // Implemented by the <code>ConfirmButton</code> primitive (see <code>server/ui/src/components/primitives/ConfirmButton.jsx</code>). All Delete actions in the app should route through it.
       </div>
+    </div>
+
+    <div class="subsection" id="editor-toolbar">
+      <div class="subsection-label">Editor Toolbar</div>
+      <p class="section-desc">Back leads; status, Discard, Save and overflow trail. Anchor Save and overflow so dirty-only Discard and transient feedback never shift them. New items use Create plus the item name and omit saved-item actions. Below 640px status moves to a second, start-aligned line.</p>
+      <div class="editor-toolbar-example">
+        <button class="btn btn-ghost"><i class="bi bi-arrow-left" aria-hidden="true"></i> Agents</button>
+        <span class="editor-toolbar-status">Unsaved changes</span>
+        <button class="btn btn-ghost editor-toolbar-discard">Discard</button>
+        <button class="btn btn-filled">Save</button>
+        <button class="btn-icon" aria-label="More actions"><i class="bi bi-three-dots" aria-hidden="true"></i></button>
+      </div>
+      <p class="section-desc">A clean editor needs no permanent status. After a successful save, show “Changes saved” and fade it out by three seconds; remove without animation under reduced motion. Unsaved changes and save errors persist. Save remains explicit. Disable editing and navigation while saving; keep errors below the toolbar and retain the draft for retry.</p>
+    </div>
+    <div class="subsection" id="action-menu">
+      <div class="subsection-label">Action Menu</div>
+      <p class="section-desc">Full-width, left-aligned 32px rows with primary text, icon/label alignment and surface hover. Use Button’s menuItem variant; destructive rows use ConfirmButton’s menuItem appearance. An ellipsis signals a subsequent dialog. These are resting and armed examples, not live menus.</p>
+      <div class="component-row">
+        <div class="action-menu-example">
+          <button class="btn"><i class="bi bi-copy" aria-hidden="true"></i> Duplicate</button>
+          <button class="btn"><i class="bi bi-download" aria-hidden="true"></i> Export…</button>
+          <div class="action-menu-separator"></div>
+          <button class="btn destructive"><i class="bi bi-trash" aria-hidden="true"></i> Delete agent</button>
+        </div>
+        <div class="action-menu-example">
+          <button class="btn"><i class="bi bi-copy" aria-hidden="true"></i> Duplicate</button>
+          <button class="btn"><i class="bi bi-download" aria-hidden="true"></i> Export…</button>
+          <div class="action-menu-separator"></div>
+          <button class="btn armed"><i class="bi bi-trash" aria-hidden="true"></i> Confirm delete?</button>
+        </div>
+      </div>
+      <p class="section-desc">Production menus use menu/menuitem semantics, arrows and Home/End to move focus, Escape to close and restore the trigger, and Tab to leave. Move initial focus through Popover’s onOpen callback only after the positioned surface is visible. Keep the menu open while confirmation is armed. Guard navigation actions against silently discarding dirty edits.</p>
     </div>
 
     <!-- Inputs -->
@@ -3558,10 +3646,11 @@ body {
     <div class="subsection" id="status">
       <div class="subsection-label">Badges</div>
       <p class="section-desc">
-        Use pills for discrete tags, counts, or statuses needing stronger enclosure,
-        especially warning and error cues. Routine healthy/ready status uses a
-        decorative checkmark and sentence-case body text instead, with no border,
-        background, or dot. Do not decorate the same status repeatedly.
+        Use pills for discrete tags or counts when enclosure helps, not as the default
+        for connection health. Routine healthy connections stay quiet; actionable problems
+        use a meaningful icon and plain text as shown in Status Vocabulary. Do not decorate
+        the same status repeatedly. The following badge and dot examples remain available
+        for other contexts such as task progress.
       </p>
       <div class="component-row">
         <span class="badge badge-success"><span class="status-dot dot-running" style="width:5px;height:5px"></span> RUNNING</span>
@@ -3580,7 +3669,7 @@ body {
         Keep Configured distinct from verified Connected. Healthy status belongs
         in the detail header; list badges are reserved for actionable problems.
       </p>
-      <span class="quiet-connected"><i class="bi bi-check-lg" aria-hidden="true"></i> Connected</span>
+      <span class="quiet-connected"><i class="bi bi-check-lg" aria-hidden="true"></i> Connection test succeeded</span>
     </div>
 
     <!-- Status Dots -->
@@ -3745,7 +3834,7 @@ body {
             <div class="desc">Endpoint for the inference backend.</div>
           </div>
           <div class="control">
-            <span class="quiet-connected"><i class="bi bi-check-lg" aria-hidden="true"></i> Connected</span>
+            <button class="btn btn-ghost">Test connection</button>
           </div>
         </div>
       </div>
@@ -3780,6 +3869,35 @@ body {
         rows. The shared component owns icon placement, typography and interaction states;
         consumers should not restyle them.
       </div>
+    </div>
+
+    <div class="subsection" id="expandable-selection-row">
+      <div class="subsection-label">Expandable Selection Row</div>
+      <p>Use the shared <code>ExpandableSelectionRow</code> for selected skills,
+        built-in tools and integrations. Keep the icon, wrapping name/description,
+        chevron and remove action in one vertically centered header. The chevron
+        uses the same 32px slot and icon size as the md <code>IconButton</code>.
+        Expanded content sits below that header, never beside its actions.</p>
+      <p>The disclosure is a labeled button with <code>aria-expanded</code> and
+        <code>aria-controls</code>; removal is a separate sibling button. The
+        row owns layout and expansion; its parent owns selection and persistence.</p>
+      <p>Keep disclosure titles in <code>--text-primary</code> on hover, not link blue.
+        Hover uses <code>--surface</code> on the disclosure button and brightens its
+        chevron to <code>--text-primary</code>, with <code>--radius-md</code> corners.
+        Retain the accent keyboard-focus outline. The separate remove button keeps
+        its own shared IconButton hover treatment.</p>
+      <p>The leading icon occupies 20px, followed by a 12px gap; disclosed content
+        aligns with the row title. An optional quiet summary may follow the description.
+        Skill groups use headings, not a second nested disclosure. Expanded tools use
+        a responsive multi-column <code>SelectionToolList</code>: MCP titles only,
+        native integration titles with their existing short descriptions. Truncate long
+        text with an ellipsis and reveal the complete displayed label on hover, keyboard
+        focus or tap in a viewport-aware Popover; never include the MCP model description.
+        Keep edit/manage actions below the list as outline buttons.</p>
+      <p>MCP tools use the supplied title, falling back to the tool name. This applies
+        to setup and edit pickers as well as selected-tool lists and tooltips. Omit
+        model-facing descriptions from UI rendering and search; preserve the original
+        metadata for the model. Native integrations keep their curated short descriptions.</p>
     </div>
 
     <!-- Code Block -->
@@ -4551,7 +4669,7 @@ body {
           <div class="fs-row-desc">Endpoint for the inference backend.</div>
         </div>
         <div class="fs-row-control">
-          <span class="quiet-connected"><i class="bi bi-check-lg" aria-hidden="true"></i> Connected</span>
+          <button class="btn btn-ghost">Test connection</button>
         </div>
       </div>
       <div class="fs-row">

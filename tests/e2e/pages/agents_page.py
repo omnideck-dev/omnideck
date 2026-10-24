@@ -2,15 +2,17 @@
 
 Agents live in the left-nav "Agents" panel: a searchable, sortable list
 that opens the full profile editor with a back breadcrumb. 
-The editor is the same ProfileBuilder component that used to
-live under Settings, so its interaction view is unchanged.
+The editor uses one scrolling form and the shared skills/tools picker.
 """
 
 from __future__ import annotations
 
+import re
+
 from playwright.sync_api import Locator, Page
 
 from tests.e2e.pages.settings_page import ModelPickerLocator
+from tests.e2e.pages.tool_selection import ToolSelection
 
 
 class ProfileList:
@@ -26,12 +28,12 @@ class ProfileList:
     def select(self, profile_id: str) -> None:
         """Click a profile and wait for the editor to populate."""
         self.item(profile_id).click()
-        self.page.locator("input[placeholder='Profile name']").wait_for(state="visible")
+        self.page.get_by_role("textbox", name="Name", exact=True).wait_for(state="visible")
 
     def new(self) -> None:
         """Click 'New agent' and wait for the empty editor to render."""
         self.page.get_by_test_id("agents-new").click()
-        self.page.locator("input[placeholder='Profile name']").wait_for(state="visible")
+        self.page.get_by_role("textbox", name="Name", exact=True).wait_for(state="visible")
 
     def search(self, query: str) -> None:
         self.page.get_by_test_id("agents-search").fill(query)
@@ -60,19 +62,20 @@ class ProfileBuilder:
 
     def __init__(self, page: Page):
         self.page = page
+        self.tools = ToolSelection(page)
 
     # ── Inputs ────────────────────────────────────────────────────
     @property
     def name_input(self) -> Locator:
-        return self.page.locator("input[placeholder='Profile name']")
+        return self.page.get_by_role("textbox", name="Name", exact=True)
 
     @property
     def description_input(self) -> Locator:
-        return self.page.locator("input[placeholder='Short description']")
+        return self.page.get_by_role("textbox", name="Description")
 
     @property
     def system_prompt(self) -> Locator:
-        return self.page.locator("textarea[placeholder='System prompt...']")
+        return self.page.get_by_role("textbox", name="Instructions")
 
     @property
     def model_picker(self) -> ModelPickerLocator:
@@ -82,38 +85,24 @@ class ProfileBuilder:
     def enabled_toggle(self) -> Locator:
         return self.page.locator("[data-testid='profile-enabled-toggle'] input[type='checkbox']")
 
-    @property
-    def skill_chips(self) -> Locator:
-        return self.page.locator("button[class*='chip']")
-
-    def open_skill_picker(self) -> "ProfileBuilder":
-        self.page.get_by_test_id("profile-add-skill").click()
-        self.page.get_by_test_id("profile-skill-picker").wait_for(state="visible")
-        return self
-
-    def skill_option(self, skill_id: str) -> Locator:
-        return self.page.get_by_test_id(f"profile-skill-option-{skill_id}")
+    def set_enabled(self, enabled: bool) -> None:
+        if self.enabled_toggle.is_checked() != enabled:
+            self.page.get_by_text("Available in chat and to other agents", exact=True).click()
 
     def preset(self, label: str) -> Locator:
+        self.open_advanced()
         return self.page.locator("[class*='presetBtn']", has_text=label)
 
     # ── Advanced section ──────────────────────────────────────────
     def open_advanced(self) -> "ProfileBuilder":
-        self.page.get_by_text("Advanced Settings").click()
+        disclosure = self.page.locator("details").filter(has=self.page.get_by_text("Model settings", exact=True))
+        if disclosure.get_attribute("open") is None:
+            disclosure.locator("summary").click()
         return self
 
     def field(self, name: str) -> Locator:
         """Advanced inference field by name (e.g. 'temperature', 'top_k')."""
         return self.page.get_by_test_id(f"field-{name}")
-
-    def auto_field(self, idx: int) -> Locator:
-        """Inference fields with placeholder='auto' (temperature, top_k, top_p,
-        repeat_penalty, context_window — in that source order)."""
-        return self.page.locator("input[placeholder='auto']").nth(idx)
-
-    def unlimited_field(self, idx: int) -> Locator:
-        """Fields with placeholder='unlimited' (num_predict, max_iterations)."""
-        return self.page.locator("input[placeholder='unlimited']").nth(idx)
 
     @property
     def thinking_switch(self) -> Locator:
@@ -121,23 +110,25 @@ class ProfileBuilder:
 
     # ── Action bar ────────────────────────────────────────────────
     def save(self) -> "ProfileBuilder":
-        self.page.get_by_role("button", name="Save").click()
+        self.page.get_by_role("button", name=re.compile(r"^(Save|Create agent)$")).click()
         return self
 
     def duplicate(self) -> "ProfileBuilder":
-        self.page.get_by_role("button", name="Duplicate").click()
+        self.page.get_by_role("button", name="More actions").click()
+        self.page.get_by_role("menuitem", name="Duplicate", exact=True).click()
         return self
 
     def export(self) -> "ProfileBuilder":
         """Open the export-options dialog from the editor action bar."""
+        self.page.get_by_role("button", name="More actions").click()
         self.page.get_by_test_id("profile-export").click()
         self.page.get_by_test_id("export-profile-modal").wait_for(state="visible")
         return self
 
     def delete(self) -> "ProfileBuilder":
-        # ConfirmButton: first click arms ("Confirm?"), second click fires.
-        self.page.get_by_role("button", name="Delete", exact=True).click()
-        self.page.get_by_role("button", name="Confirm?").click()
+        self.page.get_by_role("button", name="More actions").click()
+        self.page.get_by_role("menuitem", name="Delete agent", exact=True).click()
+        self.page.get_by_role("menuitem", name="Confirm delete?").click()
         return self
 
     # ── Inline feedback ───────────────────────────────────────────
@@ -165,7 +156,12 @@ class AgentsPage:
     def goto(self) -> "AgentsPage":
         """Open the Agents view from the left nav (lands on the list)."""
         self.page.goto("/")
-        self.page.get_by_role("button", name="Agents", exact=True).click()
+        button = self.page.get_by_role("button", name="Agents", exact=True)
+        button.wait_for(state="visible")
+        # Desktop restores the focused view after reload. Clicking its active
+        # sidebar entry would close it instead of navigating to the list.
+        if not self.page.get_by_test_id("agents-list").is_visible():
+            button.click()
         self.page.get_by_test_id("agents-list").wait_for(state="visible")
         return self
 

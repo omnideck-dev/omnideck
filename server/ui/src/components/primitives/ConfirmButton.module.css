@@ -25,14 +25,24 @@
 }
 
 .btn:hover:not(:disabled) {
-    background: rgba(220, 38, 38, 0.15);
+    background: color-mix(in srgb, var(--danger) 15%, transparent);
 }
+
+/* Menu actions stay quiet until armed; standalone buttons keep their tint. */
+.menuItem {
+    width: 100%;
+    justify-content: flex-start;
+    gap: var(--sp-2);
+    padding: 0 var(--sp-3);
+    background: transparent;
+}
+.menuItem:hover:not(:disabled) { background: var(--surface); }
 
 /* Armed state — applied automatically after click 1. Solid danger
  * fill + white text reads as "next click does it." */
 .confirming {
     background: var(--danger);
-    color: #fff;
+    color: var(--text-on-accent);
     border-color: var(--danger);
 }
 

@@ -14,6 +14,25 @@ const GROUPS = [
 ];
 
 describe('OperationPicker', () => {
+    it('keeps MCP model descriptions out of rendering and search without changing metadata', () => {
+        const operations = [
+            { id: 'mcp.search', title: 'Search messages', description: '# Model-only instructions' },
+            { id: 'mcp.read_value', description: 'Model-only fallback instructions' },
+            ...OPERATIONS,
+        ];
+        render(<OperationPicker operations={operations} selectedIds={[]} />);
+        expect(screen.getByRole('checkbox', { name: 'Search messages', exact: true })).toBeVisible();
+        expect(screen.getByRole('checkbox', { name: 'read_value', exact: true })).toBeVisible();
+        expect(screen.queryByText(/Model-only/)).not.toBeInTheDocument();
+        expect(screen.getByText('List recent messages.')).toBeVisible();
+        const search = screen.getByRole('searchbox', { name: 'Search tools' });
+        fireEvent.change(search, { target: { value: 'Model-only' } });
+        expect(screen.queryByTestId('integration-tool-mcp.search')).not.toBeInTheDocument();
+        fireEvent.change(search, { target: { value: 'recent' } });
+        expect(screen.getByTestId('integration-tool-mail.list')).toBeVisible();
+        expect(operations[0].description).toBe('# Model-only instructions');
+    });
+
     it('allows collapsing search results and restores the unfiltered expansion state', () => {
         render(<OperationPicker operations={OPERATIONS} groups={GROUPS} selectedIds={[]} collapsible />);
         const toggle = () => screen.getByRole('button', { name: 'Email 0 of 2' });

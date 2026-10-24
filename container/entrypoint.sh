@@ -60,6 +60,12 @@ chmod 755 /home/omnideck /var/lib/omnideck
 chown omnideck:broker /home/omnideck/downloads
 chmod 3770 /home/omnideck/downloads
 
+# ── One migration barrier, before any service starts ─────────────────────────
+# This command owns both stores only during bootstrap. Failures stop startup;
+# DEV_MODE respawns below do not run migrations while another service is live.
+cd /opt/omnideck || exit 1
+python3.12 -m migrations || exit 1
+
 # ── Virtual framebuffer ──────────────────────────────────────────────────────
 # Clean stale lock/socket from a previous run — docker restart preserves
 # tmpfs, so Xvfb's old files can block the new instance.
@@ -119,10 +125,8 @@ fi
 #
 # Modes here MUST stay in sync with brokering/_perms.py — that module is
 # the canonical reference and the in-process chmod calls reference it.
-mkdir -p /var/lib/omnideck/vault /run/cvault
-chown -R broker:broker /var/lib/omnideck/vault
+mkdir -p /run/cvault
 chown broker:broker /run/cvault
-chmod 0700 /var/lib/omnideck/vault   # VAULT_DIR_MODE
 chmod 0750 /run/cvault                # RUNTIME_DIR_MODE
 
 # ── Long-lived services ──────────────────────────────────────────────────────

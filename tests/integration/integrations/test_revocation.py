@@ -6,7 +6,7 @@ import pytest
 
 from brokering import broker_client
 from integrations.service import integration_service
-from tools.integrations._tool_resolution import integration_tools_by_category
+from skills._tool_categories import tool_categories
 
 from .fixtures._catalog import make_fake_email_catalog
 from .fixtures.fake_email import FakeEmail
@@ -31,17 +31,21 @@ async def test_revocation_removes_discovery_and_blocks_previously_usable_operati
             record = await response.json()
             iid = record["id"]
             run_snapshot = h.cache.snapshot()
-            categories = integration_tools_by_category(run_snapshot)
-            old_tools = categories["email"].tools
-            assert [tool.__name__ for tool in old_tools] == ["list_email_folders"]
-            assert "INBOX" in await old_tools[0](integration_id=iid)
+            category_id = f"integration:{iid}"
+            categories = await tool_categories(run_snapshot)
+            old_tools = categories[category_id].tools
+            assert len(old_tools) == 1
+            assert old_tools[0].__name__.startswith("list_email_folders_")
+            assert "integration_id" not in old_tools[0].definition()["function"]["parameters"]["properties"]
+            assert "INBOX" in await old_tools[0]()
+            with pytest.raises(ValueError, match="routing cannot be overridden"):
+                await old_tools[0](integration_id="another-account")
 
             saved = await h.client.patch(f"/api/integrations/{iid}", json={"operation_grants": []})
             assert saved.status == 200, await saved.text()
-            categories = integration_tools_by_category(h.cache.snapshot())
-            assert categories["email"].tools == []
-            assert categories["email"].available is False
-            assert integration_tools_by_category(run_snapshot)["email"].available is True
+            categories = await tool_categories(h.cache.snapshot())
+            assert categories[category_id].tools == []
+            assert (await tool_categories(run_snapshot))[category_id].tools
             with pytest.raises(broker_client.IntegrationPermissionDenied):
                 await integration_service.invoke(
                     iid,
@@ -50,6 +54,6 @@ async def test_revocation_removes_discovery_and_blocks_previously_usable_operati
                     app_sock_path=h.supervisor.app_sock_path,
                 )
             # A tool retained by an in-flight agent is still gated by the broker.
-            assert "not granted" in await old_tools[0](integration_id=iid)
+            assert "not granted" in await old_tools[0]()
     finally:
         await fake.stop()

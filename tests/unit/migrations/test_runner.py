@@ -20,8 +20,8 @@ def test_no_state_dir_is_noop(tmp_path, monkeypatch):
     not even loading the migration list."""
     calls: list[str] = []
     monkeypatch.setattr(
-        "migrations._runner._MIGRATIONS",
-        [("a", lambda _d: calls.append("a"))],
+        "migrations._runner._migration_plan",
+        lambda _vault: [("a", lambda _d: calls.append("a"))],
     )
     run_migrations(tmp_path / "nonexistent")
     assert calls == []
@@ -30,12 +30,12 @@ def test_no_state_dir_is_noop(tmp_path, monkeypatch):
 @pytest.mark.unit
 def test_runs_pending_migrations_in_declared_order(tmp_path, monkeypatch):
     """All migrations run when the applied set is empty, and they
-    run in the order declared in ``_MIGRATIONS`` — not alphabetically,
+    run in the order declared in ``_migration_plan`` — not alphabetically,
     not in parallel."""
     calls: list[str] = []
     monkeypatch.setattr(
-        "migrations._runner._MIGRATIONS",
-        [
+        "migrations._runner._migration_plan",
+        lambda _vault: [
             ("a", lambda _d: calls.append("a")),
             ("b", lambda _d: calls.append("b")),
             ("c", lambda _d: calls.append("c")),
@@ -51,8 +51,8 @@ def test_skips_already_applied(tmp_path, monkeypatch):
     Pending ones still run."""
     calls: list[str] = []
     monkeypatch.setattr(
-        "migrations._runner._MIGRATIONS",
-        [
+        "migrations._runner._migration_plan",
+        lambda _vault: [
             ("a", lambda _d: calls.append("a")),
             ("b", lambda _d: calls.append("b")),
             ("c", lambda _d: calls.append("c")),
@@ -71,8 +71,8 @@ def test_running_twice_is_idempotent(tmp_path, monkeypatch):
     relies on every time the app boots."""
     calls: list[str] = []
     monkeypatch.setattr(
-        "migrations._runner._MIGRATIONS",
-        [
+        "migrations._runner._migration_plan",
+        lambda _vault: [
             ("a", lambda _d: calls.append("a")),
             ("b", lambda _d: calls.append("b")),
         ],
@@ -91,8 +91,8 @@ def test_applied_file_persists_to_disk(tmp_path, monkeypatch):
     every migration that was invoked. The runner doesn't keep state
     in memory only — a crash mid-run still records prior successes."""
     monkeypatch.setattr(
-        "migrations._runner._MIGRATIONS",
-        [
+        "migrations._runner._migration_plan",
+        lambda _vault: [
             ("a", lambda _d: None),
             ("b", lambda _d: None),
         ],
@@ -113,8 +113,8 @@ def test_partial_failure_records_prior_successes(tmp_path, monkeypatch):
         raise RuntimeError(msg)
 
     monkeypatch.setattr(
-        "migrations._runner._MIGRATIONS",
-        [
+        "migrations._runner._migration_plan",
+        lambda _vault: [
             ("a", lambda _d: None),
             ("b", _bang),
             ("c", lambda _d: None),

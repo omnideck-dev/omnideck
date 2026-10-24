@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from agents._agent_profiles import AgentProfile, save_agent_profile
+from agents._agent_profiles import AgentProfile, save_agent_profile, get_agent_profile
 from server._profile_routes import handle_list_profiles, handle_update_profile
 
 
@@ -34,6 +34,23 @@ def _make_request(*, match_info=None, json_body=None, query=None):
     if json_body is not None:
         req.json = AsyncMock(return_value=json_body)
     return req
+
+
+@pytest.mark.unit
+async def test_direct_tools_persist_and_browser_grant_is_rejected():
+    save_agent_profile(AgentProfile(id="test", name="Test", model="m"))
+    response = await handle_update_profile(_make_request(
+        match_info={"id": "test"},
+        json_body={"id": "test", "name": "Test", "tool_categories": ["memory", "integration:work"]},
+    ))
+    assert response.status == 200
+    assert get_agent_profile("test").tool_categories == ["memory", "integration:work"]
+    response = await handle_update_profile(_make_request(
+        match_info={"id": "test"},
+        json_body={"id": "test", "name": "Test", "tool_categories": ["browser"]},
+    ))
+    assert response.status == 400
+    assert get_agent_profile("test").tool_categories == ["memory", "integration:work"]
 
 
 @pytest.mark.unit

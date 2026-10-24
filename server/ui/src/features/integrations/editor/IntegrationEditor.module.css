@@ -45,20 +45,15 @@
 .toolSummary {
     margin: var(--sp-4) 0 var(--sp-5);
 }
+.attention {
+    margin-bottom: var(--sp-6);
+}
 .summaryGroup {
     padding: var(--sp-4) 0;
     border-bottom: 1px solid var(--border);
 }
-.summaryHeading {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: var(--sp-2);
-}
-.summaryHeading span {
-    font-size: var(--font-size-small);
-    color: var(--text-secondary);
+.summaryGroup:first-child {
+    padding-top: 0;
 }
 .summaryGroup p, .settingCopy p {
     margin: var(--sp-2) 0 0;
@@ -66,6 +61,9 @@
     color: var(--text-secondary);
     overflow-wrap: anywhere;
     line-height: 1.5;
+}
+.summaryGroup p:first-child {
+    margin-top: 0;
 }
 .connection {
     margin-top: var(--sp-6);

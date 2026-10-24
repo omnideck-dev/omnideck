@@ -268,9 +268,9 @@ def test_imported_skill_appears_in_mounted_agent_picker(page: Page, clean_stores
     # independent-hook state behind the regression.
     agents = AgentsPage(page).goto()
     agents.profiles.select("e2e_import_picker_agent")
-    agents.builder.open_skill_picker()
+    agents.builder.tools.open()
     expect(
-        page.get_by_test_id("profile-skill-picker").get_by_text(
+        agents.builder.tools.picker.get_by_text(
             "Imported Live Skill", exact=True,
         ),
     ).not_to_be_visible()
@@ -283,17 +283,12 @@ def test_imported_skill_appears_in_mounted_agent_picker(page: Page, clean_stores
     SettingsPage(page).skills.import_file(path)
     expect(page.get_by_text("Imported Live Skill", exact=True)).to_be_visible()
 
-    imported = next(
-        s for s in page.request.get("/api/skills").json()
-        if s["name"] == "Imported Live Skill"
-    )
-
     # Return to that same mounted agent view. The new option must already be in
     # its picker; reloading here would hide the bug this test protects against.
     page.get_by_role("button", name="Agents", exact=True).click()
     page.get_by_test_id("agent-detail").wait_for(state="visible")
-    agents.builder.open_skill_picker()
-    expect(agents.builder.skill_option(imported["id"])).to_contain_text(
+    agents.builder.tools.open()
+    expect(agents.builder.tools.option("Skills", "Imported Live Skill")).to_contain_text(
         "Imported Live Skill",
     )
 

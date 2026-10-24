@@ -83,6 +83,7 @@ export default function GoogleOAuthConnection({
                         </span>
                     </div>
                 </div>
+                {error && <Callout tone="warning" title="Checking sign-in" description={error.message} />}
                 <Callout
                     tone="info"
                     title="Using your own OAuth client"

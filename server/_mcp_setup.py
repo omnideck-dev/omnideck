@@ -144,6 +144,9 @@ class MCPSetupManager:
         storage.capture_metadata(provider)
         return {
             "endpoint": settings["endpoint"],
+            # Preserve the user's choice separately from SDK/provider metadata:
+            # discovery and granted token scopes need not match requested scopes.
+            "requested_scopes": settings.get("scopes", ""),
             "access_token": storage.tokens.access_token if storage.tokens else "",
             "oauth_state": storage.serialize(),
             "discovered_operations": json.dumps([operation.public_dict() for operation in operations]),

@@ -133,7 +133,7 @@ def test_no_conversations_dir_is_noop(env) -> None:
     assert list_artifacts() == []
 
 
-def test_registered_in_runner() -> None:
-    from migrations._runner import _MIGRATIONS
+def test_registered_in_runner(tmp_path) -> None:
+    from migrations._runner import _migration_plan
 
-    assert any(name == "010_backfill_artifacts_index" for name, _ in _MIGRATIONS)
+    assert any(name == "010_backfill_artifacts_index" for name, _ in _migration_plan(tmp_path / "vault"))

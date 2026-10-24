@@ -2,7 +2,7 @@ import { useState } from 'react';
 
 import Button from '../../../../components/primitives/Button.jsx';
 import Callout from '../../../../components/primitives/Callout.jsx';
-import { ConnectionField, ConnectionFrame } from '../components/ConnectionLayout.jsx';
+import { ConnectionField, ConnectionFrame, ConnectionSection } from '../components/ConnectionLayout.jsx';
 import OAuthWaiting from '../components/OAuthWaiting.jsx';
 import useOAuthSetup from '../hooks/useOAuthSetup.js';
 import useMCPConnectionSettings from '../hooks/useMCPConnectionSettings.js';
@@ -16,13 +16,14 @@ export default function MCPOAuthConnection({
     const redirectUri = settings?.redirect_uri || '';
     const [form, setForm] = useState({
         label: existingConnection?.label || entry.title,
-        endpoint: null, issuer: null, clientId: null, scopes: '',
+        endpoint: null, issuer: null, clientId: null, scopes: null,
     });
     const oauth = useOAuthSetup({ onBusyChange, onConnectedId, onPendingOAuthChange });
     const set = (key, value) => setForm(current => ({ ...current, [key]: value }));
     const endpoint = form.endpoint ?? settings?.connection?.endpoint ?? '';
     const issuer = form.issuer ?? settings?.connection?.issuer ?? '';
     const clientId = form.clientId ?? settings?.connection?.client_id ?? '';
+    const scopes = form.scopes ?? settings?.connection?.scopes ?? '';
     if (['pending', 'committing', 'success'].includes(oauth.status)) {
         return <OAuthWaiting vendor={entry.title} committing={oauth.status !== 'pending'}
             authorizeUrl={oauth.pending?.authorize_url} onReopen={oauth.reopen} onExit={onExit} error={oauth.error} />;
@@ -31,7 +32,7 @@ export default function MCPOAuthConnection({
     const valid = redirectUri && form.label.trim() && endpoint.trim() && (!clientId.trim() || issuer.trim());
     const authorize = () => oauth.start({
         slug: entry.id, label: form.label.trim(),
-        endpoint: endpoint.trim(), client_id: clientId.trim(), issuer: issuer.trim(), scopes: form.scopes.trim(),
+        endpoint: endpoint.trim(), client_id: clientId.trim(), issuer: issuer.trim(), scopes: scopes.trim(),
         ...(existingConnection ? { reconnect_id: existingConnection.id } : {}),
     });
     return (
@@ -48,8 +49,7 @@ export default function MCPOAuthConnection({
             <ConnectionField label="Server URL">
                 <input className={styles.input} type="url" value={endpoint} onChange={event => set('endpoint', event.target.value)} placeholder="https://service.example/mcp" disabled={starting} />
             </ConnectionField>
-            <details>
-                <summary>Sign-in settings</summary>
+            <ConnectionSection title="Sign-in settings">
                 <ConnectionField label="Redirect URL" hint="Use this address if the service asks you to register a redirect URL.">
                     <input className={styles.input} value={redirectUri} readOnly onFocus={event => event.target.select()} />
                 </ConnectionField>
@@ -60,9 +60,9 @@ export default function MCPOAuthConnection({
                     <input className={styles.input} type="url" value={issuer} onChange={event => set('issuer', event.target.value)} disabled={starting} />
                 </ConnectionField>
                 <ConnectionField label="Requested access" hint="Optional space-separated scopes supplied by the service.">
-                    <input className={styles.input} value={form.scopes} onChange={event => set('scopes', event.target.value)} disabled={starting} />
+                    <input className={styles.input} value={scopes} onChange={event => set('scopes', event.target.value)} disabled={starting} />
                 </ConnectionField>
-            </details>
+            </ConnectionSection>
             {oauth.error && <Callout tone="danger" title="Couldn’t connect" description={oauth.error.message} />}
             {settingsError && <Callout tone="danger" title="Connection settings unavailable" description="Close setup and try again." />}
             {['expired', 'cancelled'].includes(oauth.status) && <Callout tone="info" title="Sign-in ended" description="Connect again when you’re ready." />}

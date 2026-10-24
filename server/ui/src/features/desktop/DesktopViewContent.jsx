@@ -1,4 +1,5 @@
 import AgentsView from '../../components/agents/AgentsView.jsx';
+import { useDesktopNavigationCommands } from '../navigation/DesktopNavigation.jsx';
 import SettingsView from '../../components/SettingsView.jsx';
 import ArtifactsHubDesktopView, {
     ArtifactFileDesktopView,
@@ -23,6 +24,7 @@ export default function DesktopViewContent({
     visible,
     tabGroupId,
 }) {
+    const { openSettings } = useDesktopNavigationCommands();
     if (view.type === 'custom-app') {
         return (
             <CustomAppDesktopView
@@ -58,10 +60,13 @@ export default function DesktopViewContent({
     // makes the supported View types visible without introducing a premature
     // runtime registration system.
     if (view.type === 'settings') {
-        return <SettingsView initialTab={view.identity?.navigationTarget?.tab || 'skills'} />;
+        const target = view.identity?.navigationTarget;
+        return <SettingsView initialTab={target?.tab || 'skills'} initialConnectionId={target?.connectionId} initialSkillId={target?.skillId} selectionRequest={target} />;
     }
     if (view.type === 'browser') return <BrowserView />;
-    if (view.type === 'agents') return <AgentsView />;
+    if (view.type === 'agents') return <AgentsView
+        onOpenIntegration={connectionId => openSettings('integrations', { connectionId })}
+        onOpenSkill={skillId => openSettings('skills', { skillId })} />;
     if (view.type === 'routines') return <RoutinesDesktopView />;
     if (view.type === 'artifacts') {
         return (

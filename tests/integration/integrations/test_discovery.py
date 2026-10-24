@@ -17,7 +17,6 @@ async def test_existing_and_dynamic_skills_keep_snapshot_after_http_grant_edit(
     integration_app, monkeypatch, tmp_path,
 ):
     monkeypatch.setattr("skills._store._skills_dir", lambda: tmp_path / "skills")
-    save_skill_record(SkillRecord(id="mail", name="Mail", tool_categories=["email"]))
     fake = FakeEmail()
     await fake.start()
     try:
@@ -29,6 +28,7 @@ async def test_existing_and_dynamic_skills_keep_snapshot_after_http_grant_edit(
             })
             assert response.status == 201, await response.text()
             connection_id = (await response.json())["id"]
+            save_skill_record(SkillRecord(id="mail", name="Mail", tool_categories=[f"integration:{connection_id}"]))
             snapshot = h.cache.snapshot()
             factory = AgentFactory()
             profile = AgentProfile(id="test", name="Test", model="test", skills=["mail"])
@@ -43,7 +43,7 @@ async def test_existing_and_dynamic_skills_keep_snapshot_after_http_grant_edit(
                 profile.model_copy(update={"skills": []}),
                 spawn_agent=spawn_agent, connections=snapshot,
             )
-            assert "list_email_folders" in {t.__name__ for t in initial.tools}
+            assert any(t.__name__.startswith("list_email_folders_") for t in initial.tools)
             response = await h.client.patch(
                 f"/api/integrations/{connection_id}", json={"operation_grants": []},
             )
@@ -51,13 +51,13 @@ async def test_existing_and_dynamic_skills_keep_snapshot_after_http_grant_edit(
             assert h.cache.snapshot()[0].operation_grants == frozenset()
             async with agent_span("test", agent_capabilities=dynamic):
                 assert "Loaded skill" in await load_skill("Mail")
-            assert "list_email_folders" in {t.__name__ for t in dynamic.tools}
-            assert "list_email_folders" in {t.__name__ for t in initial.tools}
+            assert any(t.__name__.startswith("list_email_folders_") for t in dynamic.tools)
+            assert any(t.__name__.startswith("list_email_folders_") for t in initial.tools)
 
             next_run = await factory.build_capabilities(
                 profile, spawn_agent=spawn_agent, connections=h.cache.snapshot(),
             )
-            assert "list_email_folders" not in {t.__name__ for t in next_run.tools}
+            assert not any(t.__name__.startswith("list_email_folders_") for t in next_run.tools)
 
             response = await h.client.delete(f"/api/integrations/{connection_id}")
             assert response.status == 204

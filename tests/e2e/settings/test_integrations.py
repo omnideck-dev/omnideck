@@ -30,6 +30,86 @@ def test_empty_state_shows_when_no_integrations(page: Page) -> None:
     expect(settings.integrations.empty_state_add).to_be_visible()
 
 
+@pytest.mark.parametrize("width", [1440, 390])
+def test_integration_attention_and_tool_summary_spacing(page: Page, width: int) -> None:
+    """A wrapped recovery warning remains separate from the compact tool summary."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.route("**/api/integrations", lambda route: route.fulfill(json={
+        "connections": [{
+            "id": "mcp_spacing", "slug": "mcp", "label": "Local MCP demo",
+            "state": "auth_failed", "operation_grants": ["mcp.read_value"],
+            "operations": [{"id": "mcp.read_value", "title": "read_value"}],
+        }],
+    }))
+    tab = SettingsPage(page).goto_integrations().integrations
+    tab.open_detail("mcp_spacing")
+    overview = page.get_by_test_id("integration-overview")
+    expect(overview.get_by_role("alert")).to_be_visible()
+    expect(overview.get_by_test_id("integration-status")).to_have_count(0)
+    expect(overview.get_by_role("heading", name="Tools", exact=True)).to_have_count(0)
+    expect(overview.get_by_role("region", name="Tools", exact=True)).to_be_visible()
+    # Measure settled layout, not the callout's entrance translation.
+    overview.evaluate("""async element => {
+        await Promise.all(element.getAnimations({subtree: true}).map(animation => animation.finished));
+    }""")
+    spacing = overview.evaluate("""element => {
+        const warning = element.querySelector('[role="alert"]').getBoundingClientRect();
+        const heading = element.querySelector('#integration-tools-heading');
+        const intro = heading.nextElementSibling.getBoundingClientRect();
+        const tools = element.querySelector('section[aria-label="Tools"]').getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return {
+            warningGap: heading.getBoundingClientRect().top - warning.bottom,
+            toolsGap: tools.top - intro.bottom,
+            sectionGap: parseFloat(style.getPropertyValue('--sp-6')),
+            groupGap: parseFloat(style.getPropertyValue('--sp-4')),
+        };
+    }""")
+    assert spacing["warningGap"] == pytest.approx(spacing["sectionGap"], abs=1)
+    assert spacing["toolsGap"] == pytest.approx(spacing["groupGap"], abs=1)
+
+
+@pytest.mark.parametrize("width", [1440, 390])
+def test_integration_rows_show_only_actionable_connection_status(page: Page, width: int) -> None:
+    """Problem rows use plain warning text; healthy rows and detail headers stay quiet."""
+    page.set_viewport_size({"width": width, "height": 900})
+    records = [
+        {"id": state, "slug": "mcp", "label": f"Integration {state}", "state": state,
+         "operation_grants": ["mcp.read_value"],
+         "operations": [{"id": "mcp.read_value", "title": "read_value"}]}
+        for state in ("running", "auth_failed", "broken", "unknown")
+    ]
+    page.route("**/api/integrations", lambda route: route.fulfill(json={"connections": records}))
+    tab = SettingsPage(page).goto_integrations().integrations
+    expect(tab.row("running")).to_contain_text("1 tool selected")
+    expect(tab.row("running").get_by_test_id("integration-issue")).to_have_count(0)
+    tab.open_detail("running")
+    overview = page.get_by_test_id("integration-overview")
+    expect(overview.get_by_text("Connected", exact=True)).to_have_count(0)
+    expect(overview.get_by_role("alert")).to_have_count(0)
+    for state, label in (
+        ("auth_failed", "Sign in again"),
+        ("broken", "Connection unavailable"),
+        ("unknown", "Couldn’t check connection"),
+    ):
+        row = tab.row(state)
+        issue = row.get_by_test_id("integration-issue")
+        expect(issue).to_have_text(label)
+        expect(row).not_to_contain_text("1 tool selected")
+        expect(issue.locator("i")).to_have_attribute("aria-hidden", "true")
+        assert issue.evaluate("""element => {
+            const style = getComputedStyle(element);
+            return style.backgroundColor === 'rgba(0, 0, 0, 0)'
+                && style.borderTopWidth === '0px'
+                && style.borderRadius === '0px'
+                && element.scrollWidth <= element.clientWidth + 1;
+        }""")
+        tab.open_detail(state)
+        expect(overview.get_by_role("alert")).to_contain_text("This integration needs attention")
+        expect(overview.get_by_test_id("integration-issue")).to_have_count(0)
+        expect(overview.get_by_test_id("integration-status")).to_have_count(0)
+
+
 def test_add_flow_opens_from_empty_state(page: Page) -> None:
     """Clicking the empty-state CTA opens setup at the catalog step."""
     settings = SettingsPage(page).goto_integrations()

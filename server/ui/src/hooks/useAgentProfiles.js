@@ -39,6 +39,7 @@ export default function useAgentProfiles() {
             body: JSON.stringify(profile),
         });
         const created = await res.json();
+        if (!res.ok) throw new Error(created.message || 'Could not create agent');
         setProfiles(prev => [...prev, created]);
         setRevision(r => r + 1);
         return created;

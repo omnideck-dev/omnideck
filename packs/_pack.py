@@ -24,7 +24,7 @@ from __future__ import annotations
 import logging
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from agents._agent_profiles import (
     AgentProfile,
@@ -44,6 +44,14 @@ logger = logging.getLogger(__name__)
 
 PACK_KIND = "omnideck.pack"
 PACK_VERSION = 1
+
+
+def _portable_categories(categories: list[str]) -> list[str]:
+    # Connection identities are local authority, not portable permissions.
+    # Neither old broad grants nor same-ID connections may attach on import.
+    from migrations._016_connection_tool_categories import LEGACY
+
+    return [cid for cid in categories if not cid.startswith("integration:") and cid not in LEGACY]
 
 # Profile fields that only make sense next to the provider and model they were
 # tuned for. Cleared from an export that leaves the provider and model behind,
@@ -72,6 +80,8 @@ class PackedSkill(BaseModel):
     description: str = ""
     prompt: str = ""
     tool_categories: list[str] = Field(default_factory=list)
+
+    _portable = field_validator("tool_categories")(_portable_categories)
 
 
 class PackedProfile(BaseModel):
@@ -104,6 +114,9 @@ class PackedProfile(BaseModel):
     compaction_threshold: float | None = None
     max_iterations: int | None = None
     skills: list[PackedSkill] = Field(default_factory=list)
+    tool_categories: list[str] = Field(default_factory=list)
+
+    _portable = field_validator("tool_categories")(_portable_categories)
 
 
 class Pack(BaseModel):
@@ -258,6 +271,8 @@ def import_pack(pack: Pack) -> ImportSummary:
     ]
     if any(grants_restricted_tool_category(skill.tool_categories) for skill in packed_skills):
         raise ValueError("Browser access is configured on the agent and cannot be imported as a skill.")
+    if any(grants_restricted_tool_category(profile.tool_categories) for profile in pack.profiles):
+        raise ValueError("Browser access must be configured locally and cannot be imported as a tool selection.")
 
     used_skill_names = {r.name for r in list_skill_records()}
     imported_skills: list[SkillRecord] = [_import_skill(packed, used_skill_names) for packed in pack.skills]

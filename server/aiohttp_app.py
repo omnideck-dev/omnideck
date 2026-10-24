@@ -189,9 +189,7 @@ def create_app(
     # UI routes
     register_ui_routes(app)
 
-    # Phase 1: Data migrations — synchronous, must complete before anything
-    # else reads state.  No user interaction needed.
-    app.on_startup.append(_run_data_migrations)
+    # Phase 1: Configure services. Data migrations already completed in bootstrap.
     app.on_startup.append(_configure_routines)
 
     # Phase 2: Readiness signals — each contributor hook calls
@@ -223,15 +221,6 @@ def create_app(
 async def _stop_active_run_manager(app: web.Application) -> None:
     """Gracefully stop process-owned agent runs during server shutdown."""
     await app[AGENT_RUNTIME_KEY].close()
-
-
-async def _run_data_migrations(_app: web.Application) -> None:
-    """Run pending data migrations against the state directory."""
-    from migrations import run_migrations
-
-    config = load_config()
-    state_dir = Path(config.settings.home_dir)
-    run_migrations(state_dir)
 
 
 def register_ready_contributor(app: web.Application, name: str) -> asyncio.Event:

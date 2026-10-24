@@ -5,8 +5,8 @@ import Callout from '../../../components/primitives/Callout.jsx';
 import ConfirmButton from '../../../components/primitives/ConfirmButton.jsx';
 import { getConnectionAdapter } from '../catalog/adapterRegistry.js';
 import IntegrationIcon from '../components/IntegrationIcon.jsx';
-import IntegrationStatus from '../components/IntegrationStatus.jsx';
 import { operationGroups } from '../components/OperationPicker.jsx';
+import { operationTitle } from '../components/operationDisplay.js';
 import IntegrationToolsDialog from './IntegrationToolsDialog.jsx';
 import IntegrationRenameDialog from './IntegrationRenameDialog.jsx';
 import styles from './IntegrationEditor.module.css';
@@ -35,11 +35,12 @@ export default function IntegrationEditor({
                     <h1>{record.label}</h1>
                     <p>{catalogEntry?.title || 'Integration'}</p>
                 </div>
-                <IntegrationStatus state={record.state} />
             </header>
             {record.state !== 'running' && (
-                <Callout tone="warning" title="This integration needs attention"
-                    description={`Use “${adapter.updateAction}” in Connection settings to restore access.`} />
+                <div className={styles.attention}>
+                    <Callout tone="warning" title="This integration needs attention"
+                        description={`Use “${adapter.updateAction}” in Connection settings to restore access.`} />
+                </div>
             )}
             <section aria-labelledby="integration-tools-heading">
                 <h2 id="integration-tools-heading">What omnideck can do</h2>
@@ -49,11 +50,9 @@ export default function IntegrationEditor({
                         const enabled = group.operations.filter(operation => selected.has(operation.id));
                         return (
                             <section className={styles.summaryGroup} key={group.id} aria-label={group.title}>
-                                <div className={styles.summaryHeading}>
-                                    <h3>{group.title}</h3><span>{toolCount(enabled.length)}</span>
-                                </div>
+                                {groups.length > 1 && <h3>{group.title}</h3>}
                                 <p>{enabled.length
-                                    ? enabled.map(operation => operation.title || 'Unnamed tool').join(' · ')
+                                    ? enabled.map(operationTitle).join(' · ')
                                     : 'No tools selected'}</p>
                             </section>
                         );

@@ -35,6 +35,18 @@ export function ConnectionField({ label, hint, children, wide = false }) {
     );
 }
 
+export function ConnectionSection({ title, children }) {
+    return (
+        <details className={styles.connectionSection}>
+            <summary className={styles.sectionSummary}>
+                <i className="bi bi-chevron-right" aria-hidden="true" />
+                {title}
+            </summary>
+            <div className={styles.sectionFields}>{children}</div>
+        </details>
+    );
+}
+
 export function ConnectionActions({
     onBack,
     onSubmit,

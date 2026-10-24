@@ -13,6 +13,7 @@ import {
 import IntegrationIcon from '../components/IntegrationIcon.jsx';
 import OperationPicker from '../components/OperationPicker.jsx';
 import ConnectionStep from './ConnectionStep.jsx';
+import ConnectionReload from './components/ConnectionReload.jsx';
 import styles from './IntegrationSetupFlow.module.css';
 
 const STEPS = [
@@ -26,6 +27,7 @@ export default function IntegrationSetupFlow({ catalog, onExit, onComplete }) {
     const [step, setStep] = useState('integration');
     const [selectedEntryId, setSelectedEntryId] = useState(null);
     const [connection, setConnection] = useState(null);
+    const [savedConnectionId, setSavedConnectionId] = useState(null);
     const [selectedIds, setSelectedIds] = useState([]);
     const [pendingOAuthState, setPendingOAuthState] = useState(null);
     const [connectionBusy, setConnectionBusy] = useState(false);
@@ -48,7 +50,10 @@ export default function IntegrationSetupFlow({ catalog, onExit, onComplete }) {
     }, []);
 
     const connectedById = useCallback(async (connectionId) => {
+        setSavedConnectionId(connectionId);
+        setPendingOAuthState(null);
         setConnectionBusy(true);
+        setError(null);
         try {
             const connections = await listIntegrationConnections();
             const record = connections.find(item => item.id === connectionId);
@@ -85,7 +90,7 @@ export default function IntegrationSetupFlow({ catalog, onExit, onComplete }) {
 
     const cancel = useCallback(async () => {
         if (dismissalBlocked) return;
-        if (!connection && !pendingOAuthState) {
+        if (!connection && !savedConnectionId && !pendingOAuthState) {
             onExit();
             return;
         }
@@ -93,7 +98,7 @@ export default function IntegrationSetupFlow({ catalog, onExit, onComplete }) {
         setCancelling(true);
         setError(null);
         try {
-            let connectionId = connection?.id || null;
+            let connectionId = connection?.id || savedConnectionId;
             if (pendingOAuthState) {
                 const cancelled = await cancelIntegrationOAuth(pendingOAuthState);
                 connectionId ||= cancelled.integration_id || null;
@@ -109,7 +114,7 @@ export default function IntegrationSetupFlow({ catalog, onExit, onComplete }) {
         } finally {
             setCancelling(false);
         }
-    }, [connection, dismissalBlocked, onExit, pendingOAuthState]);
+    }, [connection, savedConnectionId, dismissalBlocked, onExit, pendingOAuthState]);
 
     return (
         <Modal
@@ -147,7 +152,14 @@ export default function IntegrationSetupFlow({ catalog, onExit, onComplete }) {
                         onContinue={() => setStep('connection')}
                     />
                 )}
-                {step === 'connection' && entry && (
+                {step === 'connection' && savedConnectionId && (
+                    <ConnectionReload
+                        busy={connectionBusy || cancelling}
+                        onRetry={() => connectedById(savedConnectionId)}
+                        onExit={cancel}
+                    />
+                )}
+                {step === 'connection' && entry && !savedConnectionId && (
                     <ConnectionStep
                         entry={entry}
                         onBack={() => setStep('integration')}

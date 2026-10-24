@@ -23,8 +23,8 @@ from tests.integration.brokering.supervisor.test_supervisor import _rpc_call
 from tests.integration.brokering.mcp.test_sdk_oauth import authorization_server  # noqa: F401
 
 
-@pytest.mark.parametrize("slug", ["mcp", "slack"])
-async def test_setup_select_call_revoke_restart_and_remove(authorization_server, tmp_path, monkeypatch, slug):
+@pytest.mark.parametrize("slug,scopes", [("mcp", ""), ("mcp", "tools.read"), ("slack", " ".join(SLACK_MCP_SCOPES))])
+async def test_setup_select_call_revoke_restart_and_remove(authorization_server, tmp_path, monkeypatch, slug, scopes):
     state = authorization_server
     state["mcp"] = True
     if slug == "slack":
@@ -53,13 +53,14 @@ async def test_setup_select_call_revoke_restart_and_remove(authorization_server,
     try:
         async with TestServer(app) as server:
             manager = MCPSetupManager(callback_origin=f"http://localhost:{server.port}", commit=commit, allow_loopback=True)
-            settings = {"slug": slug, "label": "Fixture", "endpoint": state["endpoint"]}
+            settings = {"slug": slug, "label": "Fixture", "endpoint": state["endpoint"], "scopes": scopes}
             if slug == "slack":
                 settings.update(client_id="preregistered-slack-fixture", issuer=state["origin"],
                                 scopes=" ".join(SLACK_MCP_SCOPES))
             pending = await manager.start(settings)
             state["authorization"] = parse_qs(urlsplit(pending.authorize_url).query)
             assert state["authorization"]["code_challenge_method"] == ["S256"]
+            assert state["authorization"]["scope"] == [scopes or "tools"]
             if slug == "slack":
                 assert state["authorization"]["scope"] == [" ".join(SLACK_MCP_SCOPES)]
                 assert state["registrations"] == 0
@@ -79,6 +80,7 @@ async def test_setup_select_call_revoke_restart_and_remove(authorization_server,
             assert public_settings == {
                 "endpoint": state["endpoint"], "issuer": state["origin"],
                 "client_id": "preregistered-slack-fixture" if slug == "slack" else "fixture-client",
+                "scopes": scopes,
             }
             assert "fixture-access" not in json.dumps(public_settings)
             assert "fixture-refresh" not in json.dumps(public_settings)
@@ -98,8 +100,9 @@ async def test_setup_select_call_revoke_restart_and_remove(authorization_server,
             assert (await _rpc_call(Path(restored["socket"]), "mcp.new_tool", {}))["error"]["code"] == "PERMISSION_DENIED"
             # Reauthorize through the real setup coordinator, not a fabricated
             # replacement blob. New discoveries must never become grants.
-            reconnect = await manager.start({**settings, "reconnect_id": record["id"]})
+            reconnect = await manager.start({**public_settings, "slug": slug, "label": "Fixture", "reconnect_id": record["id"]})
             state["authorization"] = parse_qs(urlsplit(reconnect.authorize_url).query)
+            assert state["authorization"]["scope"] == [scopes or "tools"]
             if slug == "slack":
                 assert state["authorization"]["scope"] == [" ".join(SLACK_MCP_SCOPES)]
             async with httpx2.AsyncClient(trust_env=False) as browser:
@@ -129,6 +132,7 @@ async def test_setup_select_call_revoke_restart_and_remove(authorization_server,
             assert rotated["access_token"] == "renewed-access"
             assert json.loads(rotated["oauth_state"])["tokens"]["refresh_token"] == "rotated-refresh"
             assert state["refreshes"] == 1
+            assert (await _rpc_call(sup.app_sock_path, "mcp_setup_settings", {"id": record["id"]}))["result"] == public_settings
             await _rpc_call(sup.app_sock_path, "update", {"id": record["id"], "operation_grants": []})
             assert (await _rpc_call(Path(restored["socket"]), "mcp.read_value", {}))["error"]["code"] == "PERMISSION_DENIED"
             # A damaged registration must not leak the serialized credential

@@ -49,3 +49,31 @@ chat.send(model_script(
 
 The fake controls model output; the runtime owns everything after that boundary.
 These tests verify execution and UI behavior, not live model answer quality.
+
+## Agent and skill editors
+
+`pages/tool_selection.py` models the shared Add picker and selected rows used by
+both editors. Use visible roles and labels for actions, and the selected-row ID
+for saved identity. Do not restore the removed category tab or pill selectors.
+
+Coverage includes:
+
+- `profiles/test_simple_editor.py`: save/discard, reload, model settings,
+  browser/autonomy controls, and phone/desktop layouts.
+- `profiles/test_expandable_selection_rows.py`: shared row alignment, keyboard
+  disclosure, independent removal, and tool-label overflow.
+- `settings/test_selection_navigation.py`: direct and skill selections,
+  searchable picker, exact-account navigation, approval refresh, and draft
+  preservation when leaving the skill editor.
+- `settings/test_selection_recovery.py`: failed-save retry, catalog outage
+  without selection loss, and exports excluding local connection authority.
+
+Selection tests use real application APIs and the local test integration broker.
+Failure tests intercept only the request being failed; retries and persistence
+still use the real server. The MCP sign-in tests in `settings/test_mcp_integration.py`
+use a local OAuth/MCP service in place of the external provider.
+
+Run the entire app suite with `just e2e`; a focused editor pass is not a substitute
+for it. Run `just check` after the disposable container has been cleaned up if
+its temporary vault is inside the checkout: that vault is deliberately not
+readable by the host type checker.

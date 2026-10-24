@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Any
 
 from integrations.operations import OPERATIONS_BY_GROUP
+from migrations._engine import _load_applied, _save_applied
+from migrations._runner import _migration_plan, run_migrations
 
 import pytest
 
@@ -71,6 +73,24 @@ def _make_supervisor(tmp_path: Path, catalog: dict[str, CatalogEntry]) -> Superv
     )
 
 
+def _upgrade_before_services(tmp_path: Path) -> Path:
+    """Model an existing app upgraded through the real pre-service registry.
+
+    Historical app migrations already ran on this installation; broker metadata
+    and connection-category migrations must run before starting the supervisor.
+    The actual root entrypoint/UID boundary has its own disposable-container test.
+    """
+    state, vault = tmp_path / "app-state", tmp_path / "vault"
+    if not state.exists():
+        state.mkdir()
+        _save_applied(state, {
+            name for name, _ in _migration_plan(vault)
+            if name[:3].isdigit() and int(name[:3]) <= 15
+        })
+    run_migrations(state, vault)
+    return state
+
+
 @pytest.mark.parametrize("version", [2, 3])
 async def test_startup_preserves_grants_despite_narrower_scope_availability(tmp_path, version):
     """Neither metadata migration nor later restarts may scope-filter user intent."""
@@ -106,6 +126,7 @@ async def test_startup_preserves_grants_despite_narrower_scope_availability(tmp_
         })
         encrypted = enc_path(vault, iid).read_bytes()
         for _ in range(2):
+            _upgrade_before_services(tmp_path)
             supervisor = _make_supervisor(tmp_path, {"icloud": entry})
             await supervisor.start()
             try:
@@ -131,7 +152,7 @@ async def test_startup_preserves_grants_despite_narrower_scope_availability(tmp_
 
 
 @pytest.mark.asyncio
-async def test_reconcile_migrates_v2_grants_with_backup_and_broker_enforcement(
+async def test_bootstrap_migrates_v2_grants_before_reconcile_with_broker_enforcement(
     tmp_path: Path,
 ) -> None:
     fake = FakeEmail()
@@ -156,6 +177,8 @@ async def test_reconcile_migrates_v2_grants_with_backup_and_broker_enforcement(
         "password": fake.password,
     })
 
+    state = _upgrade_before_services(tmp_path)
+    assert "broker:001_operation_grants" in _load_applied(state)
     supervisor = _make_supervisor(tmp_path, _test_catalog(fake))
     await supervisor.start()
     try:
@@ -194,10 +217,12 @@ async def test_failed_migration_prevents_broker_start_and_listener(tmp_path):
         "permissions": {"email": "invalid"},
     }), encoding="utf-8")
     with pytest.raises(ValueError, match="Cannot migrate"):
+        _upgrade_before_services(tmp_path)
         await supervisor.start()
     assert not supervisor.app_sock_path.exists()
     assert supervisor._manager is None
     assert not (supervisor.vault_dir / ".migrations.json").exists()
+    assert "broker:001_operation_grants" not in _load_applied(tmp_path / "app-state")
     await supervisor.stop()
 
 

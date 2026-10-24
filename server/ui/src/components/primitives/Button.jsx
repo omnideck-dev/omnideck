@@ -8,6 +8,7 @@ import styles from './Button.module.css';
  *   filled            — single primary action per surface (Save, Connect).
  *   ghost             — quiet actions (Skip, dismiss, Cancel alongside Save).
  *   danger            — destructive (Delete, Disconnect).
+ *   menuItem          — left-aligned action menu row (caller supplies role).
  *
  * Icon API is children-based: <Button><Icon /> Label</Button>.
  * Async actions use `loading` and an optional concise `loadingLabel`; the

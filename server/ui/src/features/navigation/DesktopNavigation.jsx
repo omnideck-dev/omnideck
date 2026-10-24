@@ -96,7 +96,7 @@ export function DesktopNavigationProvider({ children }) {
         [openNetwork],
     );
     const openSettings = useCallback(
-        (tab = null) => openTarget({ kind: 'settings', tab }),
+        (tab = null, selection = {}) => openTarget({ kind: 'settings', tab, ...selection }),
         [openTarget],
     );
     const openAgents = useCallback(

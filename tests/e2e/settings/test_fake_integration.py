@@ -118,7 +118,9 @@ def test_fake_integration_full_lifecycle(page: Page) -> None:
     # grant set. The stateful pair then proves successful write/read dispatch.
     tab.open_detail(_ID)
     expect(page.get_by_test_id("integration-overview")).to_be_visible()
-    expect(page.get_by_test_id("integration-status")).to_have_text("Connected")
+    expect(page.get_by_test_id("integration-overview").get_by_text("Connected", exact=True)).to_have_count(0)
+    expect(tab.row(_ID)).to_contain_text("1 tool selected")
+    expect(tab.row(_ID).get_by_test_id("integration-issue")).to_have_count(0)
     expect(tab.row(_ID).get_by_test_id("integration-status")).to_have_count(0)
     expect(tab.connection_settings).to_have_js_property("open", False)
     expect(tab.rename_button(_ID)).to_be_hidden()
