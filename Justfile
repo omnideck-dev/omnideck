@@ -39,7 +39,6 @@ setup home_dir=`echo "$HOME/.omnideck"`:
     [ -d .venv ] && echo "📦 .venv exists — skipping" || uv venv .venv
     echo "📚 Installing Python deps..."
     uv sync --all-extras
-    uv pip install -e .
 
     if command -v node >/dev/null && command -v npm >/dev/null; then
         echo "🎨 Installing UI deps..."
@@ -496,7 +495,8 @@ _sync-src ctr:
 # Refresh the editable install after source sync so newly added top-level
 # packages and pyproject changes are immediately importable in isolated Python.
 _install-python ctr:
-    @bash scripts/container-engine.sh exec {{ctr}} uv pip install --system --no-cache -e /opt/omnideck
+    @bash scripts/container-engine.sh exec {{ctr}} bash /opt/omnideck/scripts/install-python-dependencies.sh
+    @bash scripts/container-engine.sh exec {{ctr}} uv pip install --system --no-cache --no-deps -e /opt/omnideck
     @echo "🐍 Python package refreshed in {{ctr}}"
 
 # Build the UI on the host, then copy dist/ into the container. The container

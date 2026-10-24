@@ -218,3 +218,20 @@ test('uses type-specific loading surfaces and immediate fallback icons', async (
     expect(within(pdfSurface).queryByTestId(/artifact-preview-skeleton/))
         .not.toBeInTheDocument();
 });
+
+test('encodes filesystem names for text, image, and HTML thumbnails', async () => {
+    artifacts = [
+        { ...ARTIFACTS[0], path: '/home/computron/notes #1.md' },
+        { ...ARTIFACTS[1], path: '/home/computron/page?.html' },
+        { ...ARTIFACTS[0], id: 'image', filename: 'chart%20final.png', content_type: 'image/png', path: '/home/computron/chart%20final.png' },
+    ];
+    render(<ArtifactsHubView />);
+    await screen.findByText('chart%20final.png');
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(
+        '/home/computron/notes%20%231.md', expect.any(Object),
+    ));
+    expect(screen.getByTestId('artifact-preview-a2').querySelector('iframe'))
+        .toHaveAttribute('src', '/home/computron/page%3F.html');
+    expect(screen.getByTestId('artifact-preview-image').querySelector('img'))
+        .toHaveAttribute('src', '/home/computron/chart%2520final.png');
+});

@@ -339,6 +339,11 @@ class StubPage:
         if script in self._evaluate_overrides:
             result = self._evaluate_overrides[script]
             return result() if callable(result) else result
+        if "editable: el.isContentEditable" in script:
+            locator = self._ref_locators.get(f'[data-ct-ref="{arg}"]')
+            if locator is None:
+                return None
+            return {"tag": locator._tag, "type": locator._input_type or "text", "editable": False}
         # Handle structured snapshot JS DOM walker (called with params dict)
         if isinstance(script, str) and "fullPage" in script and "nodes" in script and arg is not None:
             return {

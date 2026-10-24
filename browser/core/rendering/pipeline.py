@@ -92,6 +92,7 @@ def _filter_scope(
         return nodes, False
 
     heading_depth = nodes[heading_idx].depth
+    heading_level = nodes[heading_idx].level or 2
 
     # Walk backwards to find enclosing container_start
     container_idx = heading_idx
@@ -117,7 +118,7 @@ def _filter_scope(
     end_idx = len(nodes)
     for i in range(heading_idx + 1, len(nodes)):
         node = nodes[i]
-        if node.type == NodeType.HEADING and node.depth <= heading_depth:
+        if node.type == NodeType.HEADING and (node.level or 2) <= heading_level:
             end_idx = i
             break
     return nodes[heading_idx:end_idx], True
@@ -146,11 +147,13 @@ def _render_node(node: DomNode, *, name_limit: int) -> str | None:
 
     if t == NodeType.TEXT:
         text = (node.text or "").strip()
-        if len(text) <= 1:
+        if not text:
             return None
         return _truncate(text, 200)
 
     if t == NodeType.HEADING:
+        if node.extra and node.extra.get("content_in_children"):
+            return None
         name = (node.name or "").strip()
         if not name:
             return None

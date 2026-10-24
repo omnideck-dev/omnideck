@@ -1,0 +1,9 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Hidden dialogs</title><body>
+<h1>Visible page</h1><button>Visible control</button>
+<div aria-hidden="true" style="display:none"><div role="dialog"><h2>Hidden display section</h2><button>Hidden display control</button></div></div>
+<div aria-hidden="true" style="opacity:0"><div role="dialog"><h2>Hidden opacity section</h2><button>Hidden opacity control</button></div></div>
+<div style="opacity:0"><button>Hidden plain opacity control</button></div>
+<div aria-hidden="true" style="visibility:hidden"><div role="dialog"><button>Hidden visibility control</button></div></div>
+<div style="visibility:hidden"><button style="visibility:visible">Visibility restored control</button></div>
+<div style="height:2000px"></div><button>Offscreen control</button>
+</body></html>

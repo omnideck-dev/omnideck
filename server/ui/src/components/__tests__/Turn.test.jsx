@@ -253,7 +253,7 @@ describe('Turn forwards user_prompt attachments', () => {
     });
 
     it('renders the persisted SSE image attachment using its path', () => {
-        // After SSE confirmation the FE uses the served path directly —
+        // After SSE confirmation the FE converts the stored path to a URL.
         // ``container_file_handler`` serves /home/computron/* so the
         // browser can load it as a normal URL.
         const turn = {
@@ -261,8 +261,8 @@ describe('Turn forwards user_prompt attachments', () => {
                 {
                     kind: 'user_prompt', id: 'u1', content: 'look',
                     attachments: [
-                        { filename: 'red.png', content_type: 'image/png',
-                          path: '/home/computron/uploads/red.png' },
+                        { filename: 'red #1.png', content_type: 'image/png',
+                          path: '/home/computron/uploads/red #1.png' },
                     ],
                     isNudge: false,
                 },
@@ -270,7 +270,7 @@ describe('Turn forwards user_prompt attachments', () => {
         };
         render(<Turn turn={turn} />);
         const img = screen.getByTestId('message-user').querySelector('img');
-        expect(img?.getAttribute('src')).toBe('/home/computron/uploads/red.png');
+        expect(img?.getAttribute('src')).toBe('/home/computron/uploads/red%20%231.png');
     });
 
     it('renders a file chip for non-image attachments without dropping them', () => {

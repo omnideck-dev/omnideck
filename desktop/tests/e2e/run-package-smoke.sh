@@ -212,6 +212,7 @@ printf 'Staging the exact %s artifact and smoke harness.\n' "${package_kind}"
 remote_staged=1
 "${lab_dir}/lab.sh" copy-to "${vm}" "${artifact}" "${remote_root}/candidate.${package_kind}"
 "${lab_dir}/lab.sh" copy-to "${vm}" "${script_dir}/linux_package_smoke.sh" "${remote_root}/linux_package_smoke.sh"
+"${lab_dir}/lab.sh" copy-to "${vm}" "${script_dir}/verify_linux_smoke.py" "${remote_root}/verify_linux_smoke.py"
 
 ssh_options=(
   -i "${key_file}"

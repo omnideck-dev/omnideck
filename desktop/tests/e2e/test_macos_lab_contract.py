@@ -1,7 +1,10 @@
+import json
 import re
+import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
-
 
 E2E_DIR = Path(__file__).resolve().parent
 
@@ -59,10 +62,8 @@ class MacOSLabContractTest(unittest.TestCase):
         )
         download = self.guest.split("current_step='native host download'", 1)[1]
         download = download.split("current_step='native host upload'", 1)[0]
-        helper = download.index('"$downloads_permission_helper" \'Omnideck Lab\' 5')
-        confirm = download.index(
-            'click-in "$application" "Export “$fixture_name”" \'Export\' 30'
-        )
+        helper = download.index("\"$downloads_permission_helper\" 'Omnideck Lab' 5")
+        confirm = download.index('click-in "$application" "Export “$fixture_name”" \'Export\' 30')
         toast = download.index("wait-text \"$application\" 'Download complete' 10")
         capture = download.index("capture host-download-toast")
         finish = download.index("finish_downloads_permission")
@@ -70,6 +71,54 @@ class MacOSLabContractTest(unittest.TestCase):
         self.assertLess(confirm, toast)
         self.assertLess(toast, capture)
         self.assertLess(capture, finish)
+
+    def test_failed_launch_keeps_window_evidence_before_stopping(self):
+        launch = self.guest.split("launch_application() {", 1)[1]
+        launch = launch.split("\ndump_accessibility()", 1)[0]
+        dump = launch.index('dump_accessibility "${attempt_label}-failure"')
+        capture = launch.index('capture "${attempt_label}-failure"')
+        stop = launch.index("stop_application", dump)
+        self.assertLess(dump, capture)
+        self.assertLess(capture, stop)
+
+    def test_artifact_download_isolates_named_preview_before_click(self):
+        download = self.guest.split("current_step='native artifact download and toast'", 1)[1]
+        download = download.split("current_step='native update bridge visible contract'", 1)[0]
+        menu = download.index('"Actions for $artifact_filename tab"')
+        fullscreen = download.index("click-in \"$application\" 'Tab actions' 'Enter full screen'")
+        ready = download.index("wait-text \"$application\" 'Exit full screen'")
+        validate = download.index('python3 - "$result_dir/accessibility/artifact-download-target.json"')
+        click = download.index("click \"$application\" 'Download file'")
+        self.assertLess(menu, fullscreen)
+        self.assertLess(fullscreen, ready)
+        self.assertLess(ready, validate)
+        self.assertLess(validate, click)
+
+    def test_artifact_download_rejects_missing_or_ambiguous_targets(self):
+        # Execute the guest's guard against representative native AX records.
+        guard = self.guest.split('python3 - "$result_dir/accessibility/artifact-download-target.json"', 1)[1]
+        guard = guard.split("<<'PY'\n", 1)[1].split("\nPY", 1)[0]
+        title = {"role": "AXStaticText", "value": "artifact.txt"}
+        download = {"role": "AXButton", "description": "Download file"}
+        cases = (
+            ([title, download], True),
+            ([title, download, download], False),
+            ([title], False),
+            ([{"role": "AXStaticText", "value": "welcome_dashboard.html"}, download], False),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "tree.json"
+            for records, expected in cases:
+                with self.subTest(records=records):
+                    path.write_text(json.dumps(records), encoding="utf-8")
+                    result = subprocess.run(
+                        [sys.executable, "-", str(path), "artifact.txt"],
+                        input=guard,
+                        text=True,
+                        capture_output=True,
+                        check=False,
+                    )
+                    self.assertEqual(result.returncode == 0, expected, result.stderr)
 
 
 if __name__ == "__main__":

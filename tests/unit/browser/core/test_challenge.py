@@ -35,6 +35,14 @@ class _FakeResponse:
         self.headers = headers
 
 
+@pytest.fixture(autouse=True)
+def _stub_native_evaluation(monkeypatch):
+    async def evaluate(frame, expression):
+        return await frame.evaluate(expression)
+
+    monkeypatch.setattr("browser.core.challenges.evaluate_frame", evaluate)
+
+
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_detect_returns_cloudflare_for_dom_interstitial() -> None:

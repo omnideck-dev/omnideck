@@ -3,6 +3,7 @@ import {
     CONVERSATION_EVENT_TYPES as EVENT,
     TRANSCRIPT_ITEM_KINDS as ITEM,
 } from '../features/conversation/events/eventTypes.js';
+import { containerFileUrl } from '../utils/containerFileUrl.js';
 import Message from './Message.jsx';
 import CompactionChip from './CompactionChip.jsx';
 import Callout from './primitives/Callout.jsx';
@@ -38,7 +39,7 @@ function _iterationToEntries(iter) {
  *    thumbnail shows before the round-trip completes) and ``{filename,
  *    content_type}`` for non-image previews.
  *  - persisted SSE/log: ``{filename, content_type, path}``. ``path`` is served
- *    by the container_file_handler route, so it works directly as an
+ *    by the container_file_handler route. Encode it before using it as an
  *    ``<img src>``.
  */
 function _normalizeAttachments(attachments) {
@@ -48,7 +49,7 @@ function _normalizeAttachments(attachments) {
         if (a.kind === 'image' && a.src) {
             out.push({ src: a.src, filename: a.filename, content_type: a.content_type });
         } else if (a.path && a.content_type && a.content_type.startsWith('image/')) {
-            out.push({ src: a.path, filename: a.filename, content_type: a.content_type });
+            out.push({ src: containerFileUrl(a.path), filename: a.filename, content_type: a.content_type });
         } else if (a.filename || a.content_type) {
             out.push({ src: null, filename: a.filename, content_type: a.content_type });
         }

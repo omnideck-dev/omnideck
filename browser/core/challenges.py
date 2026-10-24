@@ -25,6 +25,8 @@ from typing import NamedTuple
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import Page, Response
 
+from browser.core.evaluation import evaluate_frame
+
 logger = logging.getLogger(__name__)
 
 
@@ -120,7 +122,7 @@ async def _detect_cloudflare(page: Page, response: Response | None) -> Challenge
     if _CF_URL_TOKEN in (page.url or "") or is_cloudflare_challenge_response(response):
         return _CF_INFO
     try:
-        if await page.main_frame.evaluate(_CF_DETECT_JS):
+        if await evaluate_frame(page.main_frame, _CF_DETECT_JS):
             return _CF_INFO
     except PlaywrightError:
         logger.debug("Cloudflare challenge probe failed", exc_info=True)

@@ -1,6 +1,12 @@
 .markdown :where(p, ul, ol, pre, blockquote, table) {
     margin: 0.5em 0;
 }
+.markdown a {
+    color: var(--accent);
+}
+.markdown a:hover {
+    color: var(--accent-hover);
+}
 .markdown :first-child {
     margin-top: 0;
 }

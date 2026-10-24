@@ -10,7 +10,6 @@ from pydantic import BaseModel
 class ConversationResumeState(BaseModel):
     """Persisted conversation and workspace state used when resuming."""
 
-    messages: list[dict[str, Any]]
     events: list[dict[str, Any]]
     browser_tabs: list[dict[str, Any]]
     terminal: dict[str, list[dict[str, Any]]]

@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Package checklist</title>
+  <script>
+    window.fixtureState = { marker: 'page-owned-state', actions: 0 };
+    window.fixtureEvalGuard = function () { throw new Error('eval is disabled'); };
+    if (new URLSearchParams(location.search).get('guard') !== '0') {
+      window.eval = window.fixtureEvalGuard;
+    }
+  </script>
+  <style>
+    body { margin: 24px; font-family: sans-serif; }
+    input, button { font: inherit; margin: 8px; padding: 8px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Package checklist</h1>
+    <p>This page keeps a local record of packages for the household. Enter a label
+       and record the package when it arrives. The checklist is shared by the
+       people who live here so they can see which delivery has been received.</p>
+    <label>Package label <input id="package-label"></label>
+    <button id="record-package" type="button">Record package</button>
+    <p id="confirmation" role="status">No packages recorded yet.</p>
+    <div id="package-options"></div>
+    <div style="height: 2400px"></div>
+    <button id="bottom-check" type="button">Confirm shelf</button>
+    <p id="shelf-status" role="status">Shelf awaiting review.</p>
+  </main>
+  <script>
+    document.getElementById('record-package').addEventListener('click', function () {
+      const confirmation = document.getElementById('confirmation');
+      const value = document.getElementById('package-label').value;
+      let step = 0;
+      confirmation.textContent = 'Recording package...';
+      const updates = setInterval(function () {
+        step += 1;
+        confirmation.textContent = 'Recording package, step ' + step;
+        if (step === 6) {
+          clearInterval(updates);
+          confirmation.textContent = 'Recorded package: ' + value;
+        }
+      }, 50);
+    });
+    const options = document.getElementById('package-options').attachShadow({ mode: 'open' });
+    options.innerHTML = '<style>input { width: 1px; height: 1px; margin: 0; padding: 0; }' +
+      'label { display: inline-block; padding: 10px; }</style>' +
+      '<label><input id="fragile" type="checkbox">Mark fragile</label>';
+    document.getElementById('bottom-check').addEventListener('click', function () {
+      document.getElementById('shelf-status').textContent = 'Shelf review complete.';
+    });
+  </script>
+</body>
+</html>

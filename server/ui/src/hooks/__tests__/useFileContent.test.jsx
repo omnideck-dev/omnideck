@@ -201,3 +201,41 @@ describe('useFileContent disk-change watcher', () => {
         expect(global.fetch).not.toHaveBeenCalled();
     });
 });
+
+it.each(['Invoice #123', 'Questions?', 'budget%20final', 'Café report'])(
+    'uses the exact filename for loading, watching, saving and downloading %s',
+    async (stem) => {
+        const item = { ...textItem, filename: `${stem}.md`, path: `/home/omnideck/${stem}.md` };
+        const expectedUrl = `/home/omnideck/${encodeURIComponent(item.filename)}`;
+        await act(async () => {
+            render(<Harness item={item} />);
+            await vi.advanceTimersByTimeAsync(0);
+        });
+        expect(global.fetch).toHaveBeenCalledWith(expectedUrl);
+        expect(global.fetch).toHaveBeenCalledWith(expectedUrl, { method: 'HEAD', cache: 'no-store' });
+        act(() => latest.setDraft('updated'));
+        await act(async () => { await latest.save(); });
+        expect(global.fetch).toHaveBeenCalledWith(expectedUrl, expect.objectContaining({ method: 'PUT' }));
+        expect(global.fetch).toHaveBeenCalledWith(`${expectedUrl}?v=1`);
+
+        window.omnideckHost = {};
+        const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function () {
+            expect(this.getAttribute('href')).toBe(expectedUrl);
+        });
+        act(() => latest.handleDownload());
+        expect(click).toHaveBeenCalledOnce();
+    },
+);
+
+it.each([
+    ['image/png', 'png', 'imageSrc'],
+    ['application/pdf', 'pdf', 'pdfSrc'],
+    ['text/html', 'html', 'iframeSrc'],
+])('preserves special characters in %s preview URLs', async (content_type, ext, source) => {
+    const item = { filename: `report #1.${ext}`, content_type, path: `/home/omnideck/report #1.${ext}` };
+    await act(async () => {
+        render(<Harness item={item} />);
+        await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(latest[source]).toBe(`/home/omnideck/report%20%231.${ext}`);
+});

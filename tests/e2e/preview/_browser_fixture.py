@@ -27,7 +27,7 @@ def install_fixture() -> None:
 
 
 def base_url() -> str:
-    return os.environ.get("OMNIDECK_URL", "http://localhost:8080")
+    return os.environ.get("OMNIDECK_BROWSER_URL") or os.environ.get("OMNIDECK_URL", "http://localhost:8080")
 
 
 def fixture_url(mode: str = "idle") -> str:

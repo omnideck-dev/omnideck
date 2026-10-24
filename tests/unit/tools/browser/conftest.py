@@ -9,9 +9,23 @@ import pytest
 
 from browser.core.browser import ActionResult
 from browser.core.document import Document
+from browser.core.evaluation import NO_ARGUMENT
 from browser.core.rendering import DEFAULT_BUDGET
 from browser.core.rendering import render_document as render
 from config import load_config
+
+
+@pytest.fixture(autouse=True)
+def _stub_native_evaluation(monkeypatch):
+    """Keep browser tool unit doubles behind the native evaluation boundary."""
+
+    async def evaluate(frame, expression, arg=NO_ARGUMENT):
+        if arg is NO_ARGUMENT:
+            return await frame.evaluate(expression)
+        return await frame.evaluate(expression, arg)
+
+    for module in ("document", "settling", "input.scroll", "input.pointer"):
+        monkeypatch.setattr(f"browser.core.{module}.evaluate_frame", evaluate, raising=False)
 
 
 class _StubTab:

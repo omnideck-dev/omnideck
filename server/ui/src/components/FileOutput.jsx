@@ -1,3 +1,4 @@
+import { containerFileUrl } from '../utils/containerFileUrl.js';
 import styles from './FileOutput.module.css';
 import { canPreviewFile } from '../utils/fileTypes.js';
 import FileIcon from './icons/FileIcon.jsx';
@@ -24,7 +25,7 @@ export default function FileOutput({ item, onPreview }) {
     const handleDownload = (e) => {
         e.stopPropagation();
         if (path) {
-            triggerDownload(path, filename);
+            triggerDownload(containerFileUrl(path), filename);
             return;
         }
         const byteChars = atob(content);

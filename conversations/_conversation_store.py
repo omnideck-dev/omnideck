@@ -9,7 +9,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any
 
-from agent_core.context import ConversationHistory, build_transcript_view
+from agent_core.context import ConversationHistory
 
 from ._browser_tabs import load_browser_tabs
 from ._events_log import load_events_jsonl
@@ -154,7 +154,7 @@ class ConversationStore:
             conversation_id: Conversation whose persisted state should be loaded.
 
         Returns:
-            Typed transcript, event, workspace, and agent-profile state.
+            Typed event, workspace, and agent-profile state.
         """
         # Disk is the durability contract for resume. The in-memory history keeps
         # only what the active LLM view needs and is deliberately not a second
@@ -165,11 +165,7 @@ class ConversationStore:
             self._check_open()
             await self._get_locked(conversation_id, events=events)
 
-        # Transcript view: the conversation as it happened, not the
-        # post-compaction LLM view. The frontend draws compaction chips itself.
-        transcript = build_transcript_view(events)
         return ConversationResumeState(
-            messages=transcript,
             events=events,
             browser_tabs=load_browser_tabs(conversation_id),
             terminal=load_terminal(conversation_id),

@@ -196,11 +196,12 @@ RUN chmod 755 /opt/desktop/a11y_tree.py && \
 # ── App dependencies (cached unless manifests change) ────────────────────────
 WORKDIR /opt/omnideck
 COPY pyproject.toml uv.lock ./
-RUN uv pip install --system --no-cache -e . 2>/dev/null || true
+COPY scripts/install-python-dependencies.sh scripts/install-python-dependencies.sh
+RUN bash scripts/install-python-dependencies.sh
 
 # ── App source ───────────────────────────────────────────────────────────────
 COPY --chmod=755 . /opt/omnideck/
-RUN uv pip install --system --no-cache -e .
+RUN uv pip install --system --no-cache --no-deps -e .
 
 # Prebuilt UI assets from the ui-builder stage (no node_modules in this image).
 COPY --from=ui-builder /ui/dist /opt/omnideck/server/ui/dist

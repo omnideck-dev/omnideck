@@ -60,6 +60,34 @@ _MAX_FOLDER_NAME_LEN = 40
 _ICON_RE = re.compile(r"^bi-[a-z0-9-]{1,40}$")
 
 
+def _resume_content_coding(accept_encoding: str) -> web.ContentCoding:
+    """Choose a supported response encoding using the client's preferences."""
+    qualities: dict[str, float] = {}
+    for item in accept_encoding.lower().split(","):
+        name, *parameters = item.split(";")
+        quality = 1.0
+        for parameter in parameters:
+            key, _, value = parameter.strip().partition("=")
+            if key.strip() == "q":
+                try:
+                    quality = float(value)
+                except ValueError:
+                    quality = 0.0
+        qualities[name.strip()] = quality if 0 <= quality <= 1 else 0.0
+
+    wildcard = qualities.get("*", 0.0)
+    coding = max(
+        (web.ContentCoding.gzip, web.ContentCoding.deflate),
+        key=lambda candidate: qualities.get(candidate.value, wildcard),
+    )
+    quality = qualities.get(coding.value, wildcard)
+    if quality > 0 and quality >= qualities.get("identity", 0.0):
+        return coding
+    if qualities.get("identity", 0.0 if qualities.get("*") == 0 else 1.0) > 0:
+        return web.ContentCoding.identity
+    raise web.HTTPNotAcceptable(headers={"Vary": "Accept-Encoding"})
+
+
 async def list_conversations_handler(_request: Request) -> Response:
     """Return past conversation summaries for the conversations panel."""
     summaries = list_conversations()
@@ -213,6 +241,7 @@ async def resume_conversation_handler(request: Request) -> Response:
     active = manager.active_for_conversation(conversation_id)
     if active is None and not conversation_exists(conversation_id):
         return web.json_response({"error": "Conversation not found"}, status=404)
+    coding = _resume_content_coding(",".join(request.headers.getall("Accept-Encoding", [])))
     resume_state = await request.app[AGENT_RUNTIME_KEY].conversations.load_conversation_resume_state(conversation_id)
 
     active_run = None
@@ -233,11 +262,21 @@ async def resume_conversation_handler(request: Request) -> Response:
             "resume_after_seq": resume_after_seq,
         }
 
-    return web.json_response({
+    payload = {
         "conversation_id": conversation_id,
         **resume_state.model_dump(),
         "active_run": active_run,
-    })
+    }
+    response = web.Response(
+        text=json.dumps(payload),
+        content_type="application/json",
+        headers={"Vary": "Accept-Encoding"},
+        # Large histories must not block other requests while being compressed.
+        zlib_executor_size=64 * 1024,
+    )
+    # Honor quality weights and exclusions before enabling the selected coding.
+    response.enable_compression(force=coding)
+    return response
 
 
 async def save_preview_state_handler(request: Request) -> Response:

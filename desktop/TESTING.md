@@ -173,6 +173,11 @@ Every release contains ten packages and ten matching `.sha256` files:
 | Linux | x64 | AppImage, DEB, RPM | Ubuntu x64 | AppImage smoke plus lifecycle checks for all three formats |
 | Linux | ARM64 | AppImage, DEB, RPM | Ubuntu ARM64 | Required when hardware is available; otherwise explicitly blocked |
 
+Windows builds inspect the produced host's DLL imports before uploading installers.
+The host must statically link the VC++ runtime, so a clean machine does not need
+an additional redistributable. Native smoke still proves the installed app launches;
+the import check alone does not replace that test.
+
 The static release contract verifies the exact filenames, checksums, file
 signatures, and AppImage architectures. The tag workflow runs it on build
 artifacts before the protected publication step. After publication, dispatch:
@@ -288,11 +293,12 @@ An alpha requires:
 - native packaged smoke for every remaining published architecture that has
   available hardware, with unavailable targets explicitly recorded as blocked.
 
-Ad-hoc-signed alpha warnings are acceptable only when documented and
-distinguished from corruption, an invalid bundle signature, or launch failure.
-Every macOS DMG must contain an application that passes strict recursive
-`codesign` verification. A post-publication failure does not mutate the alpha;
-it makes that alpha unqualified for later promotion.
+Ad-hoc-signed pull-request, `main`, and ordinary manual artifacts are internal
+evidence only and cannot be published. Every tagged macOS DMG must be signed by
+OmniDeck's Developer ID Application identity, notarized, stapled, and accepted
+by Gatekeeper in addition to passing strict recursive `codesign` verification.
+A post-publication failure does not mutate the alpha; it makes that alpha
+unqualified for later promotion.
 
 ### Beta
 

@@ -29,7 +29,7 @@ MODAL_HELPERS_JS = r"""
   function omnideckComposedParent(element) {
     if (element.parentElement) return element.parentElement;
     const root = element.getRootNode();
-    return root instanceof ShadowRoot ? root.host : null;
+    return root.nodeType === 11 && root.host ? root.host : null;
   }
 
   // Test containment in the composed tree rather than only the light DOM.
@@ -179,13 +179,13 @@ MODAL_HELPERS_JS = r"""
     while (dialogBranch && dialogBranch !== document.body) {
       const root = dialogBranch.getRootNode();
       const container = dialogBranch.parentElement
-        || (root instanceof ShadowRoot ? root : null);
+        || (root.nodeType === 11 && root.host ? root : null);
       if (!container) break;
-      const children = (container instanceof Element ? elementChildren : fragmentChildren).call(container);
+      const children = (container.nodeType === 1 ? elementChildren : fragmentChildren).call(container);
       for (const sibling of children) {
         if (sibling !== dialogBranch) branches.push(sibling);
       }
-      dialogBranch = container instanceof ShadowRoot ? container.host : container;
+      dialogBranch = container.nodeType === 11 && container.host ? container.host : container;
     }
     return branches;
   }
@@ -199,27 +199,28 @@ MODAL_HELPERS_JS = r"""
     });
   }
 
-  // Treat inert/aria-hidden as modal evidence only on meaningful background content.
+  // Suppression is evidence only when it covers meaningful page content.
+  // Empty closed backdrops and hidden responsive-nav duplicates are common
+  // independently of any dialog and must not promote a consent bar to a modal.
   function omnideckBranchIsSuppressed(element) {
-    const rect = element.getBoundingClientRect();
-    const isSubstantial = omnideckElementIsVisible(element)
-      && (rect.width * rect.height >= window.innerWidth * window.innerHeight * 0.25
-        || element.scrollHeight > window.innerHeight);
-    const isMeaningfulBackground = omnideckHasActionableContent(element) || isSubstantial;
+    function substantialContent(candidate) {
+      if (!omnideckElementIsVisible(candidate)) return false;
+      const rect = candidate.getBoundingClientRect();
+      const substantial = rect.width * rect.height
+          >= window.innerWidth * window.innerHeight * 0.25
+        || candidate.scrollHeight > window.innerHeight;
+      return substantial && ((candidate.innerText || '').trim().length > 0
+        || omnideckHasActionableContent(candidate));
+    }
+    function suppressed(candidate) {
+      return candidate.hasAttribute('inert')
+        || candidate.getAttribute('aria-hidden') === 'true';
+    }
+    if (suppressed(element))
+      return omnideckHasActionableContent(element) || substantialContent(element);
 
-    if (element.hasAttribute('inert')) return isMeaningfulBackground;
-    if (element.getAttribute('aria-hidden') === 'true') return isMeaningfulBackground;
-
-    return omnideckElementsIn(element).filter((descendant) => {
-      return descendant.hasAttribute('inert')
-        || descendant.getAttribute('aria-hidden') === 'true';
-    }).some((suppressedElement) => {
-      const suppressedRect = suppressedElement.getBoundingClientRect();
-      return omnideckElementIsVisible(suppressedElement)
-        && (suppressedRect.width * suppressedRect.height
-            >= window.innerWidth * window.innerHeight * 0.25
-          || suppressedElement.scrollHeight > window.innerHeight
-          || omnideckHasActionableContent(suppressedElement));
+    return omnideckElementsIn(element).some((descendant) => {
+      return suppressed(descendant) && substantialContent(descendant);
     });
   }
 
@@ -373,13 +374,25 @@ MODAL_HELPERS_JS = r"""
       if (leftZ !== rightZ) return leftZ - rightZ;
       return omnideckViewportCoverage(left) - omnideckViewportCoverage(right);
     });
-    const blocker = blockers[blockers.length - 1];
-    const roots = omnideckSurfaceRootsForBlocker(blocker);
-    return {
-      element: roots[roots.length - 1],
-      elements: roots,
-      kind: 'pointer'
-    };
+    for (const blocker of blockers.reverse()) {
+      const roots = omnideckSurfaceRootsForBlocker(blocker);
+      // Physical interception alone is not a dialog. Preserve page discovery
+      // when an empty ad slot or stale backdrop has nothing to interact with.
+      const hasSurface = roots.some((root) => {
+        return omnideckHasActionableContent(root)
+          || (omnideckElementIsVisible(root) && (root.innerText || '').trim())
+          || [root, ...omnideckElementsIn(root)].some((element) => {
+            return element.matches('dialog,[role="dialog"],[role="alertdialog"],iframe')
+              && omnideckElementIsVisible(element);
+          });
+      });
+      if (hasSurface) return {
+        element: roots[roots.length - 1],
+        elements: roots,
+        kind: 'pointer'
+      };
+    }
+    return null;
   }
 
   // Prefer authoritative semantic detection, then fall back to visual blocking.

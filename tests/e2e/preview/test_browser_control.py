@@ -345,24 +345,26 @@ def test_copy_from_remote_to_host(page: Page):
     assert "COPYME" in got, f"host clipboard was {got!r}"
 
 
-def test_paste_from_host_to_remote(page: Page):
-    """A host-clipboard paste over the view inserts into the focused field."""
-    _, bc = _open(page, open_fixture("input"))
-    bc.take_control()
-    bc.click_view()  # focus the remote input
-    # Playwright can't reliably trigger a real OS paste in headless, so dispatch
-    # the paste event the view listens for, carrying the host clipboard text.
-    page.evaluate(
-        """() => {
-          const el = document.querySelector(
-            '[data-testid="browser-preview"] [data-testid="browser-viewport"]');
-          const dt = new DataTransfer(); dt.setData('text/plain', 'PASTED');
-          el.dispatchEvent(new ClipboardEvent(
-            'paste', {clipboardData: dt, bubbles: true, cancelable: true}));
-        }"""
-    )
+@pytest.mark.parametrize("scope", ["root", "takeover"])
+@pytest.mark.parametrize("shortcut", ["Control+V", "Control+Shift+V", "Shift+Insert"])
+def test_paste_from_host_to_remote(page: Page, scope: str, shortcut: str):
+    """Native paste shortcuts insert once in the root Browser and takeover."""
+    page.context.grant_permissions(["clipboard-read", "clipboard-write"])
+    if scope == "root":
+        page.goto("/")
+        page.get_by_test_id("sidebar-nav-browser").click()
+        page.get_by_test_id("browser-page").wait_for(state="visible")
+        bc = BrowserControl(page).wait_loaded(timeout=_OPEN_TIMEOUT)
+        bc.goto(fixture_url("input"))
+        expect(bc.address).to_have_value(re.compile("mode=input"))
+    else:
+        _, bc = _open(page, open_fixture("input"))
+        bc.take_control()
+    bc.click_view()
+    page.evaluate("navigator.clipboard.writeText('PASTED')")
+    bc.press(shortcut)
     bc.press("Enter")
-    expect(bc.address).to_have_value(re.compile("got=PASTED"))
+    expect(bc.address).to_have_value(re.compile(r"[?&]got=PASTED$"))
 
 
 # ── file upload ─────────────────────────────────────────────────────

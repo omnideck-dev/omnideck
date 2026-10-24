@@ -655,14 +655,26 @@ export default function useConversationSessionController({
 
     /** Ask the backend to stop generation, leaving the stream open until
      * turn_end so the backend can flush whatever it streamed so far. */
-    const stopGeneration = useCallback(() => {
+    const stopGeneration = useCallback(async () => {
         if (
             !isStreamingRef.current
             || stopRequestedRef.current
             || browserIsOffline()
         ) return;
+        const controller = abortControllerRef.current;
         setStopRequested(true);
-        fetch(`/api/chat/stop?conversation_id=${conversationIdRef.current}`, { method: 'POST' }).catch(() => { });
+        try {
+            const response = await fetch(
+                `/api/chat/stop?conversation_id=${conversationIdRef.current}`,
+                { method: 'POST' },
+            );
+            if (response.ok) return;
+        } catch {
+            // A failed request leaves the run active and Stop available to retry.
+        }
+        if (abortControllerRef.current === controller) {
+            setStopRequested(false);
+        }
     }, [setStopRequested]);
 
     /** Resume a previous conversation by loading its history from the backend. */
