@@ -18,10 +18,11 @@ customStylesLink.href = '/custom.css';
 document.head.appendChild(customStylesLink);
 
 // Patch fetch so mutating application requests carry the CSRF header.
-// The server requires X-Requested-With: XMLHttpRequest on POST/PUT/DELETE.
-// Same-origin JS can set this freely; cross-origin JS cannot because the
-// server does not list it in Access-Control-Allow-Headers. Leave non-app
-// requests untouched so native WebView protocols retain their own headers.
+// The server requires X-Requested-With: XMLHttpRequest on every mutating
+// method (POST/PUT/PATCH/DELETE). Same-origin JS can set this freely;
+// cross-origin JS cannot because the server does not list it in
+// Access-Control-Allow-Headers. Leave non-app requests untouched so native
+// WebView protocols retain their own headers.
 const _originalFetch = window.fetch;
 window.fetch = csrfFetch(_originalFetch);
 
