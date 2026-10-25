@@ -183,7 +183,13 @@ async def handle_add_provider(request: web.Request) -> web.Response:
         auth_blob: dict[str, str] = {"api_key": spec.api_key}
         if spec.base_url:
             # OpenAI-compat with a key needs the upstream URL stored alongside
-            # the key so the broker knows where to forward.
+            # the key so the broker knows where to forward. Validate it the
+            # same as a direct provider's — this one reaches a real network
+            # host too, so it needs the same blocked-host guard.
+            try:
+                _validate_base_url(spec.base_url)
+            except ValueError as exc:
+                return web.json_response({"error": str(exc)}, status=400)
             auth_blob["base_url"] = spec.base_url
         try:
             await _supervisor_call("add", {
@@ -385,6 +391,12 @@ async def handle_update_provider(request: web.Request) -> web.Response:
             )
         auth_blob: dict[str, str] = {"api_key": spec.api_key}
         if spec.base_url:
+            # Reaches a real network host, same as the add path's brokered
+            # branch — needs the same blocked-host guard.
+            try:
+                _validate_base_url(spec.base_url)
+            except ValueError as exc:
+                return web.json_response({"error": str(exc)}, status=400)
             auth_blob["base_url"] = spec.base_url
         # Credential replacement is transactional in the supervisor. If the
         # replacement broker cannot start, the prior encrypted credentials
