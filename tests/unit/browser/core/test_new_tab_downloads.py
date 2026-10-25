@@ -134,6 +134,25 @@ class TestContextPageHandler:
 class TestCoordinateActionNewTab:
     """Verify that coordinate_action detects files opened in new tabs."""
 
+    async def test_popup_iframe_response_cannot_replace_main_document(self) -> None:
+        old_page = FakePage()
+        ctx = FakeContext([old_page])
+        browser = _make_browser(ctx)
+        new_page = FakePage(url="https://example.com/article")
+        main = _fake_response(url=new_page.url, frame=new_page.main_frame)
+        iframe = _fake_response(url="https://ads.example.net/frame", frame=object())
+
+        async def click() -> None:
+            ctx.open_tab(new_page)
+            new_page.emit("response", main)
+            new_page.emit("response", iframe)
+
+        result = await browser.coordinate_action(
+            click, source_tab=browser.get_tab(1), wait_for_navigation=False,
+        )
+        assert result.tab is browser.get_tab(2)
+        assert result.navigation_response is main
+
     async def test_pdf_in_new_tab_detected_via_response(self, tmp_path: Path) -> None:
         """A PDF response becomes a download and returns to the source tab."""
         old_page = FakePage(url="https://texas.gov/rules")
@@ -146,6 +165,7 @@ class TestCoordinateActionNewTab:
             body=b"%PDF-1.4 fake pdf content",
         )
         new_page = FakePage(url="https://texas.gov/rules.pdf")
+        pdf_response.frame = new_page.main_frame
 
         async def fake_click() -> None:
             ctx.open_tab(new_page)

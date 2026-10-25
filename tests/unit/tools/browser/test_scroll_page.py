@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from browser.core.document import Document
@@ -12,6 +14,50 @@ _cfg = load_config()
 _SCROLL_WARN_THRESHOLD = _cfg.tools.browser.scroll_warn_threshold
 _SCROLL_HARD_LIMIT = _cfg.tools.browser.scroll_hard_limit
 from tests.unit.tools.browser.support.playwright_stubs import StubPage
+
+
+async def test_scroll_budget_survives_separate_tool_tasks(
+    monkeypatch, browser_tool_harness, settle_tracker,
+):
+    _make_scroll_setup(monkeypatch, browser_tool_harness, settle_tracker)
+    for _ in range(_SCROLL_HARD_LIMIT):
+        (result,) = await asyncio.gather(scroll_page("down", tab="1"))
+    assert "SCROLL WARNING" in result
+    with pytest.raises(BrowserToolError, match="Scroll limit reached"):
+        await asyncio.gather(scroll_page("down", tab="1"))
+
+
+async def test_scroll_budget_reserves_parallel_calls(
+    monkeypatch, browser_tool_harness, settle_tracker,
+):
+    _make_scroll_setup(monkeypatch, browser_tool_harness, settle_tracker)
+    results = await asyncio.gather(
+        *(scroll_page("down", tab="1") for _ in range(_SCROLL_HARD_LIMIT + 2)),
+        return_exceptions=True,
+    )
+    assert sum(isinstance(result, BrowserToolError) for result in results) == 2
+
+
+async def test_cancelled_scroll_releases_budget_reservation(
+    monkeypatch, browser_tool_harness, settle_tracker,
+):
+    _make_scroll_setup(monkeypatch, browser_tool_harness, settle_tracker)
+    moving_scroll = Document.scroll
+    started = asyncio.Event()
+
+    async def blocked_scroll(document, direction, amount):
+        started.set()
+        await asyncio.Future()
+
+    monkeypatch.setattr(Document, "scroll", blocked_scroll)
+    task = asyncio.create_task(scroll_page("down", tab="1"))
+    await started.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    monkeypatch.setattr(Document, "scroll", moving_scroll)
+    for _ in range(_SCROLL_HARD_LIMIT):
+        await asyncio.gather(scroll_page("down", tab="1"))
 
 
 def _make_scroll_setup(monkeypatch, browser_tool_harness, settle_tracker):

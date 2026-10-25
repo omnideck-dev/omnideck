@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="frame-src 'none'">
+  <title>Vendor challenge fixture</title>
+</head>
+<body>
+  <script>
+    document.body.innerHTML = new URLSearchParams(location.search).get('markup') || '';
+  </script>
+</body>
+</html>

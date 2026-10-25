@@ -755,7 +755,7 @@ class Browser:
             responses = responses_by_new_page.setdefault(new_page, [])
 
             def _on_np_response(resp: Response) -> None:
-                if resp.request.resource_type == "document":
+                if resp.request.resource_type == "document" and resp.frame == new_page.main_frame:
                     responses.append(resp)
 
             new_page.on("response", _on_np_response)

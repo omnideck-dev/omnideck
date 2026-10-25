@@ -7,17 +7,18 @@ content and interactive elements.
 
 from __future__ import annotations
 
-import contextvars
 import logging
 import math
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Any
+from weakref import WeakKeyDictionary
 
 from playwright.async_api import Error as PlaywrightError
 
 from browser.core.exceptions import BrowserToolError
 from browser.core.formatting import format_rendered_document
 from browser.core.input.scroll import ScrollOutcome
+from browser.core.tab import Tab
 from config import load_config
 from tools.browser._tool_context import get_document
 from tools.browser._tool_support import (
@@ -29,12 +30,15 @@ from tools.browser.events import emit_screenshot_after, set_result_tab
 # ---------------------------------------------------------------------------
 # Scroll budget tracking
 # ---------------------------------------------------------------------------
-# Tracks scroll calls per page URL to prevent the agent from scrolling
-# endlessly. Resets when the URL changes (navigation, click-through, etc.).
-# Uses contextvars so each async task (request/agent invocation) gets its own
-# independent scroll budget — no cross-request interference.
-_scroll_count_var: contextvars.ContextVar[int] = contextvars.ContextVar("_scroll_count", default=0)
-_scroll_url_var: contextvars.ContextVar[str] = contextvars.ContextVar("_scroll_url", default="")
+@dataclass
+class _ScrollBudget:
+    url: str
+    count: int = 0
+
+
+# Tool calls run in separate tasks. Keep policy state with the tab's lifetime,
+# without retaining closed tabs or sharing counters between browser sessions.
+_scroll_budgets: WeakKeyDictionary[Tab, _ScrollBudget] = WeakKeyDictionary()
 
 
 logger = logging.getLogger(__name__)
@@ -355,16 +359,13 @@ async def scroll_page(
     warn_threshold = cfg.tools.browser.scroll_warn_threshold
     hard_limit = cfg.tools.browser.scroll_hard_limit
 
-    scroll_count = _scroll_count_var.get()
-    scroll_url = _scroll_url_var.get()
-
-    # Reset counter when the page URL changes (navigation, click-through, etc.)
-    if resolved_tab.url != scroll_url:
-        _scroll_url_var.set(resolved_tab.url)
-        scroll_count = 0
+    budget = _scroll_budgets.get(resolved_tab)
+    if budget is None or budget.url != resolved_tab.url:
+        budget = _ScrollBudget(url=resolved_tab.url)
+        _scroll_budgets[resolved_tab] = budget
 
     # Hard limit: refuse to scroll further
-    if scroll_count >= hard_limit:
+    if budget.count >= hard_limit:
         raise BrowserToolError(
             f"Scroll limit reached ({hard_limit} scrolls on this page). "
             "STOP scrolling. Use browse_page(full_page=True) to read the entire page, "
@@ -373,6 +374,8 @@ async def scroll_page(
         )
 
     scroll_outcome: ScrollOutcome | None = None
+    # Reserve before yielding so parallel calls cannot all pass the same limit.
+    budget.count += 1
 
     async def _perform_scroll() -> None:
         nonlocal scroll_outcome
@@ -389,6 +392,9 @@ async def scroll_page(
     except PlaywrightError as exc:
         logger.exception("Playwright error during scroll_page for direction %s", direction)
         raise BrowserToolError(f"Playwright error performing scroll: {exc}", tool="scroll_page") from exc
+    finally:
+        if scroll_outcome is None or not scroll_outcome.moved:
+            budget.count -= 1
 
     # Render the document with updated viewport/scroll information.
     result_tab = interaction_result.tab
@@ -413,9 +419,7 @@ async def scroll_page(
             "you need to inspect the complete document without forcing it to scroll.\n\n"
             f"{content}"
         )
-    else:
-        scroll_count += 1
-        _scroll_count_var.set(scroll_count)
+    scroll_count = budget.count
 
     # Inject warning after threshold
     if scroll_moved and scroll_count >= warn_threshold:
