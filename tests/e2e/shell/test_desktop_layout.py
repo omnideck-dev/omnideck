@@ -90,6 +90,33 @@ def test_first_sent_message_makes_fresh_chat_restorable_on_refresh(page: Page):
     assert page.evaluate(_SAVED_CHAT_ID) == conversation_id
 
 
+def test_refresh_reports_saved_conversation_load_failure(page: Page):
+    """Startup reports a genuine saved-chat failure through the shared loader."""
+    chat = ChatView(page).goto().new_conversation()
+    with page.expect_request(lambda request: request.url.endswith("/api/chat")) as sent:
+        chat.send(say("RETRY-SAVED-CHAT"))
+    conversation_id = sent.value.post_data_json["conversation_id"]
+    chat.wait_streaming()
+    page.wait_for_function(
+        f"expected => ({_SAVED_CHAT_ID})() === expected", arg=conversation_id,
+    )
+    resume_url = f"**/api/conversations/sessions/{conversation_id}/resume"
+    page.route(resume_url, lambda route: route.fulfill(
+        status=503, content_type="application/json", body='{"error":"Unavailable"}',
+    ))
+    page.reload()
+    expect(page.get_by_text(
+        "Couldn't open that conversation. Your current chat is still open."
+    )).to_be_visible()
+    expect(chat.composer).to_be_visible()
+    expect(page.get_by_test_id("message-user")).to_have_count(0)
+    page.unroute(resume_url)
+    page.locator(
+        f'[data-testid="recent-item"][data-conversation-id="{conversation_id}"]'
+    ).click()
+    expect(page.get_by_test_id("message-assistant").last).to_contain_text("RETRY-SAVED-CHAT")
+
+
 def test_navigation_destinations_are_retained_as_tabs(page: Page):
     """Opening pages retains earlier pages in the same tab stack."""
     ChatView(page).goto()

@@ -5,7 +5,6 @@ import {
     useMemo,
 } from 'react';
 
-import { useToast } from '../../components/ToastProvider.jsx';
 import {
     useAppEffectDispatch,
 } from '../app/AppEffects.jsx';
@@ -35,7 +34,6 @@ const DesktopNavigationCommandsContext = createContext(null);
  * for callers that should not construct View descriptors themselves.
  */
 export function DesktopNavigationProvider({ children }) {
-    const { addToast } = useToast();
     const activeConversationId = useActiveConversationId();
     const { loadConversation } = useConversationSessionCommands();
     const desktop = useDesktopViewCommands();
@@ -144,15 +142,7 @@ export function DesktopNavigationProvider({ children }) {
         { artifactId = null } = {},
     ) => {
         if (conversationId !== activeConversationId) {
-            let loaded;
-            try {
-                loaded = await loadConversation(conversationId);
-            } catch {
-                addToast("Couldn't open that conversation. Your current chat is still open.", {
-                    type: 'error',
-                });
-                return false;
-            }
+            const loaded = await loadConversation(conversationId);
             if (!loaded) return false;
         }
         openTarget({
@@ -161,7 +151,7 @@ export function DesktopNavigationProvider({ children }) {
             ...(artifactId ? { artifactId } : {}),
         });
         return true;
-    }, [activeConversationId, addToast, loadConversation, openTarget]);
+    }, [activeConversationId, loadConversation, openTarget]);
 
     const commands = useMemo(() => ({
         openTarget,

@@ -119,14 +119,16 @@ describe('ConversationSessionProvider', () => {
         harness.controller.reattachActiveRun.mockReset();
     });
 
-    it('propagates a failed load without notifying or clearing the current workspace', async () => {
+    it('reports a failed destination load without clearing the current workspace', async () => {
         harness.controller.loadConversation.mockRejectedValue(new Error('unavailable'));
         const { getSession } = renderSession();
         await act(async () => {
-            await expect(getSession().loadConversation('conversation-2'))
-                .rejects.toThrow('unavailable');
+            expect(await getSession().loadConversation('conversation-2')).toBe(false);
         });
-        expect(harness.addToast).not.toHaveBeenCalled();
+        expect(harness.addToast).toHaveBeenCalledWith(
+            "Couldn't open that conversation. Your current chat is still open.",
+            { type: 'error' },
+        );
         expect(harness.effects).toEqual([]);
         expect(harness.controller.reattachActiveRun).not.toHaveBeenCalled();
     });

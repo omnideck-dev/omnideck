@@ -160,7 +160,7 @@ describe('useDesktopShellLifecycle persistence', () => {
     });
 
     it('replaces an unloadable Conversation without stealing restored focus', async () => {
-        sessionHarness.loadConversation.mockRejectedValue(new Error('not found'));
+        sessionHarness.loadConversation.mockResolvedValue(false);
         const staleConversation = createNavigationView({
             kind: 'chat',
             conversationId: 'missing-conversation',

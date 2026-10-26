@@ -93,13 +93,7 @@ export default function useDesktopShellLifecycle({
             )?.conversationId;
             let conversationLoaded = true;
             if (conversationId) {
-                try {
-                    conversationLoaded = Boolean(
-                        await loadConversation(conversationId),
-                    );
-                } catch {
-                    conversationLoaded = false;
-                }
+                conversationLoaded = await loadConversation(conversationId);
             }
             if (cancelled) return;
 
