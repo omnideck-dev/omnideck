@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import pytest
+
 from playwright.sync_api import Page, expect
 
+from tests.e2e._protocol import say
 from tests.e2e.pages import ChatView, DesktopLayout
 
 
@@ -19,6 +22,99 @@ def _rect(locator):
     box = locator.bounding_box()
     assert box
     return box
+
+
+_SAVED_CHAT_ID = """() => {
+    const saved = JSON.parse(localStorage.getItem('omnideck_desktop_window_v1'));
+    return saved.layout.views.find(view => view.type === 'conversation')
+        .identity.navigationTarget.conversationId;
+}"""
+
+
+@pytest.mark.parametrize("focused_view", ["conversation", "settings"])
+def test_refresh_restores_unsent_chat_without_resuming_conversation(page: Page, focused_view: str):
+    """A fresh chat restores locally without a server conversation or error toast."""
+    chat = ChatView(page).goto().new_conversation()
+    desktop = DesktopLayout(page)
+    before = {
+        row["conversation_id"]
+        for row in page.request.get("/api/conversations/sessions").json()
+    }
+    if focused_view == "settings":
+        _open_destinations(page, "settings")
+    resume_requests = []
+    page.on("request", lambda request: resume_requests.append(request.url)
+            if request.url.endswith("/resume") else None)
+
+    page.reload()
+    expect(desktop.active_view("left")).to_have_attribute(
+        "data-view-id", f"destination:{focused_view}"
+    )
+    if focused_view == "settings":
+        page.get_by_test_id("settings-tab-integrations").click()
+        expect(page.get_by_test_id("integrations-tab")).to_be_visible()
+        desktop.tab("destination:conversation").click()
+    expect(chat.composer).to_be_visible()
+    expect(chat.composer).to_have_value("")
+    expect(page.get_by_test_id("message-user")).to_have_count(0)
+    expect(page.get_by_test_id("message-assistant")).to_have_count(0)
+    assert page.get_by_text(
+        "Couldn't open that conversation. Your current chat is still open."
+    ).count() == 0
+    assert resume_requests == []
+    assert page.evaluate(_SAVED_CHAT_ID) is None
+    assert {
+        row["conversation_id"]
+        for row in page.request.get("/api/conversations/sessions").json()
+    } == before
+
+
+def test_first_sent_message_makes_fresh_chat_restorable_on_refresh(page: Page):
+    """A fresh view gains its saved identity after sending and resumes its transcript."""
+    chat = ChatView(page).goto().new_conversation()
+    assert page.evaluate(_SAVED_CHAT_ID) is None
+    with page.expect_request(lambda request: request.url.endswith("/api/chat")) as sent:
+        chat.send(say("SAVED-CHAT-RESTORE"))
+    conversation_id = sent.value.post_data_json["conversation_id"]
+    chat.wait_streaming()
+    expect(page.get_by_test_id("message-assistant").last).to_contain_text("SAVED-CHAT-RESTORE")
+    page.wait_for_function(
+        f"expected => ({_SAVED_CHAT_ID})() === expected", arg=conversation_id,
+    )
+    with page.expect_response(
+        lambda response: response.url.endswith(f"/{conversation_id}/resume") and response.ok,
+    ):
+        page.reload()
+    expect(page.get_by_test_id("message-user")).to_have_count(1)
+    expect(page.get_by_test_id("message-assistant").last).to_contain_text("SAVED-CHAT-RESTORE")
+    assert page.evaluate(_SAVED_CHAT_ID) == conversation_id
+
+
+def test_refresh_reports_saved_conversation_load_failure(page: Page):
+    """Startup reports a genuine saved-chat failure through the shared loader."""
+    chat = ChatView(page).goto().new_conversation()
+    with page.expect_request(lambda request: request.url.endswith("/api/chat")) as sent:
+        chat.send(say("RETRY-SAVED-CHAT"))
+    conversation_id = sent.value.post_data_json["conversation_id"]
+    chat.wait_streaming()
+    page.wait_for_function(
+        f"expected => ({_SAVED_CHAT_ID})() === expected", arg=conversation_id,
+    )
+    resume_url = f"**/api/conversations/sessions/{conversation_id}/resume"
+    page.route(resume_url, lambda route: route.fulfill(
+        status=503, content_type="application/json", body='{"error":"Unavailable"}',
+    ))
+    page.reload()
+    expect(page.get_by_text(
+        "Couldn't open that conversation. Your current chat is still open."
+    )).to_be_visible()
+    expect(chat.composer).to_be_visible()
+    expect(page.get_by_test_id("message-user")).to_have_count(0)
+    page.unroute(resume_url)
+    page.locator(
+        f'[data-testid="recent-item"][data-conversation-id="{conversation_id}"]'
+    ).click()
+    expect(page.get_by_test_id("message-assistant").last).to_contain_text("RETRY-SAVED-CHAT")
 
 
 def test_navigation_destinations_are_retained_as_tabs(page: Page):
