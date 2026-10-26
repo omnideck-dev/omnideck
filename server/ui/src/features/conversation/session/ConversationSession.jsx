@@ -69,15 +69,7 @@ export function ConversationSessionProvider({ children }) {
 
     const loadConversation = useCallback(async (conversationId) => {
         const previousConversationId = session.activeConversationId;
-        let loaded;
-        try {
-            loaded = await session.loadConversation(conversationId);
-        } catch {
-            addToast("Couldn't open that conversation. Your current chat is still open.", {
-                type: 'error',
-            });
-            return false;
-        }
+        const loaded = await session.loadConversation(conversationId);
         if (!loaded) return false;
 
         if (
@@ -102,7 +94,6 @@ export function ConversationSessionProvider({ children }) {
         if (loaded.activeRun) void session.reattachActiveRun(loaded);
         return true;
     }, [
-        addToast,
         agentDispatch,
         appEffectDispatch,
         session.activeConversationId,

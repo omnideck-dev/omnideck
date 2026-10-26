@@ -27,6 +27,11 @@ const desktop = vi.hoisted(() => ({
     },
 }));
 const dispatchAppEffect = vi.hoisted(() => vi.fn());
+const addToast = vi.hoisted(() => vi.fn());
+
+vi.mock('../../../components/ToastProvider.jsx', () => ({
+    useToast: () => ({ addToast }),
+}));
 
 vi.mock('../../conversation/session/ConversationSession.jsx', () => ({
     useActiveConversationId: () => session.activeConversationId,
@@ -66,6 +71,7 @@ describe('DesktopNavigationProvider', () => {
         session.loadConversation.mockResolvedValue(true);
         desktop.commands.openView.mockReset();
         dispatchAppEffect.mockReset();
+        addToast.mockReset();
     });
 
     it('translates named navigation into one Desktop View write path', () => {
@@ -220,7 +226,25 @@ describe('DesktopNavigationProvider', () => {
         });
     });
 
-    it('does not change Desktop when conversation loading fails', async () => {
+    it('reports failed navigation without changing Desktop or opening the requested artifact', async () => {
+        session.loadConversation.mockRejectedValue(new Error('unavailable'));
+        const { result } = renderHook(useDesktopNavigationCommands, { wrapper });
+
+        await act(async () => {
+            expect(await result.current.openConversation('missing', {
+                artifactId: 'artifact-3',
+            })).toBe(false);
+        });
+
+        expect(addToast).toHaveBeenCalledExactlyOnceWith(
+            "Couldn't open that conversation. Your current chat is still open.",
+            { type: 'error' },
+        );
+        expect(desktop.commands.openView).not.toHaveBeenCalled();
+        expect(dispatchAppEffect).not.toHaveBeenCalled();
+    });
+
+    it('does not notify or change Desktop when conversation loading is abandoned', async () => {
         session.loadConversation.mockResolvedValue(false);
         const { result } = renderHook(
             useDesktopNavigationCommands,
@@ -231,5 +255,6 @@ describe('DesktopNavigationProvider', () => {
 
         expect(desktop.commands.openView).not.toHaveBeenCalled();
         expect(dispatchAppEffect).not.toHaveBeenCalled();
+        expect(addToast).not.toHaveBeenCalled();
     });
 });

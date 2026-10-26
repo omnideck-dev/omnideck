@@ -21,6 +21,35 @@ def _rect(locator):
     return box
 
 
+def test_reload_unsent_chat_keeps_settings_usable_without_navigation_error(page: Page):
+    """Restoring an unsaved chat quietly replaces it and preserves Settings focus."""
+    ChatView(page).goto().new_conversation()
+    desktop = DesktopLayout(page)
+    _open_destinations(page, "settings")
+    saved_chat_id = """() => {
+        const saved = JSON.parse(localStorage.getItem('omnideck_desktop_window_v1'));
+        return saved.layout.views.find(view => view.type === 'conversation')
+            .identity.navigationTarget.conversationId;
+    }"""
+    unsent_id = page.evaluate(saved_chat_id)
+    with page.expect_response(
+        lambda response: response.url.endswith("/resume") and response.status == 404,
+    ):
+        page.reload()
+    # Persistence resumes only after the missing chat has been replaced.
+    page.wait_for_function(
+        f"previous => ({saved_chat_id})() !== previous", arg=unsent_id,
+    )
+    expect(desktop.active_view("left")).to_have_attribute(
+        "data-view-id", "destination:settings"
+    )
+    expect(page.get_by_text(
+        "Couldn't open that conversation. Your current chat is still open."
+    )).to_have_count(0)
+    page.get_by_test_id("settings-tab-integrations").click()
+    expect(page.get_by_test_id("integrations-tab")).to_be_visible()
+
+
 def test_navigation_destinations_are_retained_as_tabs(page: Page):
     """Opening pages retains earlier pages in the same tab stack."""
     ChatView(page).goto()
