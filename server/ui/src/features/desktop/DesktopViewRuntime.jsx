@@ -8,10 +8,11 @@ import {
 
 import useIsMobileViewport from '../../hooks/useIsMobileViewport.js';
 import { DESKTOP_TAB_GROUP_IDS } from './desktopLayoutReducer.js';
-import { tabGroupContainingView } from './desktopLayoutSelectors.js';
+import { tabGroupContainingView, visibleViewIds } from './desktopLayoutSelectors.js';
 
 const DesktopViewCatalogContext = createContext(null);
 const DesktopViewCommandsContext = createContext(null);
+const DesktopViewVisibilityContext = createContext(null);
 const DesktopViewFocusContext = createContext(null);
 
 /** Locate the tab group actually holding the Conversation view, if any. */
@@ -52,6 +53,13 @@ export function DesktopViewRuntimeProvider({ desktopLayout, children }) {
     const modelRef = useRef(model);
     modelRef.current = model;
     const isMobile = useIsMobileViewport();
+    const visibleIds = useMemo(() => visibleViewIds(model, isMobile), [
+        model.tabGroups,
+        model.openViewsById,
+        model.floatingByViewId,
+        model.fullscreenViewId,
+        isMobile,
+    ]);
     // Bounds, split ratios, and focus change frequently. Domain effects need
     // only the View catalog, so keep their context value stable for pure
     // placement updates.
@@ -141,7 +149,9 @@ export function DesktopViewRuntimeProvider({ desktopLayout, children }) {
         <DesktopViewCatalogContext.Provider value={viewCatalog}>
             <DesktopViewCommandsContext.Provider value={commands}>
                 <DesktopViewFocusContext.Provider value={viewFocus}>
-                    {children}
+                    <DesktopViewVisibilityContext.Provider value={visibleIds}>
+                        {children}
+                    </DesktopViewVisibilityContext.Provider>
                 </DesktopViewFocusContext.Provider>
             </DesktopViewCommandsContext.Provider>
         </DesktopViewCatalogContext.Provider>
@@ -183,4 +193,13 @@ export function useFocusedViewId() {
         );
     }
     return focus.focusedViewId;
+}
+
+/** IDs of views displayed by the desktop, regardless of keyboard focus. */
+export function useVisibleViewIds() {
+    const ids = useContext(DesktopViewVisibilityContext);
+    if (ids === null) {
+        throw new Error('useVisibleViewIds must be used within DesktopViewRuntimeProvider');
+    }
+    return ids;
 }

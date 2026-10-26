@@ -1,3 +1,4 @@
+import Spinner from './Spinner.jsx';
 import styles from './Button.module.css';
 
 /**
@@ -37,7 +38,7 @@ export default function Button({
         >
             {loading ? (
                 <>
-                    <span className={styles.spinner} aria-hidden="true" />
+                    <Spinner />
                     {loadingLabel}
                 </>
             ) : children}
