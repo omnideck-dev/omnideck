@@ -111,15 +111,6 @@ class _StubBrowser:
         )
 
 
-@pytest.fixture(autouse=True)
-def _reset_scroll_budget() -> None:
-    """Reset scroll budget tracking between tests."""
-    from tools.browser.interactions import _scroll_count_var, _scroll_url_var
-
-    _scroll_count_var.set(0)
-    _scroll_url_var.set("")
-
-
 @pytest.fixture
 def browser_tool_harness(monkeypatch: pytest.MonkeyPatch) -> Callable[[Any], _StubBrowser]:
     """Connect agent-tool modules to a browser test double.

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useConversationCatalog } from '../features/conversation/catalog/ConversationCatalog.jsx';
 import { useToast } from './ToastProvider.jsx';
 import { clearChatDraft } from '../utils/chatDraftStorage.js';
+import StatusDot from './StatusDot.jsx';
+import Spinner from './primitives/Spinner.jsx';
 import SearchInput from './primitives/SearchInput.jsx';
 import SectionHeader from './ConversationSectionHeader.jsx';
 import ArchivedSection from './ConversationArchivedSection.jsx';
@@ -39,7 +41,7 @@ function pointRect(event) {
 export default function ConversationsPanel({ onLoadConversation, onNewConversation, activeConversationId }) {
     const { addToast } = useToast();
     const {
-        items, setItems, loading, deleting, handleDelete,
+        items, setItems, loading, deleting, handleDelete, activity,
         archiveConversation, unarchiveConversation,
         folders, createFolder, renameFolder, setFolderIcon, deleteFolder, setConversationFolder,
     } = useConversationCatalog();
@@ -247,6 +249,8 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
         }
         const active = id === activeConversationId;
         const menuOpen = menu?.id === id;
+        const running = activity.running.has(id);
+        const finished = activity.finished.has(id);
         return (
             <div
                 key={id}
@@ -275,6 +279,17 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
                 data-pinned={convo.pinned ? 'true' : 'false'}
                 data-folder-id={convo.folder_id || ''}
             >
+                {(running || finished) && (
+                    <span
+                        role="img"
+                        aria-label={running ? 'Running' : 'Finished'}
+                        title={running ? 'Running' : 'Finished'}
+                        data-testid="conversation-activity"
+                        data-status={running ? 'running' : 'finished'}
+                    >
+                        {running ? <Spinner /> : <StatusDot status="complete" />}
+                    </span>
+                )}
                 <span className={styles.itemTitle}>{label(convo)}</span>
                 {showAge && (
                     <span className={styles.itemAge} data-testid="recent-item-age">

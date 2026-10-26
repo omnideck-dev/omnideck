@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable, Iterator
+from contextlib import contextmanager
 from typing import Protocol
 from uuid import uuid4
 from integrations.connection_cache import IntegrationConnectionCache
@@ -102,6 +103,7 @@ class AgentRuntime:
         self._active_by_conversation: dict[str, RunSession] = {}
         self._runs_by_id: dict[str, RunSession] = {}
         self._closed = False
+        self._run_observers: set[Callable[[RunHandle], None]] = set()
 
     async def start(self, request: AgentRunRequest) -> RunHandle:
         if self._closed:
@@ -118,7 +120,22 @@ class AgentRuntime:
         self._active_by_conversation[session.conversation_id] = session
         self._runs_by_id[session.run_id] = session
         session.task = asyncio.create_task(self._drive(session), name=f"agent-run-{session.run_id[4:12]}")
-        return RunHandle(session)
+        handle = RunHandle(session)
+        for observer in tuple(self._run_observers):
+            try:
+                observer(handle)
+            except Exception:
+                logger.exception("Run observer failed")
+        return handle
+
+    @contextmanager
+    def observe_runs(self, on_start: Callable[[RunHandle], None]) -> Iterator[tuple[RunHandle, ...]]:
+        """Observe new runs and capture the currently active handles atomically."""
+        self._run_observers.add(on_start)
+        try:
+            yield tuple(RunHandle(session) for session in self._active_by_conversation.values())
+        finally:
+            self._run_observers.discard(on_start)
 
     def get(self, run_id: str) -> RunHandle | None:
         session = self._runs_by_id.get(run_id)

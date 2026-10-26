@@ -147,6 +147,8 @@ MODAL_HELPERS_JS = r"""
 
   // Recognize a large positioned layer that physically intercepts page input.
   function omnideckIsViewportPointerBlocker(element) {
+    // A scroll-locked page root contains both the dialog and its background.
+    if (element === document.body || element === document.documentElement) return false;
     // Opacity does not affect hit-testing: a transparent click catcher still
     // prevents physical input from reaching the page underneath it.
     if (!omnideckElementHasRenderedBox(element)) return false;
@@ -252,7 +254,10 @@ MODAL_HELPERS_JS = r"""
       const backgroundSuppressed = omnideckDialogSuppressesBackground(element);
       const pointerBlocker = omnideckPointerBlockerFor(element);
       const ariaModal = element.getAttribute('aria-modal') === 'true';
-      if (!backgroundSuppressed && !(pointerBlocker && ariaModal)) return [];
+      const fixedRoot = [document.body, document.documentElement].some((root) => {
+        return root && window.getComputedStyle(root).position === 'fixed';
+      });
+      if (!backgroundSuppressed && !(ariaModal && (pointerBlocker || fixedRoot))) return [];
 
       return [{
         element: element,

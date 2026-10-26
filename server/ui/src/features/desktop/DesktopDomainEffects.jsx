@@ -1,5 +1,7 @@
 import { memo } from 'react';
 
+import ConversationDesktopEffects from '../conversation/ConversationDesktopEffects.jsx';
+
 import {
     ArtifactDesktopEffects,
 } from '../artifacts/ArtifactDesktopAdapter.jsx';
@@ -23,6 +25,7 @@ function DesktopDomainEffects() {
             <WorkspaceResourceDesktopEffects />
             <CustomAppDesktopEffects />
             <ArtifactDesktopEffects />
+            <ConversationDesktopEffects />
         </>
     );
 }
