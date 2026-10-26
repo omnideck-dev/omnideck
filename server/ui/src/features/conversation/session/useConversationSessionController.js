@@ -271,6 +271,7 @@ export default function useConversationSessionController({
     // always flip both together via setConversationId, never the ref alone.
     const conversationIdRef = useRef(_uuid());
     const [activeConversationId, _setActiveConversationId] = useState(conversationIdRef.current);
+    const [savedConversationId, setSavedConversationId] = useState(null);
     const setConversationId = useCallback((id) => {
         conversationIdRef.current = id;
         _setActiveConversationId(id);
@@ -282,6 +283,8 @@ export default function useConversationSessionController({
             session: (action) => {
                 if (action.type === 'SET_ROOT_AGENT') {
                     rootAgentIdRef.current = action.agentId;
+                } else if (action.type === 'CONFIRM_USER_MESSAGE') {
+                    setSavedConversationId(conversationIdRef.current);
                 } else if (action.type === 'RETAIN_EVENT') {
                     const eventId = action.event?.id;
                     if (!eventId || !eventsRef.current.some((event) => event.id === eventId)) {
@@ -718,6 +721,7 @@ export default function useConversationSessionController({
             );
             rootAgentIdRef.current = rootAgentId;
             setConversationId(conversationId);
+            setSavedConversationId(conversationId);
             eventsRef.current = retainedEvents;
             dispatchConversation({ type: 'RESTORE_CONVERSATION', events: retainedEvents });
             return data;
@@ -771,6 +775,7 @@ export default function useConversationSessionController({
         setDraft(seedDraft);
         const nextConversationId = _uuid();
         setConversationId(nextConversationId);
+        setSavedConversationId(null);
         return nextConversationId;
     }, [setConversationId, setStopRequested]);
 
@@ -824,6 +829,7 @@ export default function useConversationSessionController({
         isOffline,
         stopRequested,
         activeConversationId,
+        savedConversationId,
         draft,
         setDraft,
         sendMessage,

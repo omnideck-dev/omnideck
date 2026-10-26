@@ -29,6 +29,7 @@ import useDesktopShellLifecycle from '../useDesktopShellLifecycle.js';
 
 const sessionHarness = vi.hoisted(() => ({
     activeConversationId: 'fresh-conversation',
+    savedConversationId: null,
     loadConversation: vi.fn(),
 }));
 const appEffectHarness = vi.hoisted(() => ({
@@ -37,6 +38,7 @@ const appEffectHarness = vi.hoisted(() => ({
 
 vi.mock('../../conversation/session/ConversationSession.jsx', () => ({
     useActiveConversationId: () => sessionHarness.activeConversationId,
+    useSavedConversationId: () => sessionHarness.savedConversationId,
     useConversationSessionCommands: () => ({
         loadConversation: sessionHarness.loadConversation,
     }),
@@ -92,6 +94,7 @@ describe('useDesktopShellLifecycle persistence', () => {
     afterEach(() => {
         vi.restoreAllMocks();
         sessionHarness.activeConversationId = 'fresh-conversation';
+        sessionHarness.savedConversationId = null;
         sessionHarness.loadConversation.mockReset();
         appEffectHarness.dispatch.mockReset();
         localStorage.removeItem(DESKTOP_LAYOUT_STORAGE_KEY);
@@ -128,6 +131,32 @@ describe('useDesktopShellLifecycle persistence', () => {
         expect(JSON.parse(
             localStorage.getItem(DESKTOP_LAYOUT_STORAGE_KEY),
         ).layout.splitRatio).toBe(68);
+    });
+
+    it('persists a fresh chat without its live ID, then records the server-confirmed ID', async () => {
+        const liveChat = createNavigationView({
+            kind: 'chat',
+            conversationId: 'fresh-conversation',
+        });
+        const layout = createInitialDesktopLayoutState(liveChat);
+        const { rerender } = render(<LifecycleHarness initialLayoutState={layout} />);
+        const savedId = () => JSON.parse(
+            localStorage.getItem(DESKTOP_LAYOUT_STORAGE_KEY),
+        ).layout.views[0].identity.navigationTarget.conversationId;
+        await waitFor(() => expect(savedId()).toBeNull());
+
+        sessionHarness.savedConversationId = 'fresh-conversation';
+        rerender(<LifecycleHarness initialLayoutState={layout} />);
+        await waitFor(() => expect(savedId()).toBe('fresh-conversation'));
+    });
+
+    it('restores a fresh chat locally without loading or closing a conversation', async () => {
+        render(<LifecycleHarness desktopRestore={{ layoutState: INITIAL_LAYOUT }} />);
+        await waitFor(() => expect(localStorage.getItem(DESKTOP_LAYOUT_STORAGE_KEY)).not.toBeNull());
+        expect(sessionHarness.loadConversation).not.toHaveBeenCalled();
+        expect(appEffectHarness.dispatch).not.toHaveBeenCalled();
+        expect(screen.getByTestId('desktop-view-destination:settings'))
+            .toHaveAttribute('data-visible', 'true');
     });
 
     it('replaces an unloadable Conversation without stealing restored focus', async () => {
@@ -175,7 +204,7 @@ describe('useDesktopShellLifecycle persistence', () => {
             expect(
                 conversationView.identity.navigationTarget.conversationId,
             )
-                .toBe('fresh-conversation');
+                .toBeNull();
         });
     });
 });

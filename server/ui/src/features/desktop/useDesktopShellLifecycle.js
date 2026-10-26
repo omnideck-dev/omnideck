@@ -11,6 +11,7 @@ import {
 import { APP_EFFECT_TYPES } from '../app/appEffectTypes.js';
 import {
     useActiveConversationId,
+    useSavedConversationId,
     useConversationSessionCommands,
 } from '../conversation/session/ConversationSession.jsx';
 import {
@@ -41,13 +42,33 @@ export default function useDesktopShellLifecycle({
     desktopRestore,
 }) {
     const activeConversationId = useActiveConversationId();
+    const savedConversationId = useSavedConversationId();
     const { loadConversation } = useConversationSessionCommands();
     const dispatchAppEffect = useAppEffectDispatch();
     const [restorationReady, setRestorationReady] = useState(!desktopRestore);
     const restoreStartedRef = useRef(false);
     const persistenceSnapshot = useMemo(
-        () => createDesktopLayoutSnapshot(desktopLayout.model),
+        () => {
+            const snapshot = createDesktopLayoutSnapshot(desktopLayout.model);
+            if (!snapshot) return null;
+            // A live chat has an ID before its first message is saved. Persist
+            // only the confirmed identity; null restores a fresh local chat.
+            snapshot.layout.views = snapshot.layout.views.map((view) => {
+                if (view.type !== 'conversation') return view;
+                return {
+                    ...view,
+                    identity: {
+                        navigationTarget: {
+                            ...navigationTargetForView(view),
+                            conversationId: savedConversationId,
+                        },
+                    },
+                };
+            });
+            return snapshot;
+        },
         [
+            savedConversationId,
             desktopLayout.model.floatingViews,
             desktopLayout.model.focusedFloatingViewId,
             desktopLayout.model.focusedTabGroupId,
@@ -88,9 +109,11 @@ export default function useDesktopShellLifecycle({
                 dispatchAppEffect({
                     type: APP_EFFECT_TYPES.DESKTOP_VIEWS_CLOSING,
                     payload: {
-                        views: conversationView ? [conversationView] : [],
+                        views: [conversationView],
                     },
                 });
+            }
+            if (conversationView && (!conversationId || !conversationLoaded)) {
                 const fallbackView = createNavigationView({
                     kind: 'chat',
                     conversationId: activeConversationId,
@@ -98,7 +121,7 @@ export default function useDesktopShellLifecycle({
                 desktopLayout.commands.openView(
                     fallbackView,
                     DESKTOP_TAB_GROUP_IDS.LEFT,
-                    // Replace the stale Conversation descriptor without
+                    // Update the chat's live identity without
                     // stealing the location restored from Desktop focus. If
                     // Chat was already active, updating it in place naturally
                     // leaves it active.

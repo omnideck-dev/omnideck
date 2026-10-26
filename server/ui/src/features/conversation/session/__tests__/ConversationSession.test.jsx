@@ -18,6 +18,7 @@ const harness = vi.hoisted(() => ({
     effects: [],
     controller: {
         activeConversationId: 'conversation-1',
+        savedConversationId: null,
         turns: [],
         draft: '',
         isStreaming: false,

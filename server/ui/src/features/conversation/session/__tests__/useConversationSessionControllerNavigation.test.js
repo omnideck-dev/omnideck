@@ -48,6 +48,7 @@ describe('conversation navigation while streaming', () => {
         });
         act(() => { loading = result.current.loadConversation('destination').catch((error) => error); });
         expect(result.current.isStreaming).toBe(true);
+        expect(result.current.savedConversationId).toBeNull();
         expect(test.streamSignal().aborted).toBe(false);
         await act(async () => {
             if (failure === 'network') test.loads[0].reject(new TypeError('Failed to fetch'));
