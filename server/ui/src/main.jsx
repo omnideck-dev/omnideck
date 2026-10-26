@@ -5,6 +5,7 @@ import { ToastProvider } from './components/ToastProvider.jsx';
 import { AppDataProvider } from './contexts/AppData.jsx';
 import { ThemeProvider } from './contexts/Theme.jsx';
 import { csrfFetch } from './utils/csrfFetch.js';
+import { watchStylesheet } from './utils/customCssWatch.js';
 import 'bootstrap-icons/font/bootstrap-icons.css';
 import './global.css';
 import './hljs-tokens.css';
@@ -16,6 +17,8 @@ const customStylesLink = document.createElement('link');
 customStylesLink.rel = 'stylesheet';
 customStylesLink.href = '/custom.css';
 document.head.appendChild(customStylesLink);
+// Edits to custom.css (by hand or via the agent) apply without a page reload.
+watchStylesheet(customStylesLink, '/custom.css');
 
 // Patch fetch so mutating application requests carry the CSRF header.
 // The server requires X-Requested-With: XMLHttpRequest on POST/PUT/DELETE.

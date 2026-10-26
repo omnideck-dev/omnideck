@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from aiohttp import web
 
-from config import load_config
+from tools.theme import custom_css_path, ensure_custom_css_file
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from aiohttp.web_request import Request
@@ -20,22 +20,10 @@ STATIC_DIR = Path(__file__).parent / "static"
 UI_DIST_DIR = Path(__file__).parent / "ui" / "dist"
 
 
-def _custom_css_path() -> Path:
-    return Path(load_config().settings.home_dir) / "custom.css"
-
-
-def _ensure_custom_css() -> None:
-    """Ship a blank custom.css on disk so users have a stable place for overrides."""
-    path = _custom_css_path()
-    if not path.exists():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("", encoding="utf-8")
-
-
 async def custom_css_handler(_request: Request) -> StreamResponse:
-    """Serve the user's editable custom.css, creating it blank if missing."""
-    _ensure_custom_css()
-    return web.FileResponse(_custom_css_path(), headers={"Cache-Control": "no-cache"})
+    """Serve the user's editable custom.css, seeding the default if missing."""
+    ensure_custom_css_file()
+    return web.FileResponse(custom_css_path(), headers={"Cache-Control": "no-cache"})
 
 
 async def _ensure_custom_css_on_startup(_app: web.Application) -> None:
@@ -46,7 +34,7 @@ async def _ensure_custom_css_on_startup(_app: web.Application) -> None:
     state directory — matching how _run_data_migrations defers its own
     settings.home_dir access in server/aiohttp_app.py.
     """
-    _ensure_custom_css()
+    ensure_custom_css_file()
 
 
 async def index_handler(_request: Request) -> StreamResponse:
@@ -78,7 +66,9 @@ async def manifest_handler(_request: Request) -> StreamResponse:
 def register_ui_routes(app: web.Application) -> None:
     """Register the SPA entry point and static asset directories."""
     app.router.add_route("GET", "/", index_handler)
-    app.router.add_route("GET", "/custom.css", custom_css_handler)
+    # add_get (not add_route) so HEAD is allowed too: the UI polls HEAD /custom.css
+    # to notice on-disk edits and live-refresh the theme.
+    app.router.add_get("/custom.css", custom_css_handler)
     app.router.add_route("GET", "/manifest.webmanifest", manifest_handler)
     app.on_startup.append(_ensure_custom_css_on_startup)
     if UI_DIST_DIR.exists():
