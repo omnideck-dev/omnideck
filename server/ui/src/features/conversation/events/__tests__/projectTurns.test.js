@@ -161,7 +161,7 @@ describe('projectTurns', () => {
         const kinds = turns[0].children.map((c) => c.kind);
         expect(kinds).toEqual([
             'user_prompt', 'compaction',
-            'iteration', 'iteration', 'tool_result', 'iteration',
+            'iteration', 'iteration', 'iteration',
         ]);
         const compIdx = kinds.indexOf('compaction');
         const firstIterIdx = kinds.indexOf('iteration');

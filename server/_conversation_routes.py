@@ -235,7 +235,7 @@ async def generate_title_handler(request: Request) -> Response:
 
 
 async def resume_conversation_handler(request: Request) -> Response:
-    """Resume a past conversation by loading its full-fidelity history."""
+    """Restore the conversation's displayed history and workspace state."""
     conversation_id = request.match_info["conversation_id"]
     manager = request.app[AGENT_RUNTIME_KEY]
     active = manager.active_for_conversation(conversation_id)
@@ -264,7 +264,10 @@ async def resume_conversation_handler(request: Request) -> Response:
 
     payload = {
         "conversation_id": conversation_id,
-        **resume_state.model_dump(),
+        **resume_state.model_dump(exclude={"events"}),
+        # Raw tool results are model context, not displayed activity. Keep them
+        # in durable history and in the replay cursor, but out of the download.
+        "events": [event for event in resume_state.events if event.get("type") != "tool_result"],
         "active_run": active_run,
     }
     response = web.Response(

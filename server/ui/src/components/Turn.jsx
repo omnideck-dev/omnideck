@@ -74,10 +74,7 @@ function _fileOutputToEntry(fo) {
  * and splits the assistant element whenever a compaction child sits
  * between iterations.
  *
- * Children of kind ``tool_result``, ``terminal_output``, and
- * ``browser_screenshot`` aren't rendered here — they live in the
- * preview panels / activity rail, fed by the agent reducer, and don't
- * affect the chat layout.
+ * Workspace snapshots are restored separately and don't affect chat layout.
  */
 export default function Turn({
     turn,
@@ -122,8 +119,6 @@ export default function Turn({
                 correlationId: child.correlationId,
             });
         }
-        // tool_result, terminal_output, browser_screenshot: handled by
-        // other parts of the UI (preview panels, activity rail).
     }
     flushAssistant();
 

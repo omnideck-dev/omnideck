@@ -10,9 +10,9 @@ import {
  *
  * “Transcript” means the chat-facing model: one Turn for each user interaction
  * with the root agent, containing ordered user prompts, assistant iterations,
- * files, spawn cards, compaction chips, errors, and supporting tool-result
- * records. Turn renders the visible items and deliberately leaves supporting
- * records to the activity UI. This is not the complete event history or the
+ * files, spawn cards, compaction chips, and errors. Tool calls and reasoning
+ * supply the activity UI; raw tool results are model context only.
+ * This is not the complete event history or the
  * per-agent activity log.
  *
  * For example:
@@ -102,14 +102,6 @@ export function projectTurns(events) {
                     name: tc.name,
                     arguments: tc.arguments,
                 })),
-            });
-        } else if (t === EVENT.TOOL_RESULT) {
-            currentTurn.children.push({
-                kind: ITEM.TOOL_RESULT,
-                id: ev.id,
-                toolCallId: ev.tool_call_id,
-                toolName: ev.tool_name,
-                content: ev.content || '',
             });
         } else if (t === EVENT.FILE_OUTPUT) {
             currentTurn.children.push({

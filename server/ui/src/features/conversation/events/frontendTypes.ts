@@ -177,13 +177,6 @@ export type TranscriptItem =
         }>;
     }
     | {
-        kind: 'tool_result';
-        id: string;
-        toolCallId: string | null;
-        toolName: string;
-        content: string;
-    }
-    | {
         kind: 'file_output';
         id: string;
         filename: string;

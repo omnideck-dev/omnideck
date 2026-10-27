@@ -153,6 +153,7 @@ async def test_resume_route_returns_active_run_at_persisted_cursor(
                 {"id": "old-event", "type": "iteration"},
                 {"id": "run-started", "type": "agent_started"},
                 {"id": "run-user", "type": "user_message"},
+                {"id": "run-result", "type": "tool_result", "content": "model-only output"},
             ],
             browser_tabs=[],
             terminal={},
@@ -174,6 +175,7 @@ async def test_resume_route_returns_active_run_at_persisted_cursor(
         last_seq=8,
     )
     handle.sequence_for_event.side_effect = lambda event_id: {
+        "run-result": 5,
         "run-user": 3,
         "run-started": 1,
     }.get(event_id)
@@ -191,10 +193,12 @@ async def test_resume_route_returns_active_run_at_persisted_cursor(
         "run_id": "run-1",
         "status": "running",
         "last_seq": 8,
-        "resume_after_seq": 3,
+        "resume_after_seq": 5,
     }
     resume.assert_awaited_once_with("conversation-1")
-    handle.sequence_for_event.assert_called_once_with("run-user")
+    handle.sequence_for_event.assert_called_once_with("run-result")
+    assert all(event["type"] != "tool_result" for event in body["events"])
+    assert resume.return_value.events[-1]["content"] == "model-only output"
 
 
 @pytest.mark.unit
