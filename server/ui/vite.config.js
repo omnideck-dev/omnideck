@@ -21,8 +21,8 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
       },
-      // User-editable theme override, served by the backend (server/_ui_routes.py)
-      '/custom.css': {
+      // Stylesheet generated from the saved theme, served by the backend
+      '/theme.css': {
         target: backendTarget,
         changeOrigin: true,
         secure: false,

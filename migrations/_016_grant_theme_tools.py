@@ -3,7 +3,7 @@
 Migration 006 copied the shipped ``assistant`` skill into ``{state}/skills/`` once
 and never touches it again, so adding ``theme`` to the shipped record only reaches
 fresh installs. This appends it to an install that already has the skill, letting
-the agent read and change ``custom.css`` there too.
+the agent read and change the app's theme there too.
 
 Only the category is appended; the rest of the record — including any prompt the
 user has edited — is left exactly as it was. A skill the user deleted stays

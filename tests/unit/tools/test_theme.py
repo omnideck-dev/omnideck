@@ -1,122 +1,85 @@
-"""Unit tests for the custom.css theme tools."""
+"""Unit tests for the agent-facing theme tools. Behavior is covered with the theme subsystem itself."""
 
 from __future__ import annotations
 
-import re
-import stat
-import sys
+import json
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
-from tools.theme import ensure_custom_css_file, get_custom_css, set_custom_css
-from tools.theme.theme import DEFAULT_CUSTOM_CSS
+from agent_core.tools._callable_schema import callable_to_json_schema
+from tools.theme import get_theme, set_theme
 
-GLOBAL_CSS = Path(__file__).parents[3] / "server" / "ui" / "src" / "global.css"
+pytestmark = pytest.mark.unit
 
 
 @pytest.fixture(autouse=True)
-def _tmp_css(tmp_path):
-    """Point the custom.css path at a temp file."""
-    path = tmp_path / "custom.css"
-    with patch("tools.theme.theme.custom_css_path", return_value=path):
-        yield path
+def _theme_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    path = tmp_path / "theme.json"
+    monkeypatch.setattr("theme.store.theme_path", lambda: path)
+    return path
 
 
-def _dark_block_vars() -> set[str]:
-    css = GLOBAL_CSS.read_text(encoding="utf-8")
-    dark = css[css.index('[data-theme="dark"]'):]
-    dark = dark[: dark.index("}")]
-    return set(re.findall(r"(--[\w-]+)\s*:", dark))
+async def test_get_theme_reports_the_supported_settings():
+    result = await get_theme()
+    assert result["status"] == "ok"
+    assert {entry["id"] for entry in result["colors"]} >= {"accent", "canvas", "text-primary"}
+    assert {entry["id"] for entry in result["fonts"]} == {"font-brand", "font-body", "font-code"}
+    assert result["overrides"] == {"light": {}, "dark": {}, "fonts": {}}
 
 
-@pytest.mark.unit
-def test_ensure_seeds_default_when_missing(_tmp_css):
-    ensure_custom_css_file()
-    assert _tmp_css.read_text(encoding="utf-8") == DEFAULT_CUSTOM_CSS
+async def test_set_theme_saves_and_get_theme_reflects_it():
+    result = await set_theme(
+        light={"accent": "#7c3aed"}, dark={"accent": "#a78bfa"}, fonts={"font-body": "Georgia, serif"}
+    )
+    assert result["status"] == "ok"
+    assert result["overrides"] == {
+        "light": {"accent": "#7c3aed"},
+        "dark": {"accent": "#a78bfa"},
+        "fonts": {"font-body": "Georgia, serif"},
+    }
+
+    state = await get_theme()
+    accent = next(entry for entry in state["colors"] if entry["id"] == "accent")
+    assert accent["light"]["effective"] == "#7c3aed"
+    assert accent["dark"]["effective"] == "#a78bfa"
+    assert state["overrides"] == result["overrides"]
 
 
-@pytest.mark.unit
-def test_ensure_does_not_overwrite_existing(_tmp_css):
-    _tmp_css.write_text(".foo { color: red; }", encoding="utf-8")
-    ensure_custom_css_file()
-    assert _tmp_css.read_text(encoding="utf-8") == ".foo { color: red; }"
+async def test_set_theme_keeps_unspecified_settings_and_supports_reset():
+    await set_theme(light={"accent": "#7c3aed"})
+    await set_theme(light={"canvas": "#ffffff"})
+    assert (await get_theme())["overrides"]["light"] == {"accent": "#7c3aed", "canvas": "#ffffff"}
+
+    cleared = await set_theme(light={"accent": None})
+    assert cleared["overrides"]["light"] == {"canvas": "#ffffff"}
+
+    restored = await set_theme(reset=True)
+    assert restored["status"] == "ok"
+    assert restored["overrides"] == {"light": {}, "dark": {}, "fonts": {}}
 
 
-@pytest.mark.unit
-def test_default_has_every_dark_varying_variable_commented_out():
-    """Every var in global.css's dark block is listed, and nothing is active."""
-    listed = set(re.findall(r"/\*\s*(--[\w-]+)\s*:", DEFAULT_CUSTOM_CSS))
-    assert _dark_block_vars() <= listed
-    # Strip comments: nothing but selectors and braces may remain.
-    stripped = re.sub(r"/\*.*?\*/", "", DEFAULT_CUSTOM_CSS, flags=re.S)
-    assert "--" not in stripped
+async def test_invalid_input_returns_an_error_and_changes_nothing(_theme_file: Path):
+    await set_theme(light={"accent": "#7c3aed"})
+    before = json.loads(_theme_file.read_text(encoding="utf-8"))
+
+    result = await set_theme(light={"canvas": "red"}, fonts={"font-body": "a; b"})
+
+    assert result["status"] == "error"
+    assert "light.canvas" in result["error"]
+    assert "fonts.font-body" in result["error"]
+    assert json.loads(_theme_file.read_text(encoding="utf-8")) == before
 
 
-@pytest.mark.unit
-def test_default_includes_fonts_section_without_layout_tokens():
-    for name in ("--font-body", "--font-code", "--font-brand"):
-        assert f"/* {name}:" in DEFAULT_CUSTOM_CSS
-    for prefix in ("--sp-", "--z-", "--radius-", "--ease", "--header-height"):
-        assert prefix not in DEFAULT_CUSTOM_CSS
-
-
-@pytest.mark.unit
-def test_default_variables_exist_in_global_css():
-    """Guards against the seeded file drifting from the real theme variables."""
-    known = set(re.findall(r"(--[\w-]+)\s*:", GLOBAL_CSS.read_text(encoding="utf-8")))
-    listed = set(re.findall(r"/\*\s*(--[\w-]+)\s*:", DEFAULT_CUSTOM_CSS))
-    assert listed <= known
-
-
-@pytest.mark.unit
-async def test_get_seeds_and_returns_default(_tmp_css):
-    result = await get_custom_css()
-    assert result == {"status": "ok", "css": DEFAULT_CUSTOM_CSS}
-    assert _tmp_css.exists()
-
-
-@pytest.mark.unit
-async def test_set_then_get_round_trips(_tmp_css):
-    css = ":root { --accent: purple; }\n"
-    result = await set_custom_css(css)
-    assert result == {"status": "ok", "length": len(css)}
-    assert (await get_custom_css())["css"] == css
-
-
-@pytest.mark.unit
-async def test_set_replaces_whole_file(_tmp_css):
-    await set_custom_css("a { b: c }")
-    await set_custom_css("d { e: f }")
-    assert _tmp_css.read_text(encoding="utf-8") == "d { e: f }"
-
-
-@pytest.mark.unit
-async def test_set_leaves_no_temp_files(_tmp_css):
-    await set_custom_css("x { y: z }")
-    assert [p.name for p in _tmp_css.parent.iterdir()] == ["custom.css"]
-
-
-@pytest.mark.unit
-@pytest.mark.skipif(sys.platform == "win32", reason="POSIX permission bits")
-async def test_written_file_stays_readable_by_humans(_tmp_css):
-    """Temp files are owner-only; custom.css is hand-edited too, so it must not end up 0600."""
-    await set_custom_css("x { y: z }")
-    assert stat.S_IMODE(_tmp_css.stat().st_mode) == 0o644
-
-
-@pytest.mark.unit
-@pytest.mark.skipif(sys.platform == "win32", reason="POSIX permission bits")
-def test_seeded_file_stays_readable_by_humans(_tmp_css):
-    ensure_custom_css_file()
-    assert stat.S_IMODE(_tmp_css.stat().st_mode) == 0o644
-
-
-@pytest.mark.unit
-async def test_failed_replace_keeps_original_and_cleans_up(_tmp_css):
-    _tmp_css.write_text("original", encoding="utf-8")
-    with patch("pathlib.Path.replace", side_effect=OSError("boom")), pytest.raises(OSError):
-        await set_custom_css("new")
-    assert _tmp_css.read_text(encoding="utf-8") == "original"
-    assert [p.name for p in _tmp_css.parent.iterdir()] == ["custom.css"]
+def test_tool_schemas_expose_structured_arguments():
+    parameters = callable_to_json_schema(set_theme)["function"]["parameters"]
+    assert {name: spec["type"] for name, spec in parameters["properties"].items()} == {
+        "light": "object",
+        "dark": "object",
+        "fonts": "object",
+        "reset": "boolean",
+    }
+    assert all(spec["description"] for spec in parameters["properties"].values())
+    # Every argument is optional, so a bare reset or a single-mode change is a valid call.
+    assert parameters["required"] == []
+    assert callable_to_json_schema(get_theme)["function"]["parameters"]["properties"] == {}
