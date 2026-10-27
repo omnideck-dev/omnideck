@@ -13,6 +13,7 @@ const {
     useDesktopViewCatalog,
     useDesktopViewCommands,
     useFocusedViewId,
+    useVisibleViewIds,
 } = await import('../DesktopViewRuntime.jsx');
 const { default: useIsMobileViewport } = await import(
     '../../../hooks/useIsMobileViewport.js'
@@ -33,6 +34,8 @@ function model({
     focusedTabGroupId = conversationTabGroupId,
 } = {}) {
     return {
+        floatingByViewId: {},
+        fullscreenViewId: null,
         openViews: [CONVERSATION],
         openViewsById: {
             [CONVERSATION.id]: CONVERSATION,
@@ -187,6 +190,8 @@ describe('DesktopViewRuntime', () => {
         // A restored two-pane layout can leave focus on the right group even
         // though mobile only renders the left one.
         const twoPaneMobileModel = {
+            floatingByViewId: {},
+            fullscreenViewId: null,
             openViews: [CONVERSATION, ARTIFACT],
             openViewsById: {
                 [CONVERSATION.id]: CONVERSATION,
@@ -262,4 +267,38 @@ describe('DesktopViewRuntime', () => {
         expect(catalogRenders).toBe(1);
         expect(focusRenders).toBe(2);
     });
+    it('exposes both panes, hides mobile panes, and honors floating and fullscreen views', () => {
+        const base = model();
+        let currentModel = {
+            ...base,
+            openViewsById: { ...base.openViewsById, [ARTIFACT.id]: ARTIFACT },
+            tabGroups: {
+                ...base.tabGroups,
+                right: { viewIds: [ARTIFACT.id], activeViewId: ARTIFACT.id },
+            },
+        };
+        const wrapper = ({ children }) => (
+            <DesktopViewRuntimeProvider desktopLayout={{ model: currentModel, commands: commandSpies() }}>
+                {children}
+            </DesktopViewRuntimeProvider>
+        );
+        const { result, rerender } = renderHook(useVisibleViewIds, { wrapper });
+        expect(result.current).toEqual([CONVERSATION.id, ARTIFACT.id]);
+        useIsMobileViewport.mockReturnValue(true);
+        rerender();
+        expect(result.current).toEqual([CONVERSATION.id]);
+        currentModel = {
+            ...currentModel,
+            floatingByViewId: { [ARTIFACT.id]: { viewId: ARTIFACT.id } },
+        };
+        rerender();
+        expect(result.current).toEqual([CONVERSATION.id, ARTIFACT.id]);
+        currentModel = { ...currentModel, fullscreenViewId: ARTIFACT.id };
+        rerender();
+        expect(result.current).toEqual([ARTIFACT.id]);
+        currentModel = { ...currentModel, fullscreenViewId: null };
+        rerender();
+        expect(result.current).toEqual([CONVERSATION.id, ARTIFACT.id]);
+    });
+
 });

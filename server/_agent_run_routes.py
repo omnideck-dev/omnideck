@@ -31,6 +31,7 @@ from agent_runtime import (
 from server._agent_runtime import AGENT_RUNTIME_KEY
 from server._goals import pause_conversation_goal
 from goals import GoalAnswerSubmission, GoalConflictError, GoalStateError
+from server._run_activity import run_activity_handler
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import AsyncGenerator
@@ -240,6 +241,7 @@ async def nudge_handler(request: Request) -> Response:
 
 def register_agent_run_routes(app: web.Application) -> None:
     """Register the HTTP channel adapter for agent runs."""
+    app.router.add_route("GET", "/api/chat/activity", run_activity_handler)
     app.router.add_route("POST", "/api/chat", chat_handler)
     app.router.add_route(
         "GET",

@@ -19,6 +19,7 @@ const harness = vi.hoisted(() => ({
     effects: [],
     controller: {
         activeConversationId: 'conversation-1',
+        savedConversationId: null,
         turns: [],
         draft: '',
         isStreaming: false,
@@ -118,6 +119,28 @@ describe('ConversationSessionProvider', () => {
         harness.effects = [];
         harness.controller.loadConversation.mockResolvedValue(null);
         harness.controller.reattachActiveRun.mockReset();
+    });
+
+    it('reports a failed destination load without clearing the current workspace', async () => {
+        harness.controller.loadConversation.mockRejectedValue(new Error('unavailable'));
+        const { getSession } = renderSession();
+        await act(async () => {
+            expect(await getSession().loadConversation('conversation-2')).toBe(false);
+        });
+        expect(harness.addToast).toHaveBeenCalledWith(
+            "Couldn't open that conversation. Your current chat is still open.",
+            { type: 'error' },
+        );
+        expect(harness.effects).toEqual([]);
+        expect(harness.controller.reattachActiveRun).not.toHaveBeenCalled();
+    });
+
+    it('does not report an abandoned destination load as an error', async () => {
+        const { getSession } = renderSession();
+        await act(async () => {
+            expect(await getSession().loadConversation('conversation-2')).toBe(false);
+        });
+        expect(harness.addToast).not.toHaveBeenCalled();
     });
 
     it('restores Workspace data without reopening historical Views', async () => {

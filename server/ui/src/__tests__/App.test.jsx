@@ -222,6 +222,7 @@ const streamMock = vi.hoisted(() => {
         loadConversation: () => true,
         newConversation: () => {},
         activeConversationId: 'conversation-1',
+        savedConversationId: null,
     });
     return { makeDefault, value: makeDefault() };
 });
@@ -724,7 +725,11 @@ describe('App view transitions', () => {
 
         it('restores open tabs, tab group placement, and active selections after remount', async () => {
             const loadConversation = vi.fn(() => true);
-            streamMock.value = { ...streamMock.makeDefault(), loadConversation };
+            streamMock.value = {
+                ...streamMock.makeDefault(),
+                loadConversation,
+                savedConversationId: 'conversation-1',
+            };
             const firstRender = await renderApp();
 
             act(() => fireEvent.click(screen.getByTestId('open-apps')));

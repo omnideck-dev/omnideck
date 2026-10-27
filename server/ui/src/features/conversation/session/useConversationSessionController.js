@@ -239,6 +239,7 @@ export default function useConversationSessionController({
     const abortControllerRef = useRef(null);
     const requestControllerRef = useRef(null);
     const backgroundRefreshControllerRef = useRef(null);
+    const loadControllerRef = useRef(null);
     const [isOffline, setIsOffline] = useState(browserIsOffline);
     useEffect(() => {
         const onOffline = () => {
@@ -266,6 +267,8 @@ export default function useConversationSessionController({
         backgroundRefreshControllerRef.current?.abort();
         backgroundRefreshControllerRef.current = null;
         controller?.abort();
+        loadControllerRef.current?.abort();
+        loadControllerRef.current = null;
     }, []);
     // The open conversation id is this hook's primary key — every request it
     // makes (send, nudge, stop, resume) is keyed by it. The ref
@@ -275,6 +278,7 @@ export default function useConversationSessionController({
     // always flip both together via setConversationId, never the ref alone.
     const conversationIdRef = useRef(_uuid());
     const [activeConversationId, _setActiveConversationId] = useState(conversationIdRef.current);
+    const [savedConversationId, setSavedConversationId] = useState(null);
     const setConversationId = useCallback((id) => {
         conversationIdRef.current = id;
         _setActiveConversationId(id);
@@ -286,6 +290,8 @@ export default function useConversationSessionController({
             session: (action) => {
                 if (action.type === 'SET_ROOT_AGENT') {
                     rootAgentIdRef.current = action.agentId;
+                } else if (action.type === 'CONFIRM_USER_MESSAGE') {
+                    setSavedConversationId(conversationIdRef.current);
                 } else if (action.type === 'RETAIN_EVENT') {
                     const eventId = action.event?.id;
                     if (!eventId || !eventsRef.current.some((event) => event.id === eventId)) {
@@ -384,6 +390,7 @@ export default function useConversationSessionController({
         persistedEvents = [],
     }) => {
         const delivery = createEventDelivery();
+        controller.signal.addEventListener('abort', delivery.cancel, { once: true });
         const knownEventIds = new Set(
             [
                 ...canonicalEventIdsRef.current,
@@ -444,6 +451,7 @@ export default function useConversationSessionController({
                         requestAttempt.dispose();
                     }
 
+                    if (controller.signal.aborted) throw abortError();
                     const addedEvents = applySnapshotGap(
                         snapshot,
                         knownEventIds,
@@ -587,6 +595,7 @@ export default function useConversationSessionController({
                     requestAttempt.dispose();
                 }
             }
+            if (controller.signal.aborted) throw abortError();
             delivery.flush();
         } catch (error) {
             if (error.name !== 'AbortError' && abortControllerRef.current === controller) {
@@ -605,6 +614,7 @@ export default function useConversationSessionController({
                 dispatchConversation({ type: 'RETAIN_EVENT', event: streamError });
             }
         } finally {
+            controller.signal.removeEventListener('abort', delivery.cancel);
             delivery.cancel();
             if (abortControllerRef.current === controller) {
                 abortControllerRef.current = null;
@@ -685,66 +695,54 @@ export default function useConversationSessionController({
         }
     }, [setStopRequested]);
 
-    /** Resume a previous conversation by loading its history from the backend. */
+    /** Load a destination before detaching from the current conversation. */
     const loadConversation = useCallback(async (conversationId) => {
-        const previousConversationId = conversationIdRef.current;
-        const previousWasStreaming = isStreamingRef.current;
-        if (abortControllerRef.current) {
-            abortControllerRef.current.abort();
-            abortControllerRef.current = null;
-        }
-        if (
-            previousWasStreaming
-            && previousConversationId !== conversationId
-            && !browserIsOffline()
-            && !keepRunningRef.current?.(previousConversationId)
-        ) {
-            fetch(
-                `/api/chat/stop?conversation_id=${encodeURIComponent(previousConversationId)}`,
-                { method: 'POST' },
-            ).catch(() => { });
-        }
-        setIsStreaming(false);
-        setStopRequested(false);
-        setDraft('');
+        loadControllerRef.current?.abort();
 
         const controller = new AbortController();
-        abortControllerRef.current = controller;
+        loadControllerRef.current = controller;
         try {
             const rawData = await fetchConversationSnapshot(
                 conversationId,
                 controller.signal,
             );
-            if (abortControllerRef.current !== controller) return null;
+            if (loadControllerRef.current !== controller) return null;
             const data = normalizeConversationLoadData(conversationId, rawData);
-            canonicalEventIdsRef.current = new Set(
-                data.events.map((event) => event?.id).filter(Boolean),
-            );
-            setConversationId(conversationId);
             const retainedEvents = [];
-            rootAgentIdRef.current = null;
+            let rootAgentId = null;
             for (const event of data.events) {
                 const actions = mapConversationEventToActions(event);
                 for (const action of actions.session) {
                     if (action.type === 'RETAIN_EVENT') retainedEvents.push(action.event);
-                    if (action.type === 'SET_ROOT_AGENT') rootAgentIdRef.current = action.agentId;
+                    if (action.type === 'SET_ROOT_AGENT') rootAgentId = action.agentId;
                 }
             }
 
-            // Seed the open transcript before the provider restores the other
-            // feature owners from the returned canonical data.
+            // Commit the switch only after the destination is ready. A failed
+            // load must leave the current stream, controls, and draft intact.
+            abortControllerRef.current?.abort();
+            abortControllerRef.current = null;
+            setIsStreaming(false);
+            setStopRequested(false);
+            setDraft('');
+            canonicalEventIdsRef.current = new Set(
+                data.events.map((event) => event?.id).filter(Boolean),
+            );
+            rootAgentIdRef.current = rootAgentId;
+            setConversationId(conversationId);
+            setSavedConversationId(conversationId);
             eventsRef.current = retainedEvents;
             dispatchConversation({ type: 'RESTORE_CONVERSATION', events: retainedEvents });
-
             return data;
-        } catch (_) {
-            return null;
+        } catch (error) {
+            if (controller.signal.aborted) return null;
+            throw error;
         } finally {
-            if (abortControllerRef.current === controller) {
-                abortControllerRef.current = null;
+            if (loadControllerRef.current === controller) {
+                loadControllerRef.current = null;
             }
         }
-    }, [setConversationId]);
+    }, [setConversationId, setStopRequested]);
 
     /** Attach after the provider has restored agent and workspace state. */
     const reattachActiveRun = useCallback((loaded) => {
@@ -790,19 +788,18 @@ export default function useConversationSessionController({
 
     /** Clear session state and switch to a fresh conversation ID.
      *
-     * Sends a best-effort stop for the previous conversation. The server
+     * Detaches from the previous conversation without stopping its run. The server
      * keeps an LRU cache of recent conversations and rehydrates from disk
      * on demand, so no explicit cache-eviction call is needed.
      */
     const newConversation = useCallback(({ draft: seedDraft = '' } = {}) => {
+        loadControllerRef.current?.abort();
+        loadControllerRef.current = null;
         if (abortControllerRef.current) {
             abortControllerRef.current.abort();
             abortControllerRef.current = null;
         }
-        const oldConversationId = conversationIdRef.current;
-        if (!browserIsOffline() && !keepRunningRef.current?.(oldConversationId)) {
-            fetch(`/api/chat/stop?conversation_id=${oldConversationId}`, { method: 'POST' }).catch(() => { });
-        }
+
         setIsStreaming(false);
         setStopRequested(false);
         dispatchConversation({ type: 'RESET_CONVERSATION' });
@@ -814,6 +811,7 @@ export default function useConversationSessionController({
         setDraft(seedDraft);
         const nextConversationId = _uuid();
         setConversationId(nextConversationId);
+        setSavedConversationId(null);
         return nextConversationId;
     }, [setConversationId, setStopRequested]);
 
@@ -867,6 +865,7 @@ export default function useConversationSessionController({
         isOffline,
         stopRequested,
         activeConversationId,
+        savedConversationId,
         draft,
         setDraft,
         sendMessage,

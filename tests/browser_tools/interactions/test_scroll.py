@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 
 import pytest
 
-from tools.browser import browse_page, click, execute_javascript, scroll_page
+from config import load_config
+from tools.browser import BrowserToolError, browse_page, click, execute_javascript, goto, scroll_page
 
 from .._helpers import find_ref
 
@@ -112,6 +114,38 @@ async def test_wheel_scroll_targets_same_origin_selected_iframe(open_tab, server
 
     after_up = await scroll_page("up", amount=600, tab=tab)
     assert _scroll_top(after_up) < _scroll_top(after_down)
+
+
+@pytest.mark.parametrize("cross_origin", [False, True])
+@pytest.mark.parametrize("nested", [False, True])
+async def test_wheel_targets_visible_part_of_tall_iframe(open_tab, servers, cross_origin, nested):
+    origin = servers.secondary if cross_origin else servers.primary
+    url = servers.embed(f"{origin}/tall-page/page.html", height="280vh")
+    if nested:
+        url = servers.embed(url, height="600px", on=origin)
+    tab = await open_tab(url)
+    initial = await browse_page(tab=tab)
+    assert "Top of page" in initial
+    after = await scroll_page("down", amount=500, tab=tab)
+    assert _scroll_top(after) > _scroll_top(initial)
+    assert "did not move" not in after
+
+
+async def test_scroll_budget_persists_across_public_tool_tasks_and_isolates_tabs(open_tab, servers, monkeypatch):
+    config = load_config().tools.browser
+    monkeypatch.setattr(config, "scroll_hard_limit", 2)
+    monkeypatch.setattr(config, "scroll_warn_threshold", 2)
+    url = f"{servers.primary}/tall-page/page.html"
+    first = await open_tab(url)
+    second = await open_tab(url)
+    await asyncio.gather(scroll_page("down", amount=300, tab=first))
+    (warned,) = await asyncio.gather(scroll_page("up", amount=300, tab=first))
+    assert "SCROLL WARNING (2/2)" in warned
+    with pytest.raises(BrowserToolError, match="Scroll limit reached"):
+        await asyncio.gather(scroll_page("down", tab=first))
+    assert "SCROLL WARNING" not in await scroll_page("down", amount=300, tab=second)
+    await goto(url + "?new-document", tab=first)
+    assert "SCROLL WARNING" not in await scroll_page("down", amount=300, tab=first)
 
 
 async def test_wheel_scroll_targets_cross_origin_selected_iframe(open_tab, servers):

@@ -142,12 +142,35 @@ async def _wheel_target_point(frame: Frame, page: Page) -> tuple[float, float]:
 
     from browser.core.input.pointer import _mouse_move_with_fake_cursor
 
+    viewport = await evaluate_frame(
+        page.main_frame, "() => ({width: window.innerWidth, height: window.innerHeight})"
+    )
+    left, top = max(0, box["x"]), max(0, box["y"])
+    right = min(viewport["width"], box["x"] + box["width"])
+    bottom = min(viewport["height"], box["y"] + box["height"])
+    parent = frame.parent_frame
+    while parent is not None and parent != page.main_frame:
+        parent_element = await parent.frame_element()
+        parent_box = await parent_element.bounding_box()
+        if parent_box is None:
+            right = left
+            break
+        left = max(left, parent_box["x"])
+        top = max(top, parent_box["y"])
+        right = min(right, parent_box["x"] + parent_box["width"])
+        bottom = min(bottom, parent_box["y"] + parent_box["height"])
+        parent = parent.parent_frame
+    if right <= left or bottom <= top:
+        raise BrowserToolError(
+            "selected document is not visible for wheel scrolling", tool="scroll_page"
+        )
+    page_x, page_y = (left + right) / 2, (top + bottom) / 2
     await _mouse_move_with_fake_cursor(
         page,
-        x=box["x"] + box["width"] / 2,
-        y=box["y"] + box["height"] / 2,
+        x=page_x,
+        y=page_y,
     )
-    return box["width"] / 2, box["height"] / 2
+    return page_x - box["x"], page_y - box["y"]
 
 
 async def _move_to_document_point(

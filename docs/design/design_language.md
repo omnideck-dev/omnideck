@@ -61,6 +61,7 @@ Primitives live in `server/ui/src/components/primitives/`; the rest in
 | Sortable data table | `SortableTable` | `primitives/SortableTable.jsx` | sticky header with click-to-sort columns (caret) + hover/active rows. Presentational — caller sorts the rows + owns `sort`. `columns=[{key,header,sortable,render,cellClassName,headerClassName,revealOnHover}]`, `rows`, `rowKey`, `onSort`, `onRowClick`, `rowClassName`, `activeRowKey`, `rowTestId`, `testId`. |
 | Render any file | `FilePreview` | `components/FilePreview.jsx` | `item={{filename, content_type, path}}`, optional `fullscreen`/`onFullscreen`/`onClose`. Self-contained (fetches + renders md/html/img/pdf/text) |
 | On/off switch | `ToggleSwitch` | `components/ToggleSwitch.jsx` | boolean setting (34×20 pill, accent when on) |
+| Loading spinner | `Spinner` | `primitives/Spinner.jsx` | Compact activity indicator; also used inside async buttons. Supply an accessible label on the containing control or status. |
 | Status dot | `StatusDot` | `components/StatusDot.jsx` | running/complete/error indicator |
 | Toasts | `ToastProvider` / `useToast` | `components/ToastProvider.jsx` | transient notifications |
 

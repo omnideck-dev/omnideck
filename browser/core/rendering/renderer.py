@@ -390,7 +390,7 @@ __MODAL_HELPERS__
   }
 
   // Walk the child nodes of a container (element or shadow root).
-  function walkChildren(container) {
+  function walkChildren(container, preserveInlineText = false) {
     const childNodes = childNodesOf(container);
     const children = childrenOf(container);
     const hasMixed = childNodes.length > children.length;
@@ -402,17 +402,17 @@ __MODAL_HELPERS__
             emit({ type: 'text', depth: depth, text: clip(text)});
           }
         } else if (child.nodeType === 1) {
-          walkSlotOrElement(child);
+          walkSlotOrElement(child, true);
         }
       }
     } else {
       for (const child of children) {
-        walkSlotOrElement(child);
+        walkSlotOrElement(child, preserveInlineText);
       }
     }
   }
 
-  function walkSlotOrElement(el) {
+  function walkSlotOrElement(el, preserveInlineText = false) {
     if (el.tagName === 'SLOT') {
       try {
         const assigned = el.assignedNodes();
@@ -424,21 +424,21 @@ __MODAL_HELPERS__
                 emit({ type: 'text', depth: depth, text: clip(text)});
               }
             } else if (node.nodeType === 1) {
-              walk(node, false);
+              walk(node, false, preserveInlineText);
             }
           }
         } else {
-          walkChildren(el);
+          walkChildren(el, preserveInlineText);
         }
       } catch (_e) { /* slot traversal failed */ }
     } else {
-      walk(el, false);
+      walk(el, false, preserveInlineText);
     }
   }
 
-  function walk(el, isRoot) {
+  function walk(el, isRoot, preserveInlineText = false) {
     // Slot forwarding for double-nested shadow DOM (e.g. Reddit)
-    if (el.tagName === 'SLOT') { walkSlotOrElement(el); return; }
+    if (el.tagName === 'SLOT') { walkSlotOrElement(el, preserveInlineText); return; }
 
     const skip = shouldSkip(el);
     if (skip === 'skip-tree') return;
@@ -448,6 +448,13 @@ __MODAL_HELPERS__
     }
 
     if (!isRoot && !onScreen(el)) {
+      // Keep the words of an emitted mixed-content paragraph together, without
+      // assigning refs to its off-screen links. Entire off-screen blocks still
+      // stay outside the snapshot, and hidden subtrees were rejected above.
+      if (preserveInlineText && window.getComputedStyle(el).display === 'inline') {
+        walkChildren(el, true);
+        return;
+      }
       // Off screen itself, but its box may not bound its content: a descendant
       // laid out of flow (absolute / fixed) or inside an overflow-scroll region
       // can still be on screen. Descend and judge each child on its own rect
