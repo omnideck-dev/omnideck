@@ -6,8 +6,11 @@ import type {
     GenerationPreviewPayload,
 } from './conversationEvents.generated';
 
+export type ThinkingReference = { conversationId: string; eventId: string };
+export type DisplayEvent = ConversationEvent & { thinking_ref?: ThinkingReference };
+
 export type AgentActivityEntry =
-    | { type: 'thinking'; thinking: string; timestamp: number }
+    | { type: 'thinking'; thinking: string; thinkingRef?: ThinkingReference; timestamp: number }
     | { type: 'content'; content: string; timestamp: number }
     | { type: 'tool_call'; name: string; arguments: Record<string, unknown> | null; timestamp: number }
     | { type: 'spawn_requested'; correlationId: string; timestamp: number }
@@ -57,6 +60,7 @@ export type AgentAction =
     }
     | {
         type: 'FINALIZE_AGENT_ITERATION';
+        thinkingRef?: ThinkingReference;
         agentId: string;
         content: string | null;
         thinking: string | null;
@@ -110,7 +114,7 @@ export type WorkspaceAction =
     | { type: 'RESET' };
 
 export type ConversationRestoreData = {
-    events?: Array<ConversationEvent>;
+    events?: Array<DisplayEvent>;
     activeRun?: {
         run_id: string;
         status: string;
@@ -166,6 +170,7 @@ export type TranscriptItem =
     }
     | {
         kind: 'iteration';
+        thinkingRef?: ThinkingReference;
         id: string;
         iterationIndex: number;
         content: string;

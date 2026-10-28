@@ -57,3 +57,44 @@ async def test_resume_omits_large_tool_results_but_next_turn_keeps_model_context
     await harness.run(message="Continue from that reference")
     tool_messages = [message for message in harness.provider.requests[-1]["messages"] if message["role"] == "tool"]
     assert any(output in message["content"] for message in tool_messages)
+
+
+async def test_resume_defers_root_and_child_thinking_until_requested(harness, aiohttp_client):
+    harness.profile('root', allow_spawn=True)
+    harness.profile('child')
+    root = reply('Delegating', calls=[call('spawn_agent', profile='child', agent_name='CHILD', instructions='Research')])
+    root.message.thinking = 'Root reasoning résumé 🧭' * 2000
+    child = reply('Child answer')
+    child.message.thinking = 'Child reasoning' * 2000
+    harness.provider.plan('root', root, reply('Final answer'))
+    harness.provider.plan('child', child)
+    await harness.run('root')
+    persisted = load_events_jsonl('contract')
+    expected = {e['id']: e['thinking'] for e in persisted if e['type'] == 'iteration' and e.get('thinking')}
+    assert len(expected) == 2
+    await harness.manager.conversations.evict_conversation('contract')
+    app = web.Application()
+    app[AGENT_RUNTIME_KEY] = harness.manager
+    register_conversation_routes(app)
+    client = await aiohttp_client(app)
+    response = await client.post('/api/conversations/sessions/contract/resume')
+    snapshot = await response.json()
+    deferred = [e for e in snapshot['events'] if e.get('thinking_ref')]
+    assert {e['id'] for e in deferred} == expected.keys()
+    assert all(e['thinking'] is None for e in deferred)
+    assert {e['depth'] for e in deferred} == {0, 1}
+    for event in deferred:
+        assert event['thinking_ref'] == {'conversationId': 'contract', 'eventId': event['id']}
+    response = await client.post('/api/conversations/sessions/contract/thinking', json={'event_ids': list(expected)})
+    assert response.status == 200
+    assert response.headers['Content-Encoding'] == 'gzip'
+    assert await response.json() == expected
+    assert load_events_jsonl('contract') == persisted
+    harness.provider.plan('root', reply('Continued'))
+    await harness.run('root', message='Continue')
+    assert any(message.get('thinking') == root.message.thinking for message in harness.provider.requests[-1]['messages'])
+    for body, status in [({'event_ids': ['missing']}, 404), ({'event_ids': []}, 400), ({'event_ids': [None]}, 400), ({}, 400)]:
+        response = await client.post('/api/conversations/sessions/contract/thinking', json=body)
+        assert response.status == status
+    response = await client.post('/api/conversations/sessions/missing/thinking', json={'event_ids': list(expected)})
+    assert response.status == 404

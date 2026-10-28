@@ -15,8 +15,8 @@ import styles from './Message.module.css';
  */
 function _iterationToEntries(iter) {
     const entries = [];
-    if (iter.thinking) {
-        entries.push({ type: 'thinking', thinking: iter.thinking });
+    if (iter.thinking || iter.thinkingRef) {
+        entries.push({ type: 'thinking', thinking: iter.thinking, thinkingRef: iter.thinkingRef });
     }
     if (iter.content) {
         entries.push({ type: 'content', content: iter.content });

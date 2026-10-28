@@ -19,9 +19,11 @@ Endpoints:
 import json
 import logging
 import re
+import asyncio
 
 from aiohttp import web
 from aiohttp.web import Request, Response
+from pydantic import BaseModel, Field, ValidationError
 
 from conversations import (
     archive_conversation,
@@ -36,6 +38,7 @@ from conversations import (
     list_conversations,
     list_folders,
     load_conversation_metadata,
+    load_events_jsonl,
     save_conversation_folder,
     save_conversation_pinned,
     save_conversation_title,
@@ -58,6 +61,21 @@ _MAX_FOLDER_NAME_LEN = 40
 # value, which the UI renders straight into a className, can't smuggle in extra
 # classes or markup.
 _ICON_RE = re.compile(r"^bi-[a-z0-9-]{1,40}$")
+
+
+class _ThinkingRequest(BaseModel):
+    event_ids: list[str] = Field(min_length=1)
+
+
+def _compressed_json_response(text: str, coding: web.ContentCoding) -> Response:
+    response = web.Response(
+        text=text,
+        content_type="application/json",
+        headers={"Vary": "Accept-Encoding"},
+        zlib_executor_size=64 * 1024,
+    )
+    response.enable_compression(force=coding)
+    return response
 
 
 def _resume_content_coding(accept_encoding: str) -> web.ContentCoding:
@@ -267,19 +285,39 @@ async def resume_conversation_handler(request: Request) -> Response:
         **resume_state.model_dump(exclude={"events"}),
         # Raw tool results are model context, not displayed activity. Keep them
         # in durable history and in the replay cursor, but out of the download.
-        "events": [event for event in resume_state.events if event.get("type") != "tool_result"],
+        "events": [
+            {
+                **event,
+                "thinking": None,
+                "thinking_ref": {"conversationId": conversation_id, "eventId": event["id"]},
+            }
+            if event.get("type") == "iteration" and event.get("thinking") else event
+            for event in resume_state.events if event.get("type") != "tool_result"
+        ],
         "active_run": active_run,
     }
-    response = web.Response(
-        text=json.dumps(payload),
-        content_type="application/json",
-        headers={"Vary": "Accept-Encoding"},
-        # Large histories must not block other requests while being compressed.
-        zlib_executor_size=64 * 1024,
-    )
-    # Honor quality weights and exclusions before enabling the selected coding.
-    response.enable_compression(force=coding)
-    return response
+    return _compressed_json_response(json.dumps(payload), coding)
+
+
+async def conversation_thinking_handler(request: Request) -> Response:
+    """Return saved reasoning for the activity entries the reader expanded."""
+    conversation_id = request.match_info["conversation_id"]
+    if not conversation_exists(conversation_id):
+        return web.json_response({"error": "Conversation not found"}, status=404)
+    try:
+        body = _ThinkingRequest.model_validate(await request.json())
+    except (ValidationError, json.JSONDecodeError, UnicodeDecodeError):
+        return web.json_response({"error": "Expected a non-empty list of event IDs"}, status=400)
+    coding = _resume_content_coding(",".join(request.headers.getall("Accept-Encoding", [])))
+    requested = set(body.event_ids)
+    events = await asyncio.to_thread(load_events_jsonl, conversation_id)
+    thinking = {
+        event["id"]: event.get("thinking") or ""
+        for event in events if event.get("id") in requested and event.get("type") == "iteration"
+    }
+    if thinking.keys() != requested:
+        return web.json_response({"error": "Saved activity not found"}, status=404)
+    return _compressed_json_response(json.dumps(thinking), coding)
 
 
 async def save_preview_state_handler(request: Request) -> Response:
@@ -380,6 +418,7 @@ def register_conversation_routes(app: web.Application) -> None:
     app.router.add_route("PATCH", "/api/conversations/folders/{folder_id}", update_folder_handler)
     app.router.add_route("DELETE", "/api/conversations/folders/{folder_id}", delete_folder_handler)
     app.router.add_route("POST", "/api/conversations/sessions/{conversation_id}/resume", resume_conversation_handler)
+    app.router.add_route("POST", "/api/conversations/sessions/{conversation_id}/thinking", conversation_thinking_handler)
     app.router.add_route("POST", "/api/conversations/sessions/{conversation_id}/title", generate_title_handler)
     app.router.add_route("POST", "/api/conversations/sessions/{conversation_id}/archive", archive_conversation_handler)
     app.router.add_route(

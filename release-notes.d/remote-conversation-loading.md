@@ -4,7 +4,8 @@ type: fixed
 area: chat
 ---
 
-Saved conversations download less data over remote connections by omitting raw
-tool results that the interface does not display. Messages, reasoning, tool-call
-activity, and workspace panels remain available, and the assistant retains its
-complete tool history.
+Saved conversations open with less downloading on phones and remote connections.
+Saved reasoning loads when you open activity, and raw tool results that the
+interface does not display are omitted from the initial response. Messages,
+tool-call activity, and workspace panels remain available, and the assistant
+retains its complete history.

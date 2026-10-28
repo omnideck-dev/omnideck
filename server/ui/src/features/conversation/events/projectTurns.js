@@ -24,7 +24,7 @@ import {
  * the agent network/activity view. The root transcript can still contain the
  * `spawn_requested` item that links to that sub-agent.
  *
- * @param {Array<import('./conversationEvents.generated').ConversationEvent>|null|undefined} events
+ * @param {Array<import('./frontendTypes').DisplayEvent>|null|undefined} events
  * @returns {Array<import('./frontendTypes').ConversationTurn>}
  */
 export function projectTurns(events) {
@@ -97,6 +97,7 @@ export function projectTurns(events) {
                 iterationIndex: ev.iteration_index,
                 content: ev.content || '',
                 thinking: ev.thinking || '',
+                ...(ev.thinking_ref ? { thinkingRef: ev.thinking_ref } : {}),
                 toolCalls: (ev.tool_calls || []).map((tc) => ({
                     id: tc.id,
                     name: tc.name,
