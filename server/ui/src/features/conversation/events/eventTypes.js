@@ -30,7 +30,6 @@ export const CONVERSATION_EVENT_TYPES = Object.freeze(/** @type {const} */ ({
 export const TRANSCRIPT_ITEM_KINDS = Object.freeze(/** @type {const} */ ({
     USER_PROMPT: 'user_prompt',
     ITERATION: 'iteration',
-    TOOL_RESULT: 'tool_result',
     FILE_OUTPUT: 'file_output',
     COMPACTION: 'compaction',
     SPAWN_REQUESTED: 'spawn_requested',

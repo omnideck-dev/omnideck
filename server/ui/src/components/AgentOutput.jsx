@@ -30,7 +30,7 @@ export default function AgentOutput({ entries, streaming, showFileOutputs = true
 
     return entries.map((entry, i) => {
         if (entry.type === 'thinking') {
-            return <CollapsibleThinking key={i} text={entry.thinking} streaming={streaming && i === entries.length - 1} />;
+            return <CollapsibleThinking key={i} text={entry.thinking} thinkingRef={entry.thinkingRef} streaming={streaming && i === entries.length - 1} />;
         }
         if (entry.type === 'content') {
             return <div key={i} data-testid="entry-content"><MarkdownContent streaming={streaming && i === entries.length - 1}>{entry.content}</MarkdownContent></div>;

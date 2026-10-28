@@ -3,6 +3,8 @@ import styles from './Message.module.css';
 import MarkdownContent from './MarkdownContent.jsx';
 import AgentOutput from './AgentOutput.jsx';
 import AttachmentChip from './AttachmentChip.jsx';
+import useSavedThinking from '../hooks/useSavedThinking.js';
+import SavedThinkingStatus from './SavedThinkingStatus.jsx';
 
 // Entry types that remain visible inline in the chat. Thinking and raw
 // tool_call entries are hidden — surfaced via the ephemeral status row
@@ -74,6 +76,9 @@ function AssistantMessage({ entries, onPreview, streaming, stalled = false,
     const hasEntries = list.length > 0;
     const visibleEntries = list.filter(_isVisibleInline);
     const hiddenEntries = list.filter(_isHidden);
+    const savedThinking = useSavedThinking(
+        hiddenEntries.map((entry) => entry.thinkingRef).filter(Boolean), activityOpen,
+    );
     const lastEntry = list[list.length - 1];
 
     // Stream-animate the inline content when the most recent entry is a
@@ -118,6 +123,7 @@ function AssistantMessage({ entries, onPreview, streaming, stalled = false,
                         </div>
                         {activityOpen && (
                             <div className={styles.activityPanel} data-testid="activity-panel">
+                                <SavedThinkingStatus {...savedThinking} />
                                 {hiddenEntries.map((e, i) => (
                                     <div
                                         key={i}
@@ -136,7 +142,7 @@ function AssistantMessage({ entries, onPreview, streaming, stalled = false,
                                                     )}
                                                 </>
                                             ) : (
-                                                e.thinking || ''
+                                                e.thinkingRef ? savedThinking.text(e.thinkingRef) : e.thinking || ''
                                             )}
                                         </span>
                                     </div>
