@@ -5,8 +5,8 @@ use tauri::AppHandle;
 use tauri_plugin_shell::{process::CommandEvent, ShellExt};
 
 const EXPECTED_SCHEMA_VERSION: u32 = 4;
-pub(crate) const EXPECTED_CLI_VERSION: &str = "v0.11.0-beta.6";
-pub(crate) const EXPECTED_CLI_COMMIT: &str = "4e2b4e4b23c2";
+pub(crate) const EXPECTED_CLI_VERSION: &str = "v0.11.0-beta.9";
+pub(crate) const EXPECTED_CLI_COMMIT: &str = "c34747d7ac74";
 const STDOUT_LIMIT: usize = 1_000_000;
 const STDERR_LIMIT: usize = 256 * 1024;
 const INSPECTION_TIMEOUT: Duration = Duration::from_secs(15);
@@ -19,6 +19,7 @@ pub(crate) enum FixedOperation {
     RuntimeEnsure,
     InstanceStatus,
     StartInstance,
+    WaitInstance,
 }
 
 impl FixedOperation {
@@ -35,12 +36,17 @@ impl FixedOperation {
                     "status".into(),
                 ];
             }
-            Self::StartInstance => {
+            Self::StartInstance | Self::WaitInstance => {
                 return vec![
                     "--json".into(),
                     "--name".into(),
                     platform::resource_name(CONTAINER_NAME),
-                    "start".into(),
+                    if self == Self::WaitInstance {
+                        "wait"
+                    } else {
+                        "start"
+                    }
+                    .into(),
                 ];
             }
         };
@@ -49,7 +55,7 @@ impl FixedOperation {
 
     fn timeout(self) -> Duration {
         match self {
-            Self::RuntimeEnsure | Self::StartInstance => SETUP_TIMEOUT,
+            Self::RuntimeEnsure | Self::StartInstance | Self::WaitInstance => SETUP_TIMEOUT,
             _ => INSPECTION_TIMEOUT,
         }
     }
@@ -493,6 +499,25 @@ mod tests {
     use super::*;
 
     #[test]
+    fn migration_failure_preserves_safe_detail_for_recovery_screen() {
+        let error = require_success(ProcessResult {
+            exit_code: 1,
+            stdout: r#"{"error":{"code":"MIGRATION_FAILED","message":"Saved settings couldn’t be upgraded.","detail":"Failed startup phase: migrations (step: broker:001_operation_grants)"}}"#.into(),
+            stderr: String::new(),
+        }, "startup").unwrap_err();
+        assert_eq!(error.code, "MIGRATION_FAILED");
+        assert!(error.technical().contains("broker:001_operation_grants"));
+        let state = crate::parity::error("migration", "resume", 3, error.technical());
+        assert_eq!(state.title, "omnideck couldn’t start");
+        assert!(state.can_retry);
+        assert!(!state.can_open);
+        assert!(state
+            .technical
+            .unwrap()
+            .contains("broker:001_operation_grants"));
+    }
+
+    #[test]
     fn operation_arguments_are_fixed() {
         assert_eq!(FixedOperation::Version.args(), ["--version"]);
         assert_eq!(
@@ -507,12 +532,16 @@ mod tests {
             FixedOperation::StartInstance.args(),
             ["--json", "--name", CONTAINER_NAME, "start"]
         );
+        assert_eq!(
+            FixedOperation::WaitInstance.args(),
+            ["--json", "--name", CONTAINER_NAME, "wait"]
+        );
     }
 
     #[test]
     fn validates_the_immutable_cli_version() {
         let parsed = parse_cli_version(
-            "omnideck version v0.11.0-beta.6 (4e2b4e4b23c2) built 2026-09-29T01:48:47Z",
+            "omnideck version v0.11.0-beta.9 (c34747d7ac74) built 2026-10-31T16:18:27Z",
         )
         .unwrap();
         assert_eq!(parsed.version, EXPECTED_CLI_VERSION);
