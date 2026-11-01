@@ -59,3 +59,69 @@ describe('ProvidersTab shared presentation', () => {
         expect(fetch).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ method: 'DELETE' }));
     });
 });
+
+describe('ProvidersTab brokered base URL', () => {
+    beforeEach(() => {
+        useAppData.mockReturnValue({ providersHook: {
+            providers: [{
+                name: 'openai_compat',
+                kind: 'brokered',
+                status: 'running',
+                base_url: 'https://my-proxy.example.com/v1',
+            }],
+            loading: false, refresh: vi.fn(),
+        } });
+    });
+
+    it('shows the cached base URL, not the API key field, and sends both on save', async () => {
+        render(<ProvidersTab />);
+
+        const urlInput = screen.getByTestId('provider-base-url-input');
+        expect(urlInput).toHaveValue('https://my-proxy.example.com/v1');
+        const keyInput = screen.getByPlaceholderText('Paste a new key to replace the current one');
+        expect(keyInput).toHaveValue('');
+
+        fireEvent.change(urlInput, { target: { value: 'https://new-proxy.example.com/v1' } });
+        fireEvent.change(keyInput, { target: { value: 'sk-new-key' } });
+        fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ provider: {}, models: [] }) });
+        fireEvent.click(screen.getByRole('button', { name: /save/i }));
+
+        await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+            '/api/providers/openai_compat',
+            expect.objectContaining({ method: 'PATCH' }),
+        ));
+        const [, options] = fetch.mock.calls.find(
+            ([url, opts]) => url === '/api/providers/openai_compat' && opts?.method === 'PATCH',
+        );
+        expect(JSON.parse(options.body)).toEqual({
+            api_key: 'sk-new-key',
+            base_url: 'https://new-proxy.example.com/v1',
+        });
+    });
+
+    it('does not expose a base URL field for a brokered provider with a fixed upstream', async () => {
+        useAppData.mockReturnValue({ providersHook: {
+            providers: [{ name: 'anthropic', kind: 'brokered', status: 'running', base_url: null }],
+            loading: false, refresh: vi.fn(),
+        } });
+        render(<ProvidersTab />);
+
+        expect(screen.queryByTestId('provider-base-url-input')).not.toBeInTheDocument();
+
+        const keyInput = screen.getByPlaceholderText('Paste a new key to replace the current one');
+        fireEvent.change(keyInput, { target: { value: 'sk-new-key' } });
+        fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ provider: {}, models: [] }) });
+        fireEvent.click(screen.getByRole('button', { name: /save/i }));
+
+        await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+            '/api/providers/anthropic',
+            expect.objectContaining({ method: 'PATCH' }),
+        ));
+        const [, options] = fetch.mock.calls.find(
+            ([url, opts]) => url === '/api/providers/anthropic' && opts?.method === 'PATCH',
+        );
+        // No base_url field shown means none sent — can't redirect this
+        // provider's traffic (and its stored key) to an arbitrary host.
+        expect(JSON.parse(options.body)).toEqual({ api_key: 'sk-new-key' });
+    });
+});
