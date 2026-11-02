@@ -317,8 +317,25 @@ test('Linux browser discovery follows the registered XDG handler, not stale Fire
   }
 });
 
+test('Linux apt operations wait for package locks and propagate failures without retries', () => {
+  const aptWait = linuxGuest.match(/apt_with_lock_wait\(\) \{[\s\S]*?\n\}/)[0];
+  for (const status of [0, 100]) {
+    const result = spawnSync('bash', ['-c', `
+      set -eu
+      sudo() { printf '%s\\n' "$@"; return ${status}; }
+      ${aptWait}
+      apt_with_lock_wait install --reinstall -y '/candidate with spaces.deb'
+    `], { encoding: 'utf8' });
+    assert.equal(result.status, status, result.stderr);
+    assert.equal(result.stdout,
+      'env\nDEBIAN_FRONTEND=noninteractive\napt-get\n-o\nDPkg::Lock::Timeout=120\ninstall\n--reinstall\n-y\n/candidate with spaces.deb\n');
+  }
+  assert.equal((linuxGuest.match(/^\s+apt_with_lock_wait (?:install|remove) /gm) ?? []).length, 5);
+  assert.doesNotMatch(linuxGuest, /apt-get (?:install|remove) /);
+});
+
 test('Linux upgrade tests install exact candidate bytes even at the same version', () => {
-  assert.match(linuxGuest, /apt-get install --reinstall -y "\$\{artifact\}"/);
+  assert.match(linuxGuest, /apt_with_lock_wait install --reinstall -y "\$\{artifact\}"/);
   const installRpm = linuxGuest.match(/install_rpm\(\) \{[\s\S]*?\n\}/)[0];
   for (const installed of [true, false]) {
     const result = spawnSync('bash', ['-c', `
@@ -724,7 +741,7 @@ test('golden prerequisites are versioned while exact drivers remain per-run', ()
 });
 
 test('current Linux guests install only the input dependencies their lane uses', () => {
-  assert.match(linuxGuest, /apt-get install -y -qq webkit2gtk-driver/);
+  assert.match(linuxGuest, /apt_with_lock_wait install -y -qq webkit2gtk-driver/);
   assert.doesNotMatch(linuxGuest, /xdotool/);
   assert.match(linuxGuest, /dnf_with_lock_retry input-dependencies install -y webkitgtk6\.0/);
   assert.match(linuxGuest, /Failed to obtain rpm transaction lock/);
