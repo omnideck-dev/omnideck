@@ -102,6 +102,7 @@ def _static_tool_categories() -> dict[str, ToolCategory]:
         select_option,
     )
     from tools.memory import forget, load_memory, remember
+    from tools.theme import get_custom_css, set_custom_css
     from tools.virtual_computer import (
         apply_text_patch,
         grep,
@@ -163,6 +164,12 @@ def _static_tool_categories() -> dict[str, ToolCategory]:
             "Memory",
             "Persist and recall facts across conversations.",
             [remember, forget, load_memory],
+        ),
+        "theme": ToolCategory(
+            "theme",
+            "Theme",
+            "Read and change the app's custom colors and fonts (light and dark).",
+            [get_custom_css, set_custom_css],
         ),
         "planning": ToolCategory(
             "planning",

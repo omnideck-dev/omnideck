@@ -5,6 +5,7 @@ const CATEGORY_ICONS = {
     browser: 'bi-globe2',
     webfetch: 'bi-cloud-arrow-down',
     memory: 'bi-bookmark-star',
+    theme: 'bi-palette',
     planning: 'bi-diagram-3',
     image_generation: 'bi-image',
     music_generation: 'bi-music-note-beamed',
