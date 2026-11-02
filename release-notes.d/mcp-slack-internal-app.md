@@ -15,7 +15,8 @@ Discovered tool definitions are saved with connection metadata, separately from
 encrypted credentials and tool approvals. Existing MCP connections migrate
 automatically without changing approvals or requiring sign-in again.
 
-MCP currently requires a runtime that supplies its local browser callback
-address. The sign-in browser must run on the same computer as omnideck; remote
-server/browser setups are not yet supported. Slack workspace policies and app
-approval still apply.
+MCP requires `OMNIDECK_EXTERNAL_URL` on both the app and supervisor. Desktop
+v0.1.0-beta.15 supplies a localhost callback address automatically. For sign-in
+from another device, configure an origin reachable from that browser and
+register its exact callback URL with the provider when required. Slack
+workspace policies, app approval, and provider redirect rules still apply.

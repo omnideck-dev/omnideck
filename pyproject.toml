@@ -156,6 +156,7 @@ include = [
     "server*",
     "tasks*",
     "tools*",
+    "tool_schemas*",
     "utils*",
 ]
 exclude = [

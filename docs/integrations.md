@@ -43,17 +43,17 @@ to the app and preserve the public Host header. The address is never inferred
 from inbound Host or forwarded headers. When signing in from another device,
 use the server's reachable address rather than localhost, which refers to the
 device running the browser. The
-companion CLI change supplies this address from its published host port and
-bumps container layout to reconcile older instances without deleting volumes.
-That change still needs a CLI release and updated desktop bundle pin before
-packaged users receive it; the currently bundled CLI does not supply it.
+companion CLI supplies a localhost callback address from its published host port
+and reconciles older container layouts without deleting volumes. Desktop
+v0.1.0-beta.15 bundles CLI v0.11.0-beta.9 with this support. For a browser on
+another device, configure a reachable public origin on both services instead
+of using the default localhost address.
 The first shipping Slack path uses an **organization-owned internal Slack app**.
 Its public Client ID is entered in the connection form, not an environment
 variable; the old `OMNIDECK_SLACK_CLIENT_ID` preview setting is no longer used.
 No shared development registration is bundled. A future Marketplace-approved
 registration will provide the simpler one-click path; Marketplace approval is
-not required for an organization's own internal app. Automatic desktop callback
-configuration remains a release prerequisite for packaged installations.
+not required for an organization's own internal app.
 
 ### Slack setup and access
 

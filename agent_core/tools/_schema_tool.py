@@ -7,7 +7,7 @@ from typing import Any
 from jsonschema import ValidationError
 from referencing.exceptions import Unresolvable
 
-from utils.schema_validation import schema_validator
+from tool_schemas import schema_validator
 
 
 class SchemaTool:

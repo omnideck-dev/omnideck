@@ -34,10 +34,10 @@ and [Desktop v0.1.0-beta.15](https://github.com/omnideck-dev/omnideck/releases/t
 Desktop bundles that exact CLI release and retains app 0.5.2. Both consumers
 work with existing app releases through HTTP readiness.
 
-Specific migration errors require the app-side producer described above, which
-remains on the MCP branch. Shipping the CLI and Desktop does not ship that
-producer or MCP integrations. Local development screenshots must identify the
-development CLI honestly; they are not release qualification.
+Specific migration errors require the app-side producer included with the MCP
+app release. Installing CLI or Desktop alone does not update the app image to
+include that producer or MCP integrations. Local development screenshots must
+identify the development CLI honestly; they are not release qualification.
 
 ## Tests
 

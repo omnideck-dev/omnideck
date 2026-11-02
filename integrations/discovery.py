@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from utils.schema_validation import InvalidSchemaError, UnsupportedSchemaError, schema_validator
+from tool_schemas import InvalidSchemaError, UnsupportedSchemaError, schema_validator
 
 _NAME = re.compile(r"^[a-zA-Z0-9_.-]{1,128}$")
 MAX_OPERATIONS = 500

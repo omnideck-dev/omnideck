@@ -10,7 +10,9 @@ APPLICATION_MODULES = {
     p.stem if p.is_file() else p.name
     for p in ROOT.iterdir()
     if (p.is_file() and p.suffix == ".py") or (p.is_dir() and (p / "__init__.py").exists())
-} - {"agent_core"}
+# Tool schemas are a reusable leaf dependency, not an application package.
+# Their own boundary test blocks every consumer, including the agent core.
+} - {"agent_core", "tool_schemas"}
 
 
 def test_agent_core_imports_do_not_cross_into_application_packages():
