@@ -2,9 +2,6 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import ChatPanel from '../ChatPanel.jsx';
-import { buildConversationDetails } from '../../features/conversation/details/conversationDetailsModel.js';
-
-const detailsModel = buildConversationDetails({});
 
 // Use the real ChatInput here (the sibling ChatPanel suite stubs it) so we can
 // exercise the draft-clearing behavior. The message list is irrelevant.
@@ -16,7 +13,6 @@ vi.mock('../../features/agent/AgentState.jsx', () => ({ useAgentState: () => ({ 
 function renderPanel(props = {}) {
     return render(
         <ChatPanel
-            detailsModel={detailsModel}
             turns={[]}
             onSend={vi.fn()}
             onStop={vi.fn()}
@@ -44,7 +40,7 @@ describe('ChatPanel draft handling', () => {
         expect(textarea.value).toBe('half-written thought');
 
         rerender(
-            <ChatPanel detailsModel={detailsModel} turns={[]} onSend={vi.fn()} onStop={vi.fn()} isStreaming={false}
+            <ChatPanel turns={[]} onSend={vi.fn()} onStop={vi.fn()} isStreaming={false}
                 conversationId="conv-b" />,
         );
 
@@ -58,20 +54,20 @@ describe('ChatPanel draft handling', () => {
         await user.type(screen.getByPlaceholderText('Message Omnideck…'), 'draft for A');
 
         rerender(
-            <ChatPanel detailsModel={detailsModel} turns={[]} onSend={vi.fn()} onStop={vi.fn()} isStreaming={false}
+            <ChatPanel turns={[]} onSend={vi.fn()} onStop={vi.fn()} isStreaming={false}
                 conversationId="conv-b" />,
         );
         expect(screen.getByPlaceholderText('Message Omnideck…').value).toBe('');
         await user.type(screen.getByPlaceholderText('Message Omnideck…'), 'draft for B');
 
         rerender(
-            <ChatPanel detailsModel={detailsModel} turns={[]} onSend={vi.fn()} onStop={vi.fn()} isStreaming={false}
+            <ChatPanel turns={[]} onSend={vi.fn()} onStop={vi.fn()} isStreaming={false}
                 conversationId="conv-a" />,
         );
         expect(screen.getByPlaceholderText('Message Omnideck…').value).toBe('draft for A');
 
         rerender(
-            <ChatPanel detailsModel={detailsModel} turns={[]} onSend={vi.fn()} onStop={vi.fn()} isStreaming={false}
+            <ChatPanel turns={[]} onSend={vi.fn()} onStop={vi.fn()} isStreaming={false}
                 conversationId="conv-b" />,
         );
         expect(screen.getByPlaceholderText('Message Omnideck…').value).toBe('draft for B');
@@ -85,7 +81,7 @@ describe('ChatPanel draft handling', () => {
 
         // Re-render with the same conversation but a changed prop (a new turn).
         rerender(
-            <ChatPanel detailsModel={detailsModel} turns={[{ id: 't', agentId: 'root.test.1', children: [] }]} onSend={vi.fn()} onStop={vi.fn()} isStreaming={false}
+            <ChatPanel turns={[{ id: 't', agentId: 'root.test.1', children: [] }]} onSend={vi.fn()} onStop={vi.fn()} isStreaming={false}
                 conversationId="conv-a" />,
         );
 

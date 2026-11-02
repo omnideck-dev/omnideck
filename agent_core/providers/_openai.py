@@ -113,12 +113,7 @@ class OpenAIProvider(BaseAPIProvider):
             response = await self._client.chat.completions.create(**kwargs, stream=False)
         except Exception as exc:
             raise _wrap_error(exc) from exc
-        return _normalize_response(response, usage=self._extract_usage(response.usage))
-
-    @staticmethod
-    def _extract_usage(usage: Any) -> TokenUsage:
-        """Provider hook shared by streaming and buffered completions."""
-        return _extract_usage(usage)
+        return _normalize_response(response)
 
     async def chat_stream(
         self,
@@ -190,7 +185,7 @@ class OpenAIProvider(BaseAPIProvider):
                 thinking="".join(thinking_parts) or None,
                 tool_calls=tool_calls,
             ),
-            usage=self._extract_usage(usage_data),
+            usage=_extract_usage(usage_data),
             done_reason=_DONE_REASON_MAP.get(finish_reason or "", finish_reason),
         )
 
@@ -352,17 +347,34 @@ def _build_tool_calls(tc_accum: dict[int, dict[str, str]]) -> list[ToolCall] | N
 
 
 def _extract_usage(usage: Any) -> TokenUsage:
-    """Normalize OpenAI-compatible counts; input already includes cached tokens."""
+    """Extract token counts including cache metrics from an OpenAI usage object.
+
+    OpenAI includes cached prompt tokens in usage.prompt_tokens_details.cached_tokens.
+    OpenRouter may include similar fields. Gracefully degrade when absent.
+    """
+    if usage is None:
+        return TokenUsage()
+
+    prompt = getattr(usage, "prompt_tokens", 0) or 0
+    completion = getattr(usage, "completion_tokens", 0) or 0
+
+    # OpenAI / OpenRouter: usage.prompt_tokens_details.cached_tokens
+    cache_read = 0
     details = getattr(usage, "prompt_tokens_details", None)
-    return TokenUsage(
-        prompt_tokens=getattr(usage, "prompt_tokens", None),
-        completion_tokens=getattr(usage, "completion_tokens", None),
-        cache_read_tokens=getattr(details, "cached_tokens", None),
-        cache_creation_tokens=getattr(details, "cache_write_tokens", None),
+    if details is not None:
+        cache_read = getattr(details, "cached_tokens", 0) or 0
+
+    result = TokenUsage(
+        prompt_tokens=prompt,
+        completion_tokens=completion,
+        cache_read_tokens=cache_read,
     )
+    if cache_read:
+        logger.debug("cache tokens: read=%d (prompt=%d, completion=%d)", cache_read, prompt, completion)
+    return result
 
 
-def _normalize_response(raw: Any, *, usage: TokenUsage) -> ChatResponse:
+def _normalize_response(raw: Any) -> ChatResponse:
     """Convert an OpenAI ChatCompletion to our normalized ChatResponse."""
     choice = raw.choices[0]
     msg = choice.message
@@ -390,7 +402,7 @@ def _normalize_response(raw: Any, *, usage: TokenUsage) -> ChatResponse:
             thinking=thinking,
             tool_calls=tool_calls or None,
         ),
-        usage=usage,
+        usage=_extract_usage(raw.usage),
         done_reason=_DONE_REASON_MAP.get(choice.finish_reason or "", choice.finish_reason),
         raw=raw,
     )

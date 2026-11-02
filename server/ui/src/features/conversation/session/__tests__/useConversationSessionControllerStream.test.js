@@ -287,7 +287,6 @@ describe('conversation session stream delivery', () => {
         ));
         expect(actionNames).toEqual([
             'AGENT_STARTED',
-            'RECORD_AGENT_USAGE',
             'APPEND_STREAM_CHUNK',
         ]);
         expect(result.current.turns[0].children).toEqual(expect.arrayContaining([
