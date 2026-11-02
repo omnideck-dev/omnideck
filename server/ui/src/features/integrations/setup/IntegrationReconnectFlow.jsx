@@ -9,6 +9,7 @@ import {
     listIntegrationConnections,
 } from '../api/integrationsApi.js';
 import ConnectionStep from './ConnectionStep.jsx';
+import ConnectionReload from './components/ConnectionReload.jsx';
 import styles from './IntegrationSetupFlow.module.css';
 
 export default function IntegrationReconnectFlow({
@@ -17,11 +18,15 @@ export default function IntegrationReconnectFlow({
     const [busy, setBusy] = useState(false);
     const [cancelling, setCancelling] = useState(false);
     const [pendingOAuthState, setPendingOAuthState] = useState(null);
+    const [savedConnectionId, setSavedConnectionId] = useState(null);
     const [error, setError] = useState(null);
     const { updateAction } = getConnectionAdapter(connection.slug);
 
     const connectedById = useCallback(async (connectionId) => {
+        setSavedConnectionId(connectionId);
+        setPendingOAuthState(null);
         setBusy(true);
+        setError(null);
         try {
             const connections = await listIntegrationConnections();
             const updated = connections.find(item => item.id === connectionId);
@@ -83,7 +88,11 @@ export default function IntegrationReconnectFlow({
                         />
                     </div>
                 )}
-                <ConnectionStep
+                {savedConnectionId ? <ConnectionReload
+                    busy={dismissalBlocked}
+                    onRetry={() => connectedById(savedConnectionId)}
+                    onExit={cancel}
+                /> : <ConnectionStep
                     entry={catalogEntry}
                     existingConnection={connection}
                     onBack={cancel}
@@ -92,7 +101,7 @@ export default function IntegrationReconnectFlow({
                     onConnectedId={connectedById}
                     onBusyChange={setBusy}
                     onPendingOAuthChange={setPendingOAuthState}
-                />
+                />}
             </div>
         </Modal>
     );

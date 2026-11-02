@@ -6,22 +6,26 @@ import Button from '../../components/primitives/Button.jsx';
 import Callout from '../../components/primitives/Callout.jsx';
 import { removeIntegration, updateIntegration } from './api/integrationsApi.js';
 import IntegrationIcon from './components/IntegrationIcon.jsx';
+import IntegrationRowSummary from './components/IntegrationRowSummary.jsx';
 import IntegrationEditor from './editor/IntegrationEditor.jsx';
 import useIntegrations from './hooks/useIntegrations.js';
 import IntegrationReconnectFlow from './setup/IntegrationReconnectFlow.jsx';
 import IntegrationSetupFlow from './setup/IntegrationSetupFlow.jsx';
 import styles from './IntegrationsView.module.css';
 
-export default function IntegrationsTab() {
+export default function IntegrationsTab({ initialConnectionId, selectionRequest }) {
     const { connections, catalog, loading, error: loadError, refresh } = useIntegrations();
     const [setupOpen, setSetupOpen] = useState(false);
     const [reconnectRecord, setReconnectRecord] = useState(null);
-    const [selectedId, setSelectedId] = useState(null);
+    const [selectedId, setSelectedId] = useState(initialConnectionId || null);
+    useEffect(() => setSelectedId(initialConnectionId || null), [initialConnectionId, selectionRequest]);
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState(null);
     const [removeError, setRemoveError] = useState(null);
 
     useEffect(() => {
+        if (loading) return;
+        if (initialConnectionId && !connections.some(item => item.id === initialConnectionId) && selectedId === initialConnectionId) return;
         if (connections.length === 0) {
             if (selectedId !== null) setSelectedId(null);
             return;
@@ -29,7 +33,7 @@ export default function IntegrationsTab() {
         if (!connections.some(item => item.id === selectedId)) {
             setSelectedId(connections[0].id);
         }
-    }, [connections, selectedId]);
+    }, [connections, selectedId, loading, initialConnectionId]);
 
     useEffect(() => {
         setSaveError(null);
@@ -62,6 +66,7 @@ export default function IntegrationsTab() {
         try {
             await updateIntegration(selected.id, updates);
             await refresh();
+            window.dispatchEvent(new Event('integrations-changed'));
             return true;
         } catch (requestError) {
             setSaveError(requestError?.message || 'Failed to save integration');
@@ -77,6 +82,7 @@ export default function IntegrationsTab() {
         try {
             await removeIntegration(selected.id);
             await refresh();
+            window.dispatchEvent(new Event('integrations-changed'));
         } catch (requestError) {
             setRemoveError(requestError?.message || 'Failed to delete integration');
         }
@@ -86,6 +92,7 @@ export default function IntegrationsTab() {
         setSetupOpen(false);
         setReconnectRecord(null);
         const next = await refresh();
+        window.dispatchEvent(new Event('integrations-changed'));
         if (record?.id && next.some(item => item.id === record.id)) setSelectedId(record.id);
     }, [refresh]);
 
@@ -115,6 +122,7 @@ export default function IntegrationsTab() {
                         />
                     </SplitPanel.List>
                     <SplitPanel.Detail>
+                        {!selected && <Callout tone="warning" title="Integration no longer available" description="Choose another integration from the list." />}
                         {selected && (
                             <IntegrationEditor
                                 key={selected.id}
@@ -198,9 +206,7 @@ function IntegrationList({ groups, selectedId, onSelect, onAdd }) {
                                 aria-current={record.id === selectedId ? 'true' : undefined}
                                 icon={<IntegrationIcon catalogId={record.slug} />}
                                 name={record.label}
-                                description={(record.operation_grants || []).length === 0
-                                    ? 'No tools selected'
-                                    : `${record.operation_grants.length} ${record.operation_grants.length === 1 ? 'tool' : 'tools'} selected`}
+                                description={<IntegrationRowSummary record={record} />}
                                 onClick={() => onSelect(record.id)}
                                 data-testid={`integrations-row-${record.id}`}
                             />

@@ -144,7 +144,7 @@ def test_setting_immediately_toggles_custom_tools_tab(page: Page):
 
 
 def test_setting_gates_custom_tools_skill_categories(page: Page):
-    """The setting gates both the category catalog row and skill editor chip."""
+    """The setting gates the shared tool picker without a separate catalog tab."""
     assert page.request.put(
         "/api/settings",
         data={"custom_tools_enabled": False},
@@ -162,15 +162,16 @@ def test_setting_gates_custom_tools_skill_categories(page: Page):
         assert enabled_response.value.ok
 
         page.get_by_test_id("settings-tab-skills").click()
-        settings.skills.view_categories()
-        custom_tools_category = settings.skills.category_row("custom_tools")
-        expect(custom_tools_category).to_be_visible()
-        expect(custom_tools_category).to_contain_text(
+        settings.skills.new()
+        picker = settings.skills.tools.open()
+        custom_tools_option = picker.option("Built-in tools", "Custom Tools")
+        # The preserved skill editor refreshes its catalog on the 15-second poll.
+        expect(custom_tools_option).to_be_visible(timeout=20000)
+        expect(custom_tools_option).to_contain_text(
             "The agent can create, look up, and run reusable tools."
         )
 
-        settings.skills.view_my_skills().new()
-        expect(settings.skills.category_chip("custom_tools")).to_be_visible()
+        page.keyboard.press("Escape")
 
         page.get_by_test_id("settings-tab-system").click()
         with page.expect_response(
@@ -182,12 +183,11 @@ def test_setting_gates_custom_tools_skill_categories(page: Page):
         expect(toggle).not_to_be_checked()
 
         page.get_by_test_id("settings-tab-skills").click()
-        settings.skills.view_categories()
-        expect(settings.skills.category_row("coding")).to_be_visible()
-        expect(custom_tools_category).not_to_be_visible()
-
-        settings.skills.view_my_skills().new()
-        expect(settings.skills.category_chip("custom_tools")).not_to_be_visible()
+        settings.skills.tools.open()
+        expect(picker.option("Built-in tools", "Coding")).to_be_visible()
+        # The mounted editor refreshes its catalog; no page reload hides stale data.
+        expect(custom_tools_option).not_to_be_visible(timeout=20000)
+        page.keyboard.press("Escape")
     finally:
         # The E2E harness enables Custom Tools for the catalog tests below.
         assert page.request.put(

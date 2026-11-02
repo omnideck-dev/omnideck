@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 
-import { categoryIcon } from './skillCategoryIcons.js';
+import ToolSelection from './ToolSelection.jsx';
 import Button from '../primitives/Button.jsx';
 import Callout from '../primitives/Callout.jsx';
 import ConfirmButton from '../primitives/ConfirmButton.jsx';
@@ -10,13 +10,7 @@ function _cloneSkill(skill) {
     return JSON.parse(JSON.stringify(skill));
 }
 
-// A category backed by an integration carries a boolean `connected`; a static
-// category has `connected: null` and so no connection dot.
-function isIntegration(category) {
-    return category.connected !== null && category.connected !== undefined;
-}
-
-export default function SkillBuilder({ skill, categories, onSave, onDelete, onExport }) {
+export default function SkillBuilder({ skill, categories, onSave, onDelete, onExport, onOpenIntegration }) {
     const [draft, setDraft] = useState(null);
     const [saveError, setSaveError] = useState(null);
 
@@ -27,18 +21,6 @@ export default function SkillBuilder({ skill, categories, onSave, onDelete, onEx
 
     const update = useCallback((field, value) => {
         setDraft((prev) => (prev ? { ...prev, [field]: value } : prev));
-    }, []);
-
-    const toggleCategory = useCallback((id) => {
-        setDraft((prev) => {
-            if (!prev) return prev;
-            const current = prev.tool_categories || [];
-            const has = current.includes(id);
-            return {
-                ...prev,
-                tool_categories: has ? current.filter((c) => c !== id) : [...current, id],
-            };
-        });
     }, []);
 
     const handleRevert = useCallback(() => {
@@ -121,8 +103,8 @@ export default function SkillBuilder({ skill, categories, onSave, onDelete, onEx
                     </section>
 
                     <section className={styles.section}>
-                        <div className={styles.sectionLabel}>Skill text</div>
-                        <div className={styles.sectionHelp}>Added to the agent&apos;s instructions when this skill is loaded.</div>
+                        <div className={styles.sectionLabel}>Instructions</div>
+                        <div className={styles.sectionHelp}>How should this work be done?</div>
                         <textarea
                             className={styles.promptTextarea}
                             value={draft.prompt || ''}
@@ -134,34 +116,10 @@ export default function SkillBuilder({ skill, categories, onSave, onDelete, onEx
                     </section>
 
                     <section className={styles.section}>
-                        <div className={styles.sectionLabel}>Tool categories</div>
-                        <div className={styles.sectionHelp}>The tool categories this skill grants.</div>
-                        <div className={styles.chipGrid}>
-                            {categories.map((category) => {
-                                const active = (draft.tool_categories || []).includes(category.id);
-                                return (
-                                    <button
-                                        key={category.id}
-                                        className={`${styles.chip} ${active ? styles.chipActive : ''}`}
-                                        onClick={() => toggleCategory(category.id)}
-                                        aria-pressed={active}
-                                        data-testid={`cat-chip-${category.id}`}
-                                    >
-                                        {active && <span className={styles.chipCheck}>&#x2713;</span>}
-                                        <i className={`bi ${categoryIcon(category.id)}`} aria-hidden="true" />
-                                        {category.label}
-                                        {isIntegration(category) && (
-                                            <span
-                                                className={`${styles.chipDot} ${category.connected ? styles.on : styles.off}`}
-                                                title={category.connected ? 'connected' : 'not connected'}
-                                                data-testid={`cat-dot-${category.id}`}
-                                            />
-                                        )}
-                                        <span className={styles.chipCnt}>{category.tool_count}</span>
-                                    </button>
-                                );
-                            })}
-                        </div>
+                        <div className={styles.sectionLabel}>Tools</div>
+                        <div className={styles.sectionHelp}>Choose what this skill needs.</div>
+                        <ToolSelection key={skill.id} categories={categories} categoryIds={draft.tool_categories || []}
+                            onCategoriesChange={ids => update('tool_categories', ids)} onOpenIntegration={onOpenIntegration} />
                     </section>
                 </div>
             </div>

@@ -45,12 +45,14 @@ vi.mock('../../../utils/packs.js', async (importOriginal) => ({
 // assert which agent (or the unsaved draft) opened, plus a button that
 // simulates an edit by reporting dirty state up (drives the unsaved guard).
 vi.mock('../../ProfileBuilder.jsx', () => ({
-    default: ({ profile, onDirtyChange }) => (
+    default: ({ profile, onDirtyChange, onBack, onDuplicate }) => (
         <div data-testid="profile-builder">
+            <button data-testid="agent-detail-back" onClick={onBack}>Agents</button>
             {profile?.name}
             <button type="button" data-testid="mock-edit" onClick={() => onDirtyChange?.(true)}>
                 edit
             </button>
+            <button type="button" onClick={() => onDuplicate(profile.id)}>Duplicate current</button>
         </div>
     ),
 }));
@@ -77,6 +79,21 @@ beforeEach(() => {
 });
 
 afterEach(() => { vi.restoreAllMocks(); });
+
+test('duplicate from a dirty editor asks before abandoning its draft', async () => {
+    renderView();
+    fireEvent.click(await screen.findByText('Researcher'));
+    fireEvent.click(screen.getByTestId('mock-edit'));
+    fireEvent.click(screen.getByRole('button', { name: 'Duplicate current' }));
+    expect(screen.getByTestId('agent-unsaved-warning')).toBeInTheDocument();
+    expect(profilesHook.duplicateProfile).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('agent-unsaved-keep'));
+    expect(screen.getByTestId('profile-builder')).toHaveTextContent('Researcher');
+    fireEvent.click(screen.getByRole('button', { name: 'Duplicate current' }));
+    fireEvent.click(screen.getByTestId('agent-unsaved-discard'));
+    await waitFor(() => expect(profilesHook.duplicateProfile).toHaveBeenCalledTimes(1));
+    expect(profilesHook.duplicateProfile).toHaveBeenCalledWith('p1');
+});
 
 test('lists agents in the table', async () => {
     renderView();

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, TypeAlias
@@ -10,6 +11,7 @@ from typing import Any, Literal, TypeAlias
 from pydantic import BaseModel, field_serializer, field_validator
 
 from integrations.operation_grants import OperationGrants
+from integrations.discovery import DiscoveredOperation, parse_discovered_operations
 
 
 @dataclass(frozen=True)
@@ -47,6 +49,21 @@ class IntegrationConnectionMeta(BrokeredConnectionMeta):
 
     kind: Literal["integration"] = "integration"
     agent_operation_grants: OperationGrants = frozenset()
+    discovered_operations: tuple[DiscoveredOperation, ...] = ()
+
+    @field_validator("discovered_operations", mode="before")
+    @classmethod
+    def _parse_discovered_operations(cls, value: Any) -> tuple[DiscoveredOperation, ...]:
+        if isinstance(value, tuple) and all(isinstance(item, DiscoveredOperation) for item in value):
+            value = [item.public_dict() for item in value]
+        try:
+            return parse_discovered_operations(json.dumps(value, allow_nan=False))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Invalid connection tool catalog") from exc
+
+    @field_serializer("discovered_operations")
+    def _serialize_discovered_operations(self, operations: tuple[DiscoveredOperation, ...]) -> list[dict[str, Any]]:
+        return [operation.public_dict() for operation in operations]
 
     @field_validator("agent_operation_grants", mode="before")
     @classmethod

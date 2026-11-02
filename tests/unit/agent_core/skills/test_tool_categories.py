@@ -8,6 +8,7 @@ integration categories resolving (or staying empty) by connection state.
 """
 
 import inspect
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -32,7 +33,7 @@ _STATIC_IDS = {
     "desktop",
     "custom_tools",
 }
-_INTEGRATION_IDS = {"email", "calendar", "drive", "contacts", "http"}
+
 
 
 def _features(**overrides) -> FeaturesConfig:
@@ -75,7 +76,8 @@ def _names(tools):
 async def test_lists_static_and_integration_categories():
     cats = await tool_categories()
     assert _STATIC_IDS <= set(cats)
-    assert _INTEGRATION_IDS <= set(cats)
+    assert not any(cid.startswith("integration:") for cid in cats)
+    assert "integration:acct-1" in await tool_categories(_connections("email.messages.search"))
 
 
 @pytest.mark.unit
@@ -159,15 +161,17 @@ async def test_grounding_tool_follows_visual_grounding(monkeypatch):
 
 @pytest.mark.unit
 async def test_integration_category_empty_when_disconnected():
-    email = (await tool_categories())["email"]
+    connection = replace(_connections("email.messages.search")[0], state="stopped")
+    email = (await tool_categories((connection,)))["integration:acct-1"]
     assert email.tools == []
 
 
 @pytest.mark.unit
 async def test_integration_category_resolves_when_connected():
-    email = (await tool_categories(_connections("email.messages.search")))["email"]
+    email = (await tool_categories(_connections("email.messages.search")))["integration:acct-1"]
     names = _names(email.tools)
-    assert "search_email" in names
+    assert len(names) == 1
+    assert next(iter(names)).startswith("search_email_")
     assert "send_email" not in names  # read tier only
 
 
@@ -175,8 +179,9 @@ async def test_integration_category_resolves_when_connected():
 async def test_connected_flag_tracks_integration_state():
     cats = await tool_categories()
     assert cats["coding"].connected is None  # static: no connection concept
-    assert cats["email"].connected is False  # integration, nothing connected
-    assert (await tool_categories(_connections("email.messages.search")))["email"].connected is True
+    connection = replace(_connections("email.messages.search")[0], state="stopped")
+    assert (await tool_categories((connection,)))["integration:acct-1"].connected is False
+    assert (await tool_categories(_connections("email.messages.search")))["integration:acct-1"].connected is True
 
 
 @pytest.mark.unit

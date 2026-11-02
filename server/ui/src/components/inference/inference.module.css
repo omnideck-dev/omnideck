@@ -11,7 +11,7 @@
 
 .sectionLabel {
     font-family: var(--font-brand);
-    font-size: 11px;
+    font-size: var(--font-size-caption);
     color: var(--text-tertiary);
     text-transform: uppercase;
     letter-spacing: 0.06em;
@@ -20,7 +20,8 @@
 
 /* ---- Preset buttons ---- */
 .presetGrid {
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
     gap: var(--sp-2);
 }
 
@@ -29,7 +30,7 @@
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 2px;
+    gap: var(--sp-1);
     padding: var(--sp-2) var(--sp-3);
     background: var(--surface);
     border: 1px solid var(--border);
@@ -54,14 +55,14 @@
 }
 
 .presetLabel {
-    font-size: 13px;
+    font-size: var(--font-size-body);
     font-weight: 600;
     color: var(--text-primary);
     line-height: 1;
 }
 
 .presetHint {
-    font-size: 10px;
+    font-size: var(--font-size-label);
     color: var(--text-tertiary);
     line-height: 1.2;
 }
@@ -69,37 +70,42 @@
 /* ---- Advanced body ---- */
 .advancedBody {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: var(--sp-3);
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+    gap: var(--sp-5);
 }
 
 .advancedField {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--sp-1);
+    min-width: 0;
 }
 
 .fieldRow {
+    min-width: 0;
     display: flex;
     flex-direction: column;
     gap: var(--sp-1);
 }
 
 .fieldLabel {
-    font-family: var(--font-brand);
-    font-size: 11px;
+    font-family: var(--font-body);
+    font-size: var(--font-size-small);
     color: var(--text-secondary);
     letter-spacing: 0.03em;
 }
 
 .numInput {
     width: 100%;
-    height: 30px;
-    font-size: 13px;
-    padding: 0 var(--sp-1);
+    min-width: 0;
+    box-sizing: border-box;
+    height: 32px;
+    font-family: var(--font-body);
+    font-size: var(--font-size-body);
+    padding: 0 var(--sp-3);
     border-radius: var(--radius-md);
     border: 1px solid var(--border);
-    background: var(--surface);
+    background: var(--elevated);
     color: var(--text-primary);
     text-align: right;
     appearance: textfield;
@@ -122,11 +128,18 @@
 
 .selectInput {
     --select-width: 100%;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .fieldHint {
-    font-size: 11px;
+    display: block;
+    font-size: var(--font-size-small);
     color: var(--text-tertiary);
     line-height: 1.3;
-    padding-left: 2px;
 }
+
+.thinkingRow { grid-column: 1 / -1; padding: var(--sp-3) 0; }
+.thinkingControl { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-5); }
+.thinkingControl > span { display: flex; flex-direction: column; gap: var(--sp-1); }
+.thinkingControl:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-md); }

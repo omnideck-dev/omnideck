@@ -180,3 +180,25 @@ async def test_malformed_records_fail_closed(record):
         assert not cache.available and cache.snapshot() == ()
     finally:
         await cache.close()
+
+
+async def test_discovery_does_not_rewrite_persisted_selections(tmp_path):
+    service = AsyncMock(spec=IntegrationService)
+    service.list_connections.side_effect = IntegrationError("offline")
+    cache = IntegrationConnectionCache(service)
+    cache.start()
+    try:
+        assert not await cache.refresh()
+        assert not (tmp_path / ".connection-category-mapping.json").exists()
+        skills = tmp_path / "skills"
+        skills.mkdir()
+        (skills / "mail.json").write_text("broken")
+        service.list_connections.side_effect = None
+        service.list_connections.return_value = [_record("email.messages.search")]
+        assert await cache.refresh()
+        assert cache.available
+        assert (skills / "mail.json").read_text() == "broken"
+        assert not (tmp_path / ".migrations.json").exists()
+        assert not (tmp_path / ".connection-category-mapping.json").exists()
+    finally:
+        await cache.close()

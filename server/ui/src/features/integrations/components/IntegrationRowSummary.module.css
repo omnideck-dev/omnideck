@@ -1,0 +1,6 @@
+.issue {
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--sp-1);
+    color: var(--warning);
+}

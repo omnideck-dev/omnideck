@@ -1,4 +1,4 @@
-"""Shared ordered migration execution; application and vault plans stay separate."""
+"""Ordered migration execution and the single application-state ledger."""
 
 from __future__ import annotations
 
@@ -9,6 +9,8 @@ import tempfile
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
+from migrations._startup_report import current_step
+
 logger = logging.getLogger(__name__)
 _APPLIED_FILE = ".migrations.json"
 
@@ -17,11 +19,10 @@ def _load_applied(state_dir: Path) -> set[str]:
     path = state_dir / _APPLIED_FILE
     if not path.exists():
         return set()
-    try:
-        return set(json.loads(path.read_text(encoding="utf-8")))
-    except (json.JSONDecodeError, TypeError):
-        logger.warning("Corrupt %s, treating as empty", path)
-        return set()
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, list) or any(not isinstance(name, str) or not name for name in value):
+        raise ValueError(f"Invalid migration history: {path}")
+    return set(value)
 
 
 def _save_applied(state_dir: Path, applied: set[str]) -> None:
@@ -57,6 +58,7 @@ def run_migration_plan(
 
     logger.info("%d pending migration(s)", len(pending))
     for name, fn in pending:
+        current_step.set(name)
         logger.info("Running migration: %s", name)
         fn(state_dir)
         applied.add(name)
