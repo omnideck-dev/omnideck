@@ -2,7 +2,6 @@ import React from 'react';
 import ChatMessages from './ChatMessages.jsx';
 import ChatInput from './ChatInput.jsx';
 import ConversationHeader from '../features/conversation/details/ConversationHeader.jsx';
-import { buildConversationDetails } from '../features/conversation/details/conversationDetailsModel.js';
 import { formatAgentName } from '../utils/agentUtils.js';
 import { useAgentState } from '../features/agent/AgentState.jsx';
 import styles from './ChatPanel.module.css';
@@ -18,7 +17,6 @@ export default function ChatPanel({ turns, stalled = false, isOffline = false, o
     const rootAgent = agentState.rootId ? agentState.agents[agentState.rootId] : null;
 
     const title = conversationTitle || (rootAgent?.name ? formatAgentName(rootAgent.name) : 'Chat');
-    const model = detailsModel || buildConversationDetails({ conversationId, turns, ...agentState });
     const selectResource = (row) => {
         if (row.id === 'artifacts') onOpenArtifacts?.();
         else if (row.id === 'agents') onOpenNetwork?.();
@@ -27,7 +25,7 @@ export default function ChatPanel({ turns, stalled = false, isOffline = false, o
 
     return (
         <div className={styles.panel}>
-            <ConversationHeader title={title} conversationId={conversationId} model={model} onSelect={selectResource} />
+            <ConversationHeader title={title} conversationId={conversationId} model={detailsModel} onSelect={selectResource} />
             <ChatMessages turns={turns} stalled={stalled} onPreview={onPreview} onSelectAgent={onSelectAgent} onStarterSelect={onDraftChange} />
             {/* Keyed by conversation so switching chats remounts the input —
                 its own unsent-draft state is restored from local storage per

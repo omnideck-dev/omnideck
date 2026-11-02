@@ -24,15 +24,15 @@ describe('conversation details projection', () => {
 
     it('aggregates primary spans across turns and keeps sub-agent tokens separate', () => {
         const result = buildConversationDetails({ ...input, agents: { ...input.agents, old: { ...root, id: 'old', usageByIteration: { 0: 10 } } } });
-        expect(result.totalTokens).toBe(250);
-        expect(result.agentUsage.map((agent) => agent.tokens)).toEqual([210, 40]);
+        expect(result.usage.total.value).toBe(250);
+        expect(result.agentUsage.map((agent) => agent.usage.total.value)).toEqual([210, 40]);
     });
 
-    it('does not substitute context occupancy or partial totals for missing usage', () => {
+    it('marks partial totals without substituting context occupancy for missing usage', () => {
         const result = buildConversationDetails({ ...input, agents: { r: { ...root, usageByIteration: { 0: 120, 1: null }, contextUsage: { context_used: 999 } }, c: child } });
-        expect(result.totalTokens).toBeNull();
-        expect(result.agentUsage[0].tokens).toBeNull();
-        expect(result.agentUsage[1].tokens).toBe(40);
+        expect(result.usage.total).toEqual({ value: 160, reportedCalls: 2, callCount: 3 });
+        expect(result.agentUsage[0].usage.total).toEqual({ value: 120, reportedCalls: 1, callCount: 2 });
+        expect(result.agentUsage[1].usage.total).toEqual({ value: 40, reportedCalls: 1, callCount: 1 });
     });
 
     it('deduplicates artifacts shared by root and sub-agent output', () => {

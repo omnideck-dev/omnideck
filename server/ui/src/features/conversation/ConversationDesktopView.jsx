@@ -107,8 +107,6 @@ export default function ConversationDesktopView({ view, tabGroupId }) {
                 onStop={stopGeneration}
                 isStreaming={isStreaming}
                 stopRequested={stopRequested}
-                networkAgentCount={agentCounts.total}
-                networkRunningCount={agentCounts.running}
                 onOpenNetwork={() => navigation.openNetwork()}
                 detailsModel={detailsModel}
                 conversationTitle={conversationTitle}

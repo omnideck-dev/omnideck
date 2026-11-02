@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ChatPanel from '../ChatPanel.jsx';
+import { buildConversationDetails } from '../../features/conversation/details/conversationDetailsModel.js';
 
 // The message list and composer pull in streaming/profile machinery that
 // isn't relevant to the title bar — stub them out.
@@ -22,6 +23,7 @@ function renderPanel(props = {}) {
             onSend={vi.fn()}
             onStop={vi.fn()}
             isStreaming={false}
+            detailsModel={buildConversationDetails({ turns: props.turns || [], ...agentState.value })}
             {...props}
         />,
     );

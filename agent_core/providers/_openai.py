@@ -362,7 +362,7 @@ def _extract_usage(usage: Any) -> TokenUsage:
     )
 
 
-def _normalize_response(raw: Any, *, usage: TokenUsage | None = None) -> ChatResponse:
+def _normalize_response(raw: Any, *, usage: TokenUsage) -> ChatResponse:
     """Convert an OpenAI ChatCompletion to our normalized ChatResponse."""
     choice = raw.choices[0]
     msg = choice.message
@@ -390,7 +390,7 @@ def _normalize_response(raw: Any, *, usage: TokenUsage | None = None) -> ChatRes
             thinking=thinking,
             tool_calls=tool_calls or None,
         ),
-        usage=usage if usage is not None else _extract_usage(raw.usage),
+        usage=usage,
         done_reason=_DONE_REASON_MAP.get(choice.finish_reason or "", choice.finish_reason),
         raw=raw,
     )

@@ -2,11 +2,6 @@ import { formatAgentName } from '../../../utils/agentUtils.js';
 import { workspaceResourceViewId } from '../../workspace/workspaceResourceDesktopViews.js';
 import { aggregateUsage } from './conversationUsage.js';
 
-function tokenTotal(agents) {
-    const total = aggregateUsage(agents).total;
-    return total.reportedCalls === total.callCount ? total.value : null;
-}
-
 /** Derived display data only. Resource availability stays in Workspace state. */
 export function buildConversationDetails({ conversationId, turns = [], agents = {}, rootId, workspace = {} }) {
     const nodes = Object.values(agents);
@@ -66,12 +61,11 @@ export function buildConversationDetails({ conversationId, turns = [], agents = 
         updateIds: rows.flatMap((row) => row.updateIds),
         turnCount: turns.length,
         agentCount: children.length,
-        totalTokens: tokenTotal(nodes),
         usage: aggregateUsage(nodes),
         contextUsage: agents[rootId]?.contextUsage || null,
         agentUsage: [
-            { id: 'primary', label: 'Primary agent', tokens: tokenTotal(roots), usage: aggregateUsage(roots) },
-            ...children.map((agent) => ({ id: agent.id, label: formatAgentName(agent.name), tokens: tokenTotal([agent]), usage: aggregateUsage([agent]) })),
+            { id: 'primary', label: 'Primary agent', usage: aggregateUsage(roots) },
+            ...children.map((agent) => ({ id: agent.id, label: formatAgentName(agent.name), usage: aggregateUsage([agent]) })),
         ],
     };
 }
