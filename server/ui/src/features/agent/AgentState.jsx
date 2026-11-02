@@ -39,7 +39,6 @@ function _makeAgent(id, name, parentId, instruction, startedAt, correlationId = 
         iteration: null,         // current loop iteration
         maxIterations: null,     // budget limit
         contextUsage: null,      // how full the context window is
-        usageByIteration: {},    // idempotent provider usage, including unknown calls
     };
 }
 
@@ -196,24 +195,6 @@ function _agentReducer(state, action) {
                     [agentId]: {
                         ...agent,
                         activityLog: [...log, entry],
-                    },
-                },
-            };
-        }
-
-        case 'RECORD_AGENT_USAGE': {
-            const agent = state.agents[action.agentId];
-            if (!agent) return state;
-            return {
-                ...state,
-                agents: {
-                    ...state.agents,
-                    [agent.id]: {
-                        ...agent,
-                        usageByIteration: {
-                            ...agent.usageByIteration,
-                            [action.iterationIndex]: action.usage ?? action.totalTokens ?? null,
-                        },
                     },
                 },
             };

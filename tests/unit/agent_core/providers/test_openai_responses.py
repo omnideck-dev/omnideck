@@ -270,9 +270,9 @@ class TestNormalizeResponse:
 class TestExtractUsage:
     def test_none_usage(self):
         result = _extract_usage(None)
-        assert result.prompt_tokens is None
-        assert result.completion_tokens is None
-        assert result.cache_read_tokens is None
+        assert result.prompt_tokens == 0
+        assert result.completion_tokens == 0
+        assert result.cache_read_tokens == 0
 
     def test_basic_usage(self):
         usage = _FakeUsage(input_tokens=100, output_tokens=50)

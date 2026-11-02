@@ -86,7 +86,7 @@ async def test_standalone_executor_loads_tools_and_guidance_for_next_request():
     assert result.status == "success"
     assert result.output == "done"
     assert result.finish_reason is not None
-    assert result.usage.prompt_tokens is None  # FakeProvider reports no token usage.
+    assert result.usage.prompt_tokens == 0  # FakeProvider reports no token usage.
     assert calls == ["verified"]
     assert "echo" not in provider.requests[0]["tools"]
     assert "echo" in provider.requests[1]["tools"]
@@ -143,7 +143,7 @@ async def test_stop_before_execution_makes_no_provider_request():
     result = await AgentExecutor().execute(**inputs, provider=provider)
     assert result.status == "stopped" and result.output is None
     assert provider.requests == []
-    assert result.usage.prompt_tokens is None
+    assert result.usage.prompt_tokens == 0
 
 
 async def test_provider_failure_returns_partial_output_and_typed_error():

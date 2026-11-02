@@ -14,7 +14,7 @@ def test_title_bar_is_present(page: Page):
 
 
 def test_turn_count_appears_after_a_turn(page: Page):
-    """Turn count lives in Details > Advanced, leaving the header compact."""
+    """The title bar shows a turn count once the conversation has a turn."""
     chat = ChatView(page).goto().new_conversation()
 
     # No turns yet — the count is hidden.
@@ -22,8 +22,5 @@ def test_turn_count_appears_after_a_turn(page: Page):
 
     chat.send(say("hello")).wait_streaming()
 
-    expect(page.get_by_test_id("chat-turns")).to_have_count(0)
-    page.get_by_role("button", name="Details", exact=False).click()
-    page.locator("summary").filter(has_text="Advanced").click()
     expect(page.get_by_test_id("chat-turns")).to_be_visible()
-    expect(page.get_by_test_id("chat-turns")).to_have_text("1")
+    expect(page.get_by_test_id("chat-turns")).to_contain_text("1 turn")

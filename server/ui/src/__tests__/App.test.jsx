@@ -17,15 +17,15 @@ const TINY_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAADElEQVR4nGMAAQ
 // We only care about which panels / views are mounted, not their internals.
 
 vi.mock('../components/ChatPanel.jsx', () => ({
-    default: ({ turns, isStreaming, detailsModel, onOpenNetwork, draft }) => (
+    default: ({ turns, isStreaming, networkAgentCount, onOpenNetwork, draft }) => (
         <div data-testid="chat-panel">
             Chat
             <span data-testid="chat-messages">{turns?.length || 0} messages</span>
             <span data-testid="chat-streaming">{isStreaming ? 'streaming' : 'idle'}</span>
             <span data-testid="chat-draft">{draft}</span>
-            {detailsModel.agentCount > 0 && (
+            {networkAgentCount > 0 && (
                 <button data-testid="network-indicator" onClick={onOpenNetwork}>
-                    {detailsModel.agentCount} agents
+                    {networkAgentCount} agents
                 </button>
             )}
         </div>

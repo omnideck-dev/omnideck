@@ -380,14 +380,30 @@ def _build_tool_calls(tc_accum: dict[int, dict[str, str]]) -> list[ToolCall] | N
 
 
 def _extract_usage(usage: Any) -> TokenUsage:
-    """Normalize Responses API counts; input already includes cached tokens."""
+    """Extract token counts including cache metrics from a Responses API usage object.
+
+    The Responses API reports cached input tokens via
+    usage.input_tokens_details.cached_tokens.
+    """
+    if usage is None:
+        return TokenUsage()
+
+    prompt = getattr(usage, "input_tokens", 0) or 0
+    completion = getattr(usage, "output_tokens", 0) or 0
+
+    cache_read = 0
     details = getattr(usage, "input_tokens_details", None)
-    return TokenUsage(
-        prompt_tokens=getattr(usage, "input_tokens", None),
-        completion_tokens=getattr(usage, "output_tokens", None),
-        cache_read_tokens=getattr(details, "cached_tokens", None),
-        cache_creation_tokens=getattr(details, "cache_write_tokens", None),
+    if details is not None:
+        cache_read = getattr(details, "cached_tokens", 0) or 0
+
+    result = TokenUsage(
+        prompt_tokens=prompt,
+        completion_tokens=completion,
+        cache_read_tokens=cache_read,
     )
+    if cache_read:
+        logger.debug("cache tokens: read=%d (prompt=%d, completion=%d)", cache_read, prompt, completion)
+    return result
 
 
 def _normalize_response(raw: Any) -> ChatResponse:

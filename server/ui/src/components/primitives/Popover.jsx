@@ -50,15 +50,11 @@ export default function Popover({
     const [position, setPosition] = useState(null);
 
     useLayoutEffect(() => {
-        let previousBounds = null;
         const updatePosition = () => {
             const anchor = anchorRef.current;
             if (!anchor) return;
 
             const rect = anchor.getBoundingClientRect();
-            const bounds = [rect.left, rect.right, rect.top, rect.bottom, rect.width, window.innerWidth, window.innerHeight];
-            if (previousBounds && bounds.every((value, index) => value === previousBounds[index])) return;
-            previousBounds = bounds;
             const availableWidth = Math.max(0, window.innerWidth - (viewportMargin * 2));
             const resolvedWidth = Math.min(width || rect.width, availableWidth);
             const maxLeft = Math.max(
@@ -99,17 +95,17 @@ export default function Popover({
         window.addEventListener('resize', updatePosition);
         window.addEventListener('scroll', updatePosition, true);
 
-        // A split pane or sibling can move the anchor without resizing it.
-        // Track its bounds only while mounted; unchanged bounds never set state.
-        let frameId;
-        const trackPosition = () => {
-            updatePosition();
-            frameId = window.requestAnimationFrame(trackPosition);
-        };
-        frameId = window.requestAnimationFrame(trackPosition);
+        const anchor = anchorRef.current;
+        const observer = anchor
+            && typeof Element !== 'undefined'
+            && anchor instanceof Element
+            && typeof ResizeObserver !== 'undefined'
+            ? new ResizeObserver(updatePosition)
+            : null;
+        observer?.observe(anchor);
 
         return () => {
-            window.cancelAnimationFrame(frameId);
+            observer?.disconnect();
             window.removeEventListener('resize', updatePosition);
             window.removeEventListener('scroll', updatePosition, true);
         };
