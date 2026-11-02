@@ -27,10 +27,10 @@ def test_concurrent_startup_attempts_do_not_execute_the_same_step_twice(tmp_path
 
     monkeypatch.setattr(runner, "_migration_plan", lambda _vault: [("once", migrate)])
     with ThreadPoolExecutor(max_workers=2) as pool:
-        first = pool.submit(runner.run_migrations, tmp_path)
+        first = pool.submit(runner.run_migrations, tmp_path, tmp_path / "vault")
         try:
             assert entered.wait(5)
-            second = pool.submit(runner.run_migrations, tmp_path)
+            second = pool.submit(runner.run_migrations, tmp_path, tmp_path / "vault")
         finally:
             release.set()
         first.result(timeout=5)
@@ -57,11 +57,11 @@ def test_interrupted_history_import_never_executes_old_steps(tmp_path, monkeypat
     with monkeypatch.context() as patch:
         patch.setattr(runner, "_save_applied", Mock(side_effect=OSError("disk full")))
         with pytest.raises(OSError, match="disk full"):
-            runner.run_migrations(tmp_path)
+            runner.run_migrations(tmp_path, tmp_path / "vault")
     old.assert_not_called()
     new.assert_not_called()
     assert _load_applied(tmp_path) == {"old_app"}
-    runner.run_migrations(tmp_path)
+    runner.run_migrations(tmp_path, tmp_path / "vault")
     old.assert_not_called()
     new.assert_called_once()
 
@@ -87,9 +87,9 @@ def test_all_historical_steps_are_skipped_and_only_new_steps_run(tmp_path, monke
             ("016_connection_tool_categories_cleanup", lambda _state: new_calls.append("cleanup")),
         ],
     )
-    runner.run_migrations(tmp_path)
+    runner.run_migrations(tmp_path, tmp_path / "vault")
     snapshot = (tmp_path / ".migrations.json").read_bytes()
-    runner.run_migrations(tmp_path)
+    runner.run_migrations(tmp_path, tmp_path / "vault")
     assert new_calls == ["categories", "cleanup"]
     completed.assert_not_called()
     assert (tmp_path / ".migrations.json").read_bytes() == snapshot
@@ -107,7 +107,7 @@ def test_corrupt_history_never_runs_any_migration(tmp_path, monkeypatch, store, 
     migration = Mock()
     monkeypatch.setattr(runner, "_migration_plan", lambda _vault: [("old", migration)])
     with pytest.raises(ValueError):
-        runner.run_migrations(tmp_path)
+        runner.run_migrations(tmp_path, tmp_path / "vault")
     migration.assert_not_called()
     assert path.read_text() == raw
 
@@ -131,11 +131,11 @@ def test_failed_cross_store_step_preserves_import_and_retries_only_pending(tmp_p
         ],
     )
     with pytest.raises(RuntimeError, match="interrupted"):
-        runner.run_migrations(tmp_path)
+        runner.run_migrations(tmp_path, tmp_path / "vault")
     assert _load_applied(tmp_path) == {"old_app", "broker:old_broker", "new_first"}
     failing.side_effect = None
-    runner.run_migrations(tmp_path)
-    runner.run_migrations(tmp_path)
+    runner.run_migrations(tmp_path, tmp_path / "vault")
+    runner.run_migrations(tmp_path, tmp_path / "vault")
     old.assert_not_called()
     first.assert_called_once()
     assert failing.call_count == 2
@@ -163,13 +163,13 @@ def test_real_vault_then_category_migration_without_running_broker(tmp_path):
     skills = tmp_path / "skills"
     skills.mkdir()
     (skills / "mail.json").write_text('{"tool_categories":["email","memory"]}')
-    runner.run_migrations(tmp_path)
+    runner.run_migrations(tmp_path, tmp_path / "vault")
     assert json.loads((creds / "work.meta").read_text())["version"] == 3
     assert json.loads((skills / "mail.json").read_text())["tool_categories"] == ["integration:work", "memory"]
     assert (creds / "work.enc").read_bytes() == b"ciphertext sentinel"
     assert (vault / ".master-key").read_bytes() == b"key sentinel"
     snapshot = {p: (p.read_bytes(), p.stat().st_mtime_ns) for p in tmp_path.rglob("*") if p.is_file()}
-    runner.run_migrations(tmp_path)
+    runner.run_migrations(tmp_path, tmp_path / "vault")
     assert snapshot == {p: (p.read_bytes(), p.stat().st_mtime_ns) for p in tmp_path.rglob("*") if p.is_file()}
 
 

@@ -56,7 +56,7 @@ def _migration_plan(vault_dir: Path) -> list[tuple[str, Callable[[Path], None]]]
     ]
 
 
-def run_migrations(state_dir: Path, vault_dir: Path | None = None) -> None:
+def run_migrations(state_dir: Path, vault_dir: Path) -> None:
     """Import legacy histories without replay, then run before either service.
 
     Existing app IDs are unchanged. The old vault ledger is read-only historical
@@ -66,7 +66,7 @@ def run_migrations(state_dir: Path, vault_dir: Path | None = None) -> None:
     state_dir = Path(state_dir)
     if not state_dir.is_dir():
         return
-    vault_dir = Path(vault_dir) if vault_dir is not None else state_dir / "vault"
+    vault_dir = Path(vault_dir)
     if vault_dir.resolve() == state_dir.resolve():
         raise ValueError("Vault and application state must be separate directories")
     with (state_dir / ".migrations.lock").open("a") as lock:

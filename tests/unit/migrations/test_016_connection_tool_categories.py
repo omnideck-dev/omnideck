@@ -37,12 +37,12 @@ def test_migration_freezes_existing_connections_and_keeps_backup(tmp_path):
     _connection(tmp_path, "one", ["email.messages.search", "calendar.events.list"])
     _connection(tmp_path, "provider", ["email.messages.search"], kind="model_provider")
     _connection(tmp_path, "orphan", ["email.messages.search"], credentials=False)
-    run_migrations(tmp_path)
+    run_migrations(tmp_path, tmp_path / "vault")
     assert json.loads(path.read_text())["tool_categories"] == ["integration:one", "memory"]
     assert json.loads((tmp_path / "migration-backups" / NAME / "skills" / "mail.json").read_text()) == original
     assert json.loads((profiles / "a.json").read_text())["tool_categories"] == []
     _connection(tmp_path, "later", ["email.messages.search"])
-    run_migrations(tmp_path)
+    run_migrations(tmp_path, tmp_path / "vault")
     assert "integration:later" not in path.read_text()
 
 
@@ -53,10 +53,10 @@ def test_failed_migration_resumes_frozen_mapping(tmp_path):
     (skills / "mail.json").write_text('broken')
     _connection(tmp_path, "one", ["email.messages.search"])
     with pytest.raises(json.JSONDecodeError):
-        run_migrations(tmp_path)
+        run_migrations(tmp_path, tmp_path / "vault")
     (skills / "mail.json").write_text('{"tool_categories":["email"]}')
     _connection(tmp_path, "two", ["email.messages.search"])
-    run_migrations(tmp_path)
+    run_migrations(tmp_path, tmp_path / "vault")
     assert json.loads((skills / "mail.json").read_text())["tool_categories"] == ["integration:one"]
 
 
@@ -83,9 +83,9 @@ def test_cleanup_of_migrated_preview_does_not_select_new_connections(tmp_path):
     original = {"tool_categories": ["email", "calendar", "memory", "integration:offline", "unknown"]}
     path.write_text(json.dumps(original))
     _connection(tmp_path, "later", ["email.messages.search"])
-    run_migrations(tmp_path)
+    run_migrations(tmp_path, tmp_path / "vault")
     assert json.loads(path.read_text())["tool_categories"] == ["memory", "integration:offline", "unknown"]
     backup = tmp_path / "migration-backups" / CLEANUP_NAME / "skills" / "mail.json"
     assert json.loads(backup.read_text()) == original
-    run_migrations(tmp_path)
+    run_migrations(tmp_path, tmp_path / "vault")
     assert json.loads(backup.read_text()) == original

@@ -23,7 +23,7 @@ def test_no_state_dir_is_noop(tmp_path, monkeypatch):
         "migrations._runner._migration_plan",
         lambda _vault: [("a", lambda _d: calls.append("a"))],
     )
-    run_migrations(tmp_path / "nonexistent")
+    run_migrations(tmp_path / "nonexistent", tmp_path / "vault")
     assert calls == []
 
 
@@ -41,7 +41,7 @@ def test_runs_pending_migrations_in_declared_order(tmp_path, monkeypatch):
             ("c", lambda _d: calls.append("c")),
         ],
     )
-    run_migrations(tmp_path)
+    run_migrations(tmp_path, tmp_path / "vault")
     assert calls == ["a", "b", "c"]
 
 
@@ -59,7 +59,7 @@ def test_skips_already_applied(tmp_path, monkeypatch):
         ],
     )
     _save_applied(tmp_path, {"a", "b"})
-    run_migrations(tmp_path)
+    run_migrations(tmp_path, tmp_path / "vault")
     assert calls == ["c"]
     assert _load_applied(tmp_path) == {"a", "b", "c"}
 
@@ -77,9 +77,9 @@ def test_running_twice_is_idempotent(tmp_path, monkeypatch):
             ("b", lambda _d: calls.append("b")),
         ],
     )
-    run_migrations(tmp_path)
+    run_migrations(tmp_path, tmp_path / "vault")
     applied_first = _load_applied(tmp_path)
-    run_migrations(tmp_path)
+    run_migrations(tmp_path, tmp_path / "vault")
     applied_second = _load_applied(tmp_path)
     assert calls == ["a", "b"]
     assert applied_first == applied_second == {"a", "b"}
@@ -97,7 +97,7 @@ def test_applied_file_persists_to_disk(tmp_path, monkeypatch):
             ("b", lambda _d: None),
         ],
     )
-    run_migrations(tmp_path)
+    run_migrations(tmp_path, tmp_path / "vault")
     raw = json.loads((tmp_path / ".migrations.json").read_text())
     assert set(raw) == {"a", "b"}
 
@@ -121,6 +121,6 @@ def test_partial_failure_records_prior_successes(tmp_path, monkeypatch):
         ],
     )
     with pytest.raises(RuntimeError, match="boom"):
-        run_migrations(tmp_path)
+        run_migrations(tmp_path, tmp_path / "vault")
     # 'a' completed, 'b' raised, 'c' never ran.
     assert _load_applied(tmp_path) == {"a"}

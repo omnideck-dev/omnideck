@@ -10,10 +10,10 @@ def test_tool_grid_overflow_and_mcp_titles(page):
     """Real editor layout with a synthetic catalog; no MCP model prose leaks."""
     page.set_viewport_size({"width": 1440, "height": 1000})
     profile_id = "tool-grid-agent"
+    connection_id = None
     long_title = "Search across every connected workspace and shared project document " * 3
     native_description = "Find messages matching a search in the connected account. " * 4
     category = {
-        "id": "integration:grid-fixture", "connection_id": "grid-fixture",
         "label": "Grid fixture", "description": "", "connected": True, "tools": [],
         "operations": [
             {"id": "mcp.search", "title": long_title, "description": "MODEL-ONLY INSTRUCTIONS"},
@@ -21,16 +21,24 @@ def test_tool_grid_overflow_and_mcp_titles(page):
             {"id": "mcp.list", "title": "List projects", "description": "MORE MODEL-ONLY INSTRUCTIONS"},
         ],
     }
-    page.route("**/api/tool-categories", lambda route: route.fulfill(json=[category]))
     try:
+        response = page.request.post("/api/integrations", data={
+            "slug": "test", "label": "Grid fixture", "auth_blob": {"token": "omnideck-test-token"},
+            "operation_grants": [],
+        })
+        assert response.ok, response.text()
+        connection_id = response.json()["id"]
+        category.update(id=f"integration:{connection_id}", connection_id=connection_id)
+        page.route("**/api/tool-categories", lambda route: route.fulfill(json=[category]))
         response = page.request.post("/api/profiles", data={
             "id": profile_id, "name": "Tool grid agent", "model": "", "system_prompt": "",
             "skills": [], "tool_categories": [category["id"]],
         })
         assert response.ok, response.text()
+        assert page.request.get(f"/api/profiles/{profile_id}").json()["tool_categories"] == [category["id"]]
         agents = AgentsPage(page).goto()
         agents.profiles.select(profile_id)
-        row = page.get_by_test_id("selected-tool:integration:grid-fixture")
+        row = page.get_by_test_id(f"selected-tool:{category['id']}")
         row.get_by_role("button", name="Grid fixture", exact=True).click()
         grid = row.get_by_role("list", name="Grid fixture tools")
         labels = grid.get_by_role("button")
@@ -59,6 +67,8 @@ def test_tool_grid_overflow_and_mcp_titles(page):
     finally:
         page.unroute("**/api/tool-categories")
         page.request.delete(f"/api/profiles/{profile_id}")
+        if connection_id:
+            page.request.delete(f"/api/integrations/{connection_id}")
 
 
 def _assert_actions_aligned(row):
