@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from unittest.mock import AsyncMock
 
 import pytest
 from agent_core.turn import ExecutionResult
 from agent_runtime import RunSession
+from integrations.connection_cache import IntegrationConnectionCache
+from integrations.service import IntegrationService
 
 from agent_runtime import (
     RunConflictError,
@@ -117,6 +120,46 @@ class ControlledRunner:
 
 async def _collect_stream(stream) -> list[SequencedEvent]:
     return [record async for record in stream]
+
+
+async def test_run_admission_captures_snapshot_before_execution_and_next_run_sees_changes():
+    service = AsyncMock(spec=IntegrationService)
+    service.list_connections.return_value = [{
+        "id": "work", "slug": "gmail", "state": "running",
+        "operation_grants": ["email.messages.search"],
+    }]
+    cache = IntegrationConnectionCache(service, poll_interval=60)
+    cache.start()
+    entered, release = asyncio.Event(), asyncio.Event()
+    observed = []
+
+    class SnapshotRunner:
+        async def run(self, request, session):
+            observed.append(session.integration_connections)
+            entered.set()
+            await release.wait()
+            assert session.integration_connections is observed[-1]
+            return ExecutionResult("success")
+
+    manager = AgentRuntime(SnapshotRunner(), integration_cache=cache)
+    try:
+        await asyncio.wait_for(cache.wait_loaded(), 1)
+        before = cache.snapshot()
+        first = await manager.start(_request())
+        await asyncio.wait_for(entered.wait(), 1)
+        service.list_connections.return_value = []
+        await cache.refresh()
+        assert observed == [before]
+        release.set()
+        await first.wait()
+        second = await manager.start(_request())
+        await second.wait()
+        assert observed == [before, ()]
+        assert service.list_connections.await_count == 2  # neither run did discovery I/O
+    finally:
+        release.set()
+        await manager.close()
+        await cache.close()
 
 
 async def test_disconnect_only_closes_subscriber_and_runner_keeps_running() -> None:

@@ -39,7 +39,6 @@ setup home_dir=`echo "$HOME/.omnideck"`:
     [ -d .venv ] && echo "📦 .venv exists — skipping" || uv venv .venv
     echo "📚 Installing Python deps..."
     uv sync --all-extras
-    uv pip install -e .
 
     if command -v node >/dev/null && command -v npm >/dev/null; then
         echo "🎨 Installing UI deps..."
@@ -341,6 +340,7 @@ e2e *args:
         -e DISPLAY=:$port \
         -e ENABLE_DESKTOP=false \
         -e MOCK_LLM=1 \
+        -e OMNIDECK_ENABLE_TEST_INTEGRATIONS=1 \
         "${env_args[@]}" \
         -v "$state/home:/home/omnideck:rw,z" \
         -v "$state/state:/var/lib/omnideck:rw,z" \
@@ -365,7 +365,9 @@ e2e *args:
         -d '{"custom_tools_enabled":true}' >/dev/null
 
     targets="{{args}}"
-    OMNIDECK_URL="http://localhost:$port" OMNIDECK_CONTAINER="$name" PYTHONPATH=. uv run pytest ${targets:-tests/e2e/}
+    OMNIDECK_URL="http://localhost:$port" OMNIDECK_CONTAINER="$name" \
+        OMNIDECK_CONTAINER_ENGINE="$engine" PYTHONPATH=. \
+        uv run pytest ${targets:-tests/e2e/}
 
 
 # =============================================================================
@@ -388,7 +390,7 @@ tool-docs:
 
 # Verify the shared release-note contract and any outstanding fragments
 release-note-policy:
-    node --test tests/release-notes.test.mjs
+    node --test tests/release-notes.test.mjs tests/weekly-app-release.test.mjs tests/publish-app-release.test.mjs
     node scripts/release-notes.mjs validate-fragments
 
 # Verify CI event routing, bounded package setup, and hosted browser reuse
@@ -492,7 +494,8 @@ _sync-src ctr:
 # Refresh the editable install after source sync so newly added top-level
 # packages and pyproject changes are immediately importable in isolated Python.
 _install-python ctr:
-    @bash scripts/container-engine.sh exec {{ctr}} uv pip install --system --no-cache -e /opt/omnideck
+    @bash scripts/container-engine.sh exec {{ctr}} bash /opt/omnideck/scripts/install-python-dependencies.sh
+    @bash scripts/container-engine.sh exec {{ctr}} uv pip install --system --no-cache --no-deps -e /opt/omnideck
     @echo "🐍 Python package refreshed in {{ctr}}"
 
 # Build the UI on the host, then copy dist/ into the container. The container
@@ -519,7 +522,7 @@ _ui-build ctr:
 # runs each in a respawn loop, so killing the inner Python lets the loop
 # pick it back up with the freshly synced source.
 _bounce-services ctr:
-    @bash scripts/container-engine.sh exec {{ctr}} pkill -f "python3.12 -m integrations.supervisor" 2>/dev/null || true
+    @bash scripts/container-engine.sh exec {{ctr}} pkill -f "python3.12 -m brokering.supervisor" 2>/dev/null || true
     @bash scripts/container-engine.sh exec {{ctr}} pkill -f "python3.12 main.py" 2>/dev/null || true
 
 # Poll until the app responds on the given port (up to ~60s)

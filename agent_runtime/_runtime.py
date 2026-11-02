@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable, Iterator
+from contextlib import contextmanager
 from typing import Protocol
 from uuid import uuid4
+from integrations.connection_cache import IntegrationConnectionCache
 
 from conversations import ConversationStore
 from browser.runtime import BrowserRuntime
@@ -84,6 +86,7 @@ class AgentRuntime:
         *,
         conversations: ConversationStore | None = None,
         browser_runtime: BrowserRuntime | None = None,
+        integration_cache: IntegrationConnectionCache | None = None,
         shutdown_timeout: float = 5.0,
     ) -> None:
         from ._runner import AgentRunner
@@ -96,9 +99,11 @@ class AgentRuntime:
         self._browser = browser_runtime if browser_runtime is not None else BrowserRuntime()
         self._runner = runner if runner is not None else AgentRunner(browser_runtime=self._browser)
         self._shutdown_timeout = shutdown_timeout
+        self._integration_cache = integration_cache
         self._active_by_conversation: dict[str, RunSession] = {}
         self._runs_by_id: dict[str, RunSession] = {}
         self._closed = False
+        self._run_observers: set[Callable[[RunHandle], None]] = set()
 
     async def start(self, request: AgentRunRequest) -> RunHandle:
         if self._closed:
@@ -108,11 +113,29 @@ class AgentRuntime:
         if request.conversation_id in self._active_by_conversation:
             raise RunConflictError(f"Conversation '{request.conversation_id}' already has an active run")
         # Reserve before the first await so concurrent starts cannot both enter.
-        session = RunSession(request, f"run_{uuid4().hex}", self.conversations)
+        session = RunSession(
+            request, f"run_{uuid4().hex}", self.conversations,
+            integration_connections=self._integration_cache.snapshot() if self._integration_cache else (),
+        )
         self._active_by_conversation[session.conversation_id] = session
         self._runs_by_id[session.run_id] = session
         session.task = asyncio.create_task(self._drive(session), name=f"agent-run-{session.run_id[4:12]}")
-        return RunHandle(session)
+        handle = RunHandle(session)
+        for observer in tuple(self._run_observers):
+            try:
+                observer(handle)
+            except Exception:
+                logger.exception("Run observer failed")
+        return handle
+
+    @contextmanager
+    def observe_runs(self, on_start: Callable[[RunHandle], None]) -> Iterator[tuple[RunHandle, ...]]:
+        """Observe new runs and capture the currently active handles atomically."""
+        self._run_observers.add(on_start)
+        try:
+            yield tuple(RunHandle(session) for session in self._active_by_conversation.values())
+        finally:
+            self._run_observers.discard(on_start)
 
     def get(self, run_id: str) -> RunHandle | None:
         session = self._runs_by_id.get(run_id)

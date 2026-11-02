@@ -142,19 +142,13 @@ preflight="$("$driver" preflight 2>&1 || true)"
 [[ "$preflight" == *'accessibility=true'* ]] || { printf '%s\n' "$preflight" >&2; exit 3; }
 
 current_step='exclusive desktop process'
-/usr/bin/pgrep -f '/omnideck-desktop$' > "$result_dir/preexisting-omnideck-desktop-pids.txt" 2>/dev/null || true
-/usr/bin/pgrep -f '/omnideck$' > "$result_dir/preexisting-omnideck-pids.txt" 2>/dev/null || true
-/usr/bin/pkill -f '/omnideck-desktop$' 2>/dev/null || true
-/usr/bin/pkill -f '/omnideck$' 2>/dev/null || true
-for _ in 1 2 3 4 5; do
-  if ! /usr/bin/pgrep -f '/omnideck-desktop$' >/dev/null 2>&1 &&
-     ! /usr/bin/pgrep -f '/omnideck$' >/dev/null 2>&1; then
-    break
-  fi
-  sleep 1
-done
-! /usr/bin/pgrep -f '/omnideck-desktop$' >/dev/null 2>&1
-! /usr/bin/pgrep -f '/omnideck$' >/dev/null 2>&1
+# The lab reset already stops its owned app. An ordinary app or CLI belongs to
+# the user: reject the lane instead of terminating it to make smoke pass.
+if /usr/bin/pgrep -fl '(^|/)(omnideck-desktop|omnideck)([[:space:]]|$)' \
+  > "$result_dir/preexisting-omnideck-processes.txt" 2>/dev/null; then
+  printf 'Close the existing omnideck app or CLI before running the macOS lab; no user process was stopped.\n' >&2
+  exit 3
+fi
 
 if [[ "$upgrade_dmg" != none ]]; then
   current_step='previous DMG installation'
@@ -240,11 +234,15 @@ launch_application() {
         fi
       fi
     fi
-    printf 'Application launched without an accessible window; retrying (%s of 3).\n' "$attempt" >&2
+    # Preserve the live window before stopping it; the exit trap runs after the
+    # final retry has cleared application_pid and cannot recover this evidence.
+    dump_accessibility "${attempt_label}-failure" || true
+    capture "${attempt_label}-failure" || true
+    printf 'Application did not expose the expected accessible content; retrying (%s of 3).\n' "$attempt" >&2
     stop_application
     sleep 1
   done
-  printf 'Application did not expose a window after 3 launch attempts.\n' >&2
+  printf 'Application did not expose the expected accessible content after 3 launch attempts.\n' >&2
   return 1
 }
 
@@ -586,7 +584,20 @@ current_step='native artifact download and toast'
 "$driver" click "$application" 'Table view' 30
 "$driver" wait-text "$application" "$artifact_filename" 30
 mouse_click "$artifact_filename"
+# Another tab group may contain a file preview with the same Download label.
+# Isolate the named artifact through the real UI and fail closed if ambiguous.
+"$driver" click "$application" "Actions for $artifact_filename tab" 30
+"$driver" click-in "$application" 'Tab actions' 'Enter full screen' 30
+"$driver" wait-text "$application" 'Exit full screen' 30
 "$driver" wait-text "$application" 'Download file' 30
+dump_accessibility artifact-download-target
+python3 - "$result_dir/accessibility/artifact-download-target.json" "$artifact_filename" <<'PY'
+import json, sys
+records=json.load(open(sys.argv[1], encoding='utf-8'))
+assert any(record.get('role') == 'AXStaticText' and record.get('value') == sys.argv[2] for record in records), 'Expected artifact preview is not visible'
+buttons=[record for record in records if record.get('role') == 'AXButton' and 'Download file' in (record.get('title'), record.get('description'))]
+assert len(buttons) == 1, f'Expected one artifact download button, found {len(buttons)}'
+PY
 [[ ! -e "$artifact_download_path" ]]
 "$driver" click "$application" 'Download file' 30
 if ! "$driver" wait-text "$application" "$artifact_filename was saved to Downloads." 10; then

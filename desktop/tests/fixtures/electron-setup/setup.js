@@ -73,6 +73,7 @@ function renderDiagnostics(state) {
 
   doctorResult.textContent = state.diagnosticResult || 'Issue found';
   technicalDetails.open = false;
+  document.getElementById('copy-diagnostics').textContent = 'Copy diagnostics';
   technicalOutput.textContent = state.technical || 'No additional technical details were provided.';
   diagnosticList.replaceChildren(...diagnostics.map((diagnostic) => {
     const row = document.createElement('div');
@@ -195,6 +196,15 @@ secondary.addEventListener('click', async () => {
     reportActionFailure(error);
   } finally {
     secondary.disabled = false;
+  }
+});
+document.getElementById('copy-diagnostics').addEventListener('click', async (event) => {
+  const button = event.currentTarget;
+  try {
+    await navigator.clipboard.writeText(`${currentState.title}\n${currentState.detail}\n\n${currentState.technical || ''}`);
+    button.textContent = 'Copied';
+  } catch {
+    reportActionFailure(new Error('Couldn’t copy diagnostics. Select the technical details and copy them manually.'));
   }
 });
 window.omnideckHost.onState(render);

@@ -7,7 +7,8 @@ from collections.abc import Callable, Iterable
 from typing import Any
 
 from config import load_config
-from integrations import broker_client
+from brokering import broker_client
+from tools.integrations._invoke import invoke_operation
 from tools.integrations._format import format_size
 from tools.integrations._messages import auth_failed_message
 
@@ -35,9 +36,9 @@ async def download_email_attachment(
     """
     app_sock = load_config().integrations.app_sock_path
     try:
-        result = await broker_client.call(
+        result = await invoke_operation(
             integration_id,
-            "fetch_attachment",
+            "email.attachments.download",
             {"folder": folder, "uid": uid, "attachment_id": attachment_id},
             app_sock_path=app_sock,
         )

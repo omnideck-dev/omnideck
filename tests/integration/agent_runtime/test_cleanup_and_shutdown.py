@@ -41,6 +41,85 @@ def _assert_released(runtime, handle):
         assert not history._async_obs_tasks
 
 
+@pytest.mark.parametrize("control", ["stop", "cancel"])
+async def test_parallel_children_finish_before_parent_and_terminal_event(harness, control):
+    """A delayed sibling must retain its live and persistence observers on stop."""
+    h = harness
+    h.config.parallel.enabled = True
+    h.config.parallel.max_concurrent = 2
+    entered = {name: asyncio.Event() for name in ("left", "right")}
+    release, right_cleaning, right_finished, left_finished = (asyncio.Event() for _ in range(4))
+
+    async def hold_until_stop(name: str) -> str:
+        """Wait for stop, then hold the right child's cleanup behind a barrier."""
+        context = get_execution_context()
+        entered[name].set()
+        try:
+            await context.control.stop_event.wait()
+            context.control.check_stop()
+            return "unreachable"
+        finally:
+            if name == "right":
+                right_cleaning.set()
+                await release.wait()
+                right_finished.set()
+
+    h.skill("hold", hold_until_stop)
+    h.profile("root", allow_spawn=True)
+    h.profile("leaf", skills=["hold"])
+    message = "".join(
+        spawn(call_tool("hold_until_stop", name=name), profile="leaf", name=name.upper())
+        for name in ("left", "right", "queued")
+    ) + say("unreachable root")
+    handle = await h.manager.start(_request(profile="root", message=message))
+    observed = []
+
+    async def observe():
+        async for record in handle.events():
+            observed.append(record)
+            payload = record.event.payload
+            if payload.type == "agent_completed" and payload.agent_name == "LEFT":
+                left_finished.set()
+
+    observer = asyncio.create_task(observe())
+    waiter = asyncio.create_task(handle.wait())
+    try:
+        await asyncio.wait_for(asyncio.gather(*(event.wait() for event in entered.values())), 5)
+        getattr(handle, control)()
+        await asyncio.wait_for(asyncio.gather(left_finished.wait(), right_cleaning.wait()), 5)
+        # Let a premature parent exit reach its observers without releasing RIGHT.
+        await asyncio.sleep(0.05)
+        assert not waiter.done()
+        assert not observer.done()
+        assert not right_finished.is_set()
+        active = h.manager.active_for_conversation(handle.conversation_id)
+        assert active is not None and active.run_id == handle.run_id
+        assert not any(record.event.payload.type == "turn_end" for record in observed)
+    finally:
+        release.set()
+        result, _ = await asyncio.wait_for(asyncio.gather(waiter, observer), 5)
+
+    assert right_finished.is_set()
+    assert result.status == "stopped"
+    assert len(result.executions) == 3
+    assert all(execution.status == "stopped" for _, execution in result.executions)
+    events = [record.event for record in observed]
+    starts = [event.payload for event in events if event.payload.type == "agent_started"]
+    ends = [event.payload for event in events if event.payload.type == "agent_completed"]
+    assert {event.agent_name for event in starts} == {"ROOT", "LEFT", "RIGHT"}
+    assert {event.agent_id for event in ends} == {event.agent_id for event in starts}
+    assert [event.agent_name for event in ends] == ["LEFT", "RIGHT", "ROOT"]
+    assert all(event.status == "stopped" for event in ends)
+    assert [record.seq for record in observed] == list(range(1, len(observed) + 1))
+    assert sum(event.payload.type == "turn_end" for event in events) == 1
+    assert events[-1].payload.type == "turn_end"
+    persisted = load_events_jsonl(handle.conversation_id)
+    assert [event["agent_id"] for event in persisted if event["type"] == "agent_completed"] == [
+        event.agent_id for event in ends
+    ]
+    _assert_released(h.manager, handle)
+
+
 @pytest.mark.parametrize("boundary", ["observer", "conversation"])
 async def test_completion_and_terminal_event_wait_for_session_cleanup(harness, monkeypatch, boundary):
     h = harness

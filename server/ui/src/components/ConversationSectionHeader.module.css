@@ -12,16 +12,16 @@
     display: flex;
     align-items: center;
     gap: 5px;
-    height: 24px;
+    height: 26px;
     padding: 0 4px;
     border: none;
     background: transparent;
     border-radius: var(--radius-sm);
     cursor: pointer;
-    font-family: var(--font-code);
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.10em;
+    font-family: var(--font-body);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
     color: var(--text-tertiary);
     text-align: left;
 }

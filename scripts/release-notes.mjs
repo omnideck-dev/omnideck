@@ -53,10 +53,13 @@ export function parseFragment(text, source = '<fragment>') {
   }
 
   const unknown = Object.keys(metadata).filter(
-    (key) => !['target', 'type', 'area'].includes(key),
+    (key) => !['target', 'type', 'area', 'bump'].includes(key),
   );
   if (unknown.length) {
     throw new Error(`${source}: unsupported field(s): ${unknown.join(', ')}`);
+  }
+  if (metadata.bump && !['patch', 'minor', 'major'].includes(metadata.bump)) {
+    throw new Error(`${source}: bump must be patch, minor, or major`);
   }
   if (!RELEASE_NOTE_TYPES.includes(metadata.type)) {
     throw new Error(
@@ -86,6 +89,7 @@ export function parseFragment(text, source = '<fragment>') {
     area: metadata.area,
     body,
     source,
+    ...(metadata.bump ? { bump: metadata.bump } : {}),
   };
 }
 
@@ -303,6 +307,7 @@ function main() {
 
   if (command === 'generate') {
     const target = optionValue(args, '--target');
+    if (target === 'app') throw new Error('Preview app notes with container-release.yml dry_run=true; retained app history must be compared with the previous release');
     const output = renderReleaseNotes(
       fragmentsForTarget(loadFragments(), target),
       optionValue(args, '--version'),
@@ -329,6 +334,7 @@ function main() {
 
   if (command === 'check-consumed') {
     const target = optionValue(args, '--target');
+    if (target === 'app') throw new Error('App fragments are retained after publication; they must not be consumed');
     const fragments = fragmentsForTarget(loadFragments(), target);
     if (fragments.length) {
       throw new Error(

@@ -7,7 +7,8 @@ from collections.abc import Callable, Iterable
 from typing import Any
 
 from config import load_config
-from integrations import broker_client
+from brokering import broker_client
+from tools.integrations._invoke import invoke_operation
 from tools.integrations._format import format_envelope
 from tools.integrations._messages import auth_failed_message
 
@@ -29,9 +30,9 @@ async def list_email_messages(integration_id: str, folder: str, limit: int = 20)
     """
     app_sock = load_config().integrations.app_sock_path
     try:
-        result = await broker_client.call(
+        result = await invoke_operation(
             integration_id,
-            "list_messages",
+            "email.messages.list",
             {"folder": folder, "limit": limit},
             app_sock_path=app_sock,
         )

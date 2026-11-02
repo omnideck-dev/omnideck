@@ -59,6 +59,9 @@ desktop/build/runtime/
 # Developer config override
 config.dev.yaml
 
+# Scratch design references, not project source
+/TEMP/
+
 # Node projects
 node_modules/
 **/node_modules/

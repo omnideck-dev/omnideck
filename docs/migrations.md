@@ -24,6 +24,30 @@ change only affects code (not stored state), you don't need a migration.
 Migrations are synchronous and blocking — the app won't start until they
 finish.  Keep them fast.
 
+## Broker-owned vault migrations
+
+The app and supervisor reuse `migrations._engine.run_migration_plan`, but run
+different plans under different OS identities. The app plan remains in
+`migrations/_runner.py`. The vault plan lives in `brokering/migrations/` and is
+invoked by `Supervisor.start()` before connection reconciliation or socket
+binding. Its `.migrations.json` is inside the vault and is not the app ledger.
+Importing the shared engine does not load or execute application migrations.
+
+Vault migration `001_operation_grants` converts v1/v2 connection metadata using
+frozen permission mappings. It neither reads nor decrypts credential files and
+does not consult OAuth scopes or the current catalog. Ciphertext stays unchanged.
+Original metadata is preserved as `creds/<id>.meta.pre-v3.bak` (including backups
+from the earlier in-place upgrader). Metadata and backup writes are atomic and
+owner-only; retries never replace the original backup. Existing v3 records are
+left unchanged. Orphan metadata is also migrated so a later credential repair
+does not reintroduce legacy records after the plan has completed.
+
+A failed vault migration stops supervisor startup without marking it complete.
+Record conversion is idempotent, so a later startup can resume partially
+completed work. Unknown legacy presets or malformed metadata require repair;
+they are not silently discarded or marked migrated. The completion ledger is
+also written atomically with owner-only permissions.
+
 ## Adding a new migration
 
 1. Create a new file in `migrations/`, following the naming convention

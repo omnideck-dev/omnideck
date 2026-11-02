@@ -10,7 +10,8 @@ import json
 
 import pytest
 
-from migrations._runner import _load_applied, _save_applied, run_migrations
+from migrations._engine import _load_applied, _save_applied
+from migrations._runner import run_migrations
 
 
 @pytest.mark.unit

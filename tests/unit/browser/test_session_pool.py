@@ -3,6 +3,8 @@
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from browser.core.browser import Browser
 from browser.session_pool import BrowserSessionPool
 from tests.unit.tools.browser.support.playwright_stubs import EventEmitterStub
@@ -147,3 +149,21 @@ async def test_replace_keeps_key_and_closes_previous_session() -> None:
     assert previous._closed is True
     assert len(replacement.tabs()) == 1
     assert host.create_session.await_count == 2
+
+
+async def test_failed_session_creation_keeps_profile_initializer_for_retry() -> None:
+    browser = _browser()
+    pool, host = _pool_with_host(browser)
+    host.create_session.side_effect = [RuntimeError("restore failed"), browser]
+    state = {"cookies": [{"name": "session", "value": "abc"}], "origins": []}
+    load_state = AsyncMock(return_value=state)
+    await pool.prepare("agent-one", load_state)
+
+    with pytest.raises(RuntimeError, match="restore failed"):
+        await pool.get_or_create("agent-one")
+    assert await pool.get("agent-one") is None
+
+    assert await pool.get_or_create("agent-one") is browser
+    assert load_state.await_count == 2
+    assert all(call.kwargs["storage_state"] == state for call in host.create_session.await_args_list)
+    assert "agent-one" not in pool._initializers

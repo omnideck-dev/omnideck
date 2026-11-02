@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Image control names</title></head>
+<body>
+  <p><a href="#destination" data-result="Link activated"><img alt="Image destination"></a></p>
+  <p><button type="button" data-result="Button activated"><span><img alt="Image action"></span></button></p>
+  <p><a href="#visible">
+    <img alt="">
+    <span hidden><img alt="Hidden decoy"></span>
+    <span aria-hidden="true"><img alt="Aria-hidden decoy"></span>
+    <img style="visibility:hidden" alt="Invisible decoy">
+    <span><img alt="Visible destination"></span>
+  </a></p>
+  <p><a href="#multiple"><img alt="North"><img alt="South"></a></p>
+  <p><a href="#explicit" aria-label="Explicit destination"><img alt="Ignored aria image"></a></p>
+  <span id="link-label">Referenced destination</span>
+  <p><a href="#referenced" aria-labelledby="link-label"><img alt="Ignored referenced image"></a></p>
+  <p><a href="#text">Text destination<img alt="Ignored text image"></a></p>
+  <p><a href="#tooltip" title="Lower priority tooltip"><img alt="Image before tooltip"></a></p>
+  <p><a href="#decorative" title="Fallback title"><img alt="" src="images/contact-us.svg"><img hidden alt="Hidden title decoy"></a></p>
+  <p><a href="#filename" data-result="Filename link activated"><img src="images/contact-us.svg?size=large#icon"></a></p>
+  <p><button type="button" data-result="Filename button activated"><img alt="" src="images/a81f09cd.svg"></button></p>
+  <p id="result">No action yet</p>
+  <script>
+    for (const img of document.querySelectorAll('img:not([src])')) {
+      img.src = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="48" height="24"><rect width="48" height="24" fill="blue"/></svg>');
+    }
+    for (const control of document.querySelectorAll('[data-result]')) {
+      control.addEventListener('click', event => {
+        event.preventDefault();
+        document.querySelector('#result').textContent = control.dataset.result;
+      });
+    }
+  </script>
+</body>
+</html>

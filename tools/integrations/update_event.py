@@ -7,7 +7,8 @@ from collections.abc import Callable, Iterable
 from typing import Any
 
 from config import load_config
-from integrations import broker_client
+from brokering import broker_client
+from tools.integrations._invoke import invoke_operation
 
 logger = logging.getLogger(__name__)
 
@@ -60,13 +61,13 @@ async def update_event(
         return "No fields to update — provide at least one of summary, start, end, description, location, or attendees."
 
     try:
-        result = await broker_client.call(
-            integration_id, "update_event", args, app_sock_path=app_sock,
+        result = await invoke_operation(
+            integration_id, "calendar.events.update", args, app_sock_path=app_sock,
         )
     except broker_client.IntegrationNotConnected:
         return f"Integration {integration_id!r} is not connected."
-    except broker_client.IntegrationWriteDenied:
-        return f"Writes are disabled for {integration_id!r}."
+    except broker_client.IntegrationPermissionDenied:
+        return f"Tool access is disabled for {integration_id!r}."
     except broker_client.IntegrationError as exc:
         logger.warning(
             "update_event(%r, %r) failed: %s", integration_id, event_ref, exc,

@@ -1,14 +1,94 @@
 """Tests for tasks._file_store.FileTaskStore."""
 
+from datetime import datetime, timezone
+
 import pytest
 
+from conversations import load_conversation_metadata, save_conversation_title
 from tasks._file_store import FileTaskStore
 
 
 @pytest.fixture
-def store(tmp_path):
+def store(tmp_path, monkeypatch):
     """Create a FileTaskStore backed by a temp directory."""
+    monkeypatch.setattr("conversations._store._get_conversations_dir", lambda: tmp_path / "conversations")
     return FileTaskStore(tmp_path / "routines")
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    """Freeze persisted timestamps and cron evaluation on the same UTC clock."""
+    class Clock(datetime):
+        current = datetime(2026, 7, 1, 8, 55, tzinfo=timezone.utc)
+
+        @classmethod
+        def now(cls, tz=None):
+            return cls.current.astimezone(tz)
+
+    monkeypatch.setattr("tasks._models.datetime", Clock)
+    monkeypatch.setattr("tasks._scheduler.datetime", Clock)
+    return Clock
+
+
+@pytest.mark.unit
+class TestRecurringSchedule:
+    @pytest.mark.parametrize("status", ["pending", "running", "completed", "failed"])
+    def test_deleting_latest_scheduled_run_preserves_schedule(self, store, clock, status):
+        """Deleting today's run must not repeat it while yesterday's history remains."""
+        routine = store.create_routine("Daily report", cron="0 9 * * *")
+        store.create_task(routine.id, "Report", "Write the daily report", agent_profile="code_expert")
+
+        clock.current = datetime(2026, 7, 1, 9, tzinfo=timezone.utc)
+        yesterday = store.queue_run(routine.id)
+        store.stamp_last_run_spawned(routine.id)
+        result = store.get_task_results(yesterday.id)[0]
+        store.mark_task_result_running(result.id)
+        store.update_run_status(yesterday.id)
+        clock.current = datetime(2026, 7, 1, 9, 5, tzinfo=timezone.utc)
+        store.mark_task_result_completed(result.id, "Yesterday's report")
+        store.update_run_status(yesterday.id)
+
+        clock.current = datetime(2026, 7, 2, 9, tzinfo=timezone.utc)
+        assert [r.id for r in store.get_due_recurring_routines()] == [routine.id]
+        today = store.queue_run(routine.id)
+        store.stamp_last_run_spawned(routine.id)
+        result = store.get_task_results(today.id)[0]
+        if status == "running":
+            store.mark_task_result_running(result.id)
+        elif status == "completed":
+            store.mark_task_result_completed(result.id, "Today's report")
+        elif status == "failed":
+            store.mark_task_result_failed(result.id, "Report failed")
+        store.update_run_status(today.id)
+
+        clock.current = datetime(2026, 7, 2, 9, 10, tzinfo=timezone.utc)
+        store.delete_run(today.id)
+        reopened = FileTaskStore(store._base)
+        assert reopened.get_run(yesterday.id).status == "completed"
+        assert reopened.get_due_recurring_routines() == []
+
+        clock.current = datetime(2026, 7, 3, 9, tzinfo=timezone.utc)
+        assert [r.id for r in reopened.get_due_recurring_routines()] == [routine.id]
+
+    def test_later_completion_remains_the_schedule_anchor(self, store, clock):
+        """A long run still skips occurrences passed before it finished."""
+        routine = store.create_routine("Daily report", cron="0 9 * * *")
+        store.create_task(routine.id, "Report", "Write the daily report", agent_profile="code_expert")
+        clock.current = datetime(2026, 7, 1, 9, tzinfo=timezone.utc)
+        run = store.queue_run(routine.id)
+        store.stamp_last_run_spawned(routine.id)
+        result = store.get_task_results(run.id)[0]
+        store.mark_task_result_running(result.id)
+        store.update_run_status(run.id)
+
+        clock.current = datetime(2026, 7, 2, 9, 10, tzinfo=timezone.utc)
+        assert store.get_due_recurring_routines() == []
+        store.mark_task_result_completed(result.id, "Report")
+        store.update_run_status(run.id)
+        assert store.get_due_recurring_routines() == []
+
+        clock.current = datetime(2026, 7, 3, 9, tzinfo=timezone.utc)
+        assert [r.id for r in store.get_due_recurring_routines()] == [routine.id]
 
 
 @pytest.mark.unit
@@ -198,20 +278,20 @@ class TestRunLifecycle:
         routine = store.create_routine("routine")
         store.create_task(routine.id, "t", "p", agent_profile="code_expert")
         run = store.queue_run(routine.id)
-        conv_ids = store.delete_run(run.id)
-        assert isinstance(conv_ids, list)
+        assert store.delete_run(run.id) is None
         assert store.get_run(run.id) is None
 
-    def test_delete_run_returns_conv_ids(self, store):
-        """Delete run returns conversation IDs for cleanup."""
+    def test_delete_run_deletes_execution_history(self, store):
+        """Delete run removes its conversation data without exposing storage IDs."""
         routine = store.create_routine("routine")
         store.create_task(routine.id, "t", "p", agent_profile="code_expert")
         run = store.queue_run(routine.id)
         results = store.get_task_results(run.id)
         store.set_agent_run(results[0].id, conversation_id="conv-123", agent_run_id="agent-run")
+        save_conversation_title("conv-123", "Execution history")
 
-        conv_ids = store.delete_run(run.id)
-        assert "conv-123" in conv_ids
+        assert store.delete_run(run.id) is None
+        assert load_conversation_metadata("conv-123") == {}
 
 
 @pytest.mark.unit
@@ -419,15 +499,14 @@ class TestCascadeDelete:
     """Test cascade deletion."""
 
     def test_delete_routine_cascades(self, store):
-        """Deleting a routine removes all runs and returns conv IDs."""
+        """Deleting a routine removes its runs and associated conversation data."""
         routine = store.create_routine("routine")
         store.create_task(routine.id, "t", "p", agent_profile="code_expert")
         run = store.queue_run(routine.id)
         results = store.get_task_results(run.id)
         store.set_agent_run(results[0].id, conversation_id="conv-xyz", agent_run_id="agent-run")
+        save_conversation_title("conv-xyz", "Execution history")
 
-        conv_ids = store.delete_routine(routine.id)
-        assert "conv-xyz" in conv_ids
+        assert store.delete_routine(routine.id) is None
+        assert load_conversation_metadata("conv-xyz") == {}
         assert store.get_routine(routine.id) is None
-
-

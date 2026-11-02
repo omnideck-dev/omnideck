@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import random
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -12,6 +11,8 @@ from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import Frame as PlaywrightFrame
 from playwright.async_api import Locator, Page
 
+from browser.core._content import CONTENT_HTML_JS
+from browser.core.evaluation import NO_ARGUMENT, evaluate_frame
 from browser.core.exceptions import BrowserToolError
 from browser.core.input.scroll import ScrollOutcome, human_scroll
 
@@ -20,7 +21,6 @@ if TYPE_CHECKING:
     from config import BrowserWaitConfig
 
 
-_NO_ARGUMENT = object()
 logger = logging.getLogger(__name__)
 
 
@@ -60,16 +60,14 @@ class Document:
     async def evaluate(
         self,
         expression: str,
-        arg: Any = _NO_ARGUMENT,
+        arg: Any = NO_ARGUMENT,
     ) -> Any:
         """Evaluate JavaScript in this document's DOM context."""
-        if arg is _NO_ARGUMENT:
-            return await self._frame.evaluate(expression)
-        return await self._frame.evaluate(expression, arg)
+        return await evaluate_frame(self._frame, expression, arg)
 
     async def content(self) -> str:
-        """Return this document's serialized HTML."""
-        return await self._frame.content()
+        """Return this document's HTML, including shadow content and assigned slots."""
+        return await self.evaluate(CONTENT_HTML_JS)
 
     async def resolve_ref(self, ref: str, *, tool_name: str) -> ResolvedElement:
         """Resolve one agent-visible numeric ref inside this document.
@@ -133,7 +131,7 @@ class Document:
         """Click an element using physical pointer input."""
         from browser.core.input.pointer import human_click
 
-        await human_click(self._page, self._locator_for(element))
+        await human_click(self._page, self._locator_for(element), frame=self._frame)
 
     async def press_and_hold(self, element: ResolvedElement, *, duration_ms: int) -> None:
         """Hold physical pointer input on an element for a duration."""
@@ -143,6 +141,7 @@ class Document:
             self._page,
             self._locator_for(element),
             duration_ms=duration_ms,
+            frame=self._frame,
         )
 
     async def drag(self, source: ResolvedElement, target: ResolvedElement) -> None:
@@ -153,6 +152,8 @@ class Document:
             self._page,
             self._locator_for(source),
             target_locator=self._locator_for(target),
+            source_frame=self._frame,
+            target_frame=self._frame,
         )
 
     async def type_text(
@@ -179,13 +180,32 @@ class Document:
         input_type = ""
         is_contenteditable = False
         try:
-            handle = await locator.element_handle(timeout=5000)
-            if handle is not None:
-                tag_name = await handle.evaluate("el => el.tagName.toLowerCase()")
-                if tag_name == "input":
-                    raw_type = await handle.get_attribute("type")
-                    input_type = (raw_type or "text").lower()
-                is_contenteditable = await handle.evaluate("el => el.isContentEditable")
+            metadata = await self.evaluate(
+                """ref => {
+                const find = root => {
+                    const match = root.querySelector(`[data-ct-ref="${ref}"]`);
+                    if (match) return match;
+                    for (const el of root.querySelectorAll('*')) {
+                        if (el.shadowRoot) {
+                            const nested = find(el.shadowRoot);
+                            if (nested) return nested;
+                        }
+                    }
+                    return null;
+                };
+                const el = find(document);
+                return el ? {
+                    tag: el.tagName.toLowerCase(),
+                    type: (el.getAttribute('type') || 'text').toLowerCase(),
+                    editable: el.isContentEditable,
+                } : null;
+            }""",
+                element.ref,
+            )
+            if metadata:
+                tag_name = metadata["tag"]
+                input_type = metadata["type"]
+                is_contenteditable = metadata["editable"]
         except PlaywrightError as exc:  # pragma: no cover - best-effort metadata
             logger.debug("Failed to inspect ref %s for fill_field: %s", element.ref, exc)
 
@@ -237,58 +257,12 @@ class Document:
                 details={"ref": element.ref},
             ) from exc
 
-        handle = await locator.element_handle(timeout=5000)
-        await self.click(element)
-        await asyncio.sleep(random.randint(100, 300) / 1000)
-
-        keyboard_succeeded = await self._select_option_with_keyboard(
-            handle,
-            target_index,
-        )
-        if not keyboard_succeeded:
-            logger.debug("Falling back to JS selectedIndex for '%s'", value)
-            await self._select_option_with_javascript(handle, target_index)
-            await self.press_keys(["Escape"])
+        # Playwright selects and dispatches input/change as one operation, so
+        # navigation cannot strand post-selection verification on an old handle.
+        await locator.select_option(index=target_index, timeout=5000)
 
         if wait_after_select_ms:
             await asyncio.sleep(wait_after_select_ms / 1000)
-
-    async def _select_option_with_keyboard(
-        self,
-        handle: Any,
-        target_index: int,
-    ) -> bool:
-        """Try trusted keyboard selection before falling back to JavaScript."""
-        max_steps = 30
-        if target_index > max_steps:
-            return False
-        try:
-            await self.press_keys(["Home"])
-            await asyncio.sleep(random.randint(30, 80) / 1000)
-            for _ in range(target_index):
-                await self.press_keys(["ArrowDown"])
-                await asyncio.sleep(random.randint(20, 60) / 1000)
-            await self.press_keys(["Enter"])
-            await asyncio.sleep(random.randint(50, 150) / 1000)
-            actual_index = await handle.evaluate("el => el.selectedIndex")
-            return bool(actual_index == target_index)
-        except Exception as exc:  # noqa: BLE001 - JS is the intended fallback
-            logger.debug("Keyboard selection failed: %s", exc)
-            return False
-
-    @staticmethod
-    async def _select_option_with_javascript(handle: Any, target_index: int) -> None:
-        """Set selectedIndex and dispatch the native form events."""
-        await handle.evaluate(
-            """(el, idx) => {
-                el.selectedIndex = idx;
-                try {
-                    el.dispatchEvent(new Event('input', { bubbles: true }));
-                    el.dispatchEvent(new Event('change', { bubbles: true }));
-                } catch (_) {}
-            }""",
-            target_index,
-        )
 
     async def screenshot(self, element: ResolvedElement) -> bytes:
         """Capture the element represented by one agent ref."""

@@ -22,7 +22,7 @@ function _mockFetch({ ollamaHost, providerResponse } = {}) {
             });
         }
         if (url === '/api/integrations') {
-            return Promise.resolve({ ok: true, json: () => Promise.resolve({ integrations: [] }) });
+            return Promise.resolve({ ok: true, json: () => Promise.resolve({ connections: [] }) });
         }
         if (url === '/api/providers') {
             return Promise.resolve(providerResponse ?? { ok: true, json: () => Promise.resolve({}) });

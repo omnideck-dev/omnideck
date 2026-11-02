@@ -71,7 +71,7 @@ LLM providers get their **own settings page** (sibling to SystemSettings / Integ
 - **Add provider**: pick from a catalog. Brokered ones (OpenAI / Anthropic / OpenRouter / authed compat) prompt for an API key (+ base URL for compat) and create an `llm_<name>` integration in the vault. Direct ones (Ollama / no-auth compat) prompt for a base URL and write a `direct_providers` entry.
 - Per-provider actions: edit (rotate key for brokered, change base URL for direct), delete.
 
-The **Integrations tab reverts to external-service integrations only** — no LLM providers surfaced there. Brokered providers still use the integrations/supervisor backend (vault + broker + socket) as an implementation detail; they're just not shown in that tab.
+The **Integrations tab reverts to external-service integrations only** — no LLM providers surfaced there. Brokered providers still use the brokering/supervisor backend (vault + broker + socket) as an implementation detail; they're just not shown in that tab.
 
 **SystemSettings keeps only the model pickers** — default agent, vision, compaction, title — each using the enhanced ModelPicker. The "LLM Provider" connected-status section and the "Setup Wizard re-run" section both go away (providers → Providers page; wizard → first-run only).
 

@@ -43,7 +43,7 @@ What's *not* in v1 falls into three buckets, in roughly the order I'd ship them.
 
 **Scope:** (largely what original `03-broker-mcp.md` described)
 
-- **`integrations/brokers/mcp_broker/` package.** Stdio host that:
+- **`brokering/brokers/mcp_broker/` package.** Stdio host that:
   1. Spawns the MCP subprocess (`uvx <pkg>`, `npx <pkg>`, etc.) with creds in env.
   2. Sends `initialize`, then `tools/list` to verify (empty list = treat as auth fail, exit 77).
   3. Builds a `tool_name → readOnlyHint` map.

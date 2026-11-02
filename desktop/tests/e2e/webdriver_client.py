@@ -549,7 +549,17 @@ class Journey:
                 raise AssertionError(f"Setup ended in {contract}: {final!r}")
             if text_of(final, "primary") != "Open omnideck":
                 raise AssertionError("Ready primary action wording changed")
-            self.driver.click("#primary")
+            try:
+                self.driver.click("#primary")
+            except WebDriverError as error:
+                if "Remote end closed connection without response" not in str(error):
+                    raise
+                # WebKit can drop the command response while the native
+                # hosted window opens. Observe the actual hosted page below;
+                # the bounded wait can retry Open if Ready is still visible.
+                self.evidence.joinpath("hosted-open-disconnect.txt").write_text(
+                    str(error) + "\n", encoding="utf-8"
+                )
             self.wait_for_hosted(fixture_text, hosted_selector)
             return "opened"
 

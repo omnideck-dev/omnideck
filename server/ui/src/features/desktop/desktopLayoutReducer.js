@@ -316,6 +316,31 @@ export function desktopLayoutReducer(state, action) {
                 focusedFloatingViewId: null,
             };
 
+        case 'MERGE_TAB_GROUP': {
+            // Automatic layout reconciliation (e.g. consolidating onto one
+            // pane on mobile), not a user-initiated placement change: unlike
+            // MOVE_VIEW, this must not steal the destination's active tab or
+            // clear floating focus - both would be a silent, unrelated
+            // side effect of the app just adjusting to a narrow viewport.
+            const source = state.tabGroups[action.fromTabGroupId];
+            if (!source.viewIds.length) return state;
+            const destination = state.tabGroups[action.toTabGroupId];
+            return {
+                ...state,
+                tabGroups: {
+                    ...state.tabGroups,
+                    [action.fromTabGroupId]: emptyTabGroup(),
+                    [action.toTabGroupId]: {
+                        viewIds: [...destination.viewIds, ...source.viewIds],
+                        activeViewId: destination.activeViewId || source.activeViewId,
+                    },
+                },
+                focusedTabGroupId: state.focusedTabGroupId === action.fromTabGroupId
+                    ? action.toTabGroupId
+                    : state.focusedTabGroupId,
+            };
+        }
+
         case 'FLOAT_VIEW': {
             if (!state.openViewsById[action.viewId]) return state;
             const tabGroups = removeViewFromTabGroups(state.tabGroups, action.viewId);

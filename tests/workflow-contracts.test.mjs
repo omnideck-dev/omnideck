@@ -48,7 +48,7 @@ test('Desktop package builds are gated by deterministic change classification', 
   );
   assert.match(
     desktopWorkflow,
-    /artifact_contract:\n    needs: \[changes, build\]\n    if: needs\.changes\.outputs\.full_matrix == 'true'/,
+    /artifact_contract:\n    needs: \[changes, build, build_macos_release\][\s\S]*?needs\.changes\.outputs\.full_matrix == 'true'/,
   );
   assert.equal(
     [...desktopWorkflow.matchAll(/if: needs\.changes\.outputs\.native_tests_required == 'true'/g)]
@@ -117,4 +117,17 @@ test('Linux package installation is retried and time-bounded', () => {
   assert.match(aptInstaller, /Acquire::http::Timeout=30/);
   assert.match(aptInstaller, /Acquire::https::Timeout=30/);
   assert.match(aptInstaller, /DPkg::Lock::Timeout=120/);
+});
+
+
+test('Monday autoship publishes app records without PR or workflow-dispatch write permissions', async () => {
+  const workflow = await read('../.github/workflows/container-release.yml');
+  assert.match(workflow, /cron: '0 10 \* \* 1'/);
+  assert.match(workflow, /timezone: America\/Chicago/);
+  assert.match(workflow, /actions: read/);
+  assert.doesNotMatch(workflow, /pull-requests:|actions: write|git push|gh pr|prepare-app-release-pr/);
+  assert.match(workflow, /persist-credentials: false/);
+  assert.match(workflow, /publish-app-release\.mjs/);
+  assert.match(workflow, /DRY_RUN: \$\{\{ inputs\.dry_run \}\}/);
+  assert.match(workflow, /releases\?per_page=100/);
 });

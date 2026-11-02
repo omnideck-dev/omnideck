@@ -111,7 +111,7 @@ function ViewHostHeader({
 function DesktopViewHost({
     view,
     tabGroupId,
-    activeInTabGroup,
+    visible,
     floatingView,
     focusedFloating,
     fullscreen,
@@ -121,9 +121,6 @@ function DesktopViewHost({
 }) {
     const hostRef = useRef(null);
     const floating = Boolean(floatingView);
-    // Visibility is distinct from Desktop focus. Every floating View and the
-    // selected tab in each tab group is visible, but only one may be focused.
-    const visible = Boolean(floating || (tabGroupId && activeInTabGroup));
     const {
         bounds: liveBounds,
         drag,
@@ -183,7 +180,7 @@ function DesktopViewHost({
                 styles.viewHost,
                 tabGroupId === DESKTOP_TAB_GROUP_IDS.LEFT ? styles.leftView : '',
                 tabGroupId === DESKTOP_TAB_GROUP_IDS.RIGHT ? styles.rightView : '',
-                floating ? styles.floatingView : '',
+                floating && visible ? styles.floatingView : '',
                 focusedFloating ? styles.focusedFloatingView : '',
                 visible ? styles.visibleView : styles.hiddenView,
                 fullscreen ? styles.fullscreenView : '',

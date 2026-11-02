@@ -13,6 +13,7 @@ from playwright.async_api import Page
 
 from browser.core.challenges import ChallengeInfo, detect_challenge
 from browser.core.document import Document
+from browser.core.evaluation import evaluate_frame
 from config import load_config
 
 if TYPE_CHECKING:
@@ -275,6 +276,15 @@ class Tab:
 
             if settle:
                 timings = await document.settle(waits)
+                # Initial selection can see an empty/loading iframe and cache
+                # the host. Root load waits include its child frames, so check
+                # again now that they can have content. Preserve document
+                # identity when selection is unchanged; a new frame follows
+                # the existing bounded retry and gets its own settle pass.
+                if self._document is document and self._content_frame is None:
+                    frame, challenge = await self._select_frame()
+                    self._set_challenge(challenge)
+                    self._set_content_frame(frame if frame is not self._page.main_frame else None)
                 current = await self.document()
                 settle_failed = timings.error is not None
                 document_changed = document is not current
@@ -386,7 +396,10 @@ class Tab:
     async def _detect_embedded_content_frame(self) -> PlaywrightFrame | None:
         """Return the largest accessible content iframe covering the viewport."""
         try:
-            window_size = await self._page.evaluate("() => ({ width: window.innerWidth, height: window.innerHeight })")
+            window_size = await evaluate_frame(
+                self._page.main_frame,
+                "() => ({ width: window.innerWidth, height: window.innerHeight })",
+            )
         except PlaywrightError:
             return None
         width, height = window_size.get("width", 0), window_size.get("height", 0)
@@ -413,7 +426,8 @@ class Tab:
                 continue
 
             try:
-                content = await frame.evaluate(
+                content = await evaluate_frame(
+                    frame,
                     """() => {
                         if (!document.body) return { children: 0, text: 0, interactive: 0 };
                         return {
@@ -423,7 +437,7 @@ class Tab:
                                 'a[href], button, input, select, textarea'
                             ).length,
                         };
-                    }"""
+                    }""",
                 )
             except Exception:  # noqa: BLE001 - cross-origin or detached
                 continue

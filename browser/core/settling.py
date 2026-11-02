@@ -17,6 +17,7 @@ from playwright.async_api import (
     TimeoutError as PlaywrightTimeoutError,
 )
 
+from browser.core.evaluation import evaluate_frame
 from config import BrowserWaitConfig
 
 logger = logging.getLogger(__name__)
@@ -79,23 +80,20 @@ async def _settle_frame(
         SettleTimings with per-phase durations.
     """
     timings = SettleTimings()
+    frame = frame.main_frame if isinstance(frame, Page) else frame
     try:
         # Phase 1: document load. ``networkidle`` is deliberately avoided:
         # it commonly spends seconds waiting for analytics and other background
         # requests after the useful DOM has stopped changing.
-        if hasattr(frame, "wait_for_load_state"):
-            t0 = time.monotonic()
-            try:
-                await frame.wait_for_load_state(
-                    "load",
-                    timeout=waits.load_timeout_ms,
-                )
-            except PlaywrightTimeoutError:
-                timings.load_timed_out = True
-            timings.load_ms = (time.monotonic() - t0) * 1000
-
-        if not hasattr(frame, "evaluate"):
-            return timings
+        t0 = time.monotonic()
+        try:
+            await frame.wait_for_load_state(
+                "load",
+                timeout=waits.load_timeout_ms,
+            )
+        except PlaywrightTimeoutError:
+            timings.load_timed_out = True
+        timings.load_ms = (time.monotonic() - t0) * 1000
 
         # Phase 2: web fonts
         font_timeout_ms = max(0, waits.font_timeout_ms)
@@ -109,16 +107,14 @@ async def _settle_frame(
         }}"""
         t0 = time.monotonic()
         try:
-            await frame.evaluate(font_js)
+            await evaluate_frame(frame, font_js)
         except PlaywrightTimeoutError:
             timings.font_timed_out = True
         timings.font_ms = (time.monotonic() - t0) * 1000
 
         # Phase 3: DOM quiet window (including shadow roots)
-        if not hasattr(frame, "wait_for_function"):
-            return timings
-
         dom_quiet_ms = max(0, waits.dom_quiet_window_ms)
+        dom_timeout_ms = max(0, waits.dom_mutation_timeout_ms)
         dom_js = f"""() => {{
             return new Promise((resolve) => {{
                 const quiet = {dom_quiet_ms};
@@ -139,14 +135,25 @@ async def _settle_frame(
                     return true;
                 }});
 
-                let timer = setTimeout(() => {{ obs.disconnect(); resolve(true); }}, quiet);
-
+                let quietTimer;
+                let deadlineTimer;
+                let settled = false;
+                const finish = (result) => {{
+                    if (settled) return;
+                    settled = true;
+                    obs.disconnect();
+                    clearTimeout(quietTimer);
+                    clearTimeout(deadlineTimer);
+                    resolve(result);
+                }};
                 const resetTimer = () => {{
-                    clearTimeout(timer);
-                    timer = setTimeout(() => {{ obs.disconnect(); resolve(true); }}, quiet);
+                    if (settled) return;
+                    clearTimeout(quietTimer);
+                    quietTimer = setTimeout(() => finish(true), quiet);
                 }};
 
                 const callback = (mutations) => {{
+                    if (settled) return;
                     if (isSignificant(mutations)) resetTimer();
                     // Watch for new shadow roots in added nodes
                     for (const m of mutations) {{
@@ -175,18 +182,19 @@ async def _settle_frame(
                     }} catch {{}}
                 }};
 
+                deadlineTimer = setTimeout(() => finish(false), {dom_timeout_ms});
+                resetTimer();
                 try {{
                     obs.observe(document, observeOpts);
                     observeShadowRoots(document);
-                }} catch (e) {{
-                    clearTimeout(timer);
-                    resolve(true);
+                }} catch {{
+                    finish(true);
                 }}
             }});
         }}"""
         t0 = time.monotonic()
         try:
-            await frame.wait_for_function(dom_js, timeout=waits.dom_mutation_timeout_ms)
+            timings.dom_quiet_timed_out = await evaluate_frame(frame, dom_js) is False
         except PlaywrightTimeoutError:
             timings.dom_quiet_timed_out = True
         timings.dom_quiet_ms = (time.monotonic() - t0) * 1000
@@ -214,7 +222,7 @@ async def _settle_frame(
         }}"""
         t0 = time.monotonic()
         try:
-            await frame.evaluate(anim_js)
+            await evaluate_frame(frame, anim_js)
         except PlaywrightTimeoutError:
             timings.animation_timed_out = True
         timings.animation_ms = (time.monotonic() - t0) * 1000

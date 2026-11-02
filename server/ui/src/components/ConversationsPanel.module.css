@@ -14,10 +14,10 @@
     flex-shrink: 0;
     padding: 0 10px 0 11px;
     color: var(--text-tertiary);
-    font-family: var(--font-code);
-    font-size: 9.5px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    font-family: var(--font-body);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
 }
 .sectionHeader > span { flex: 1; }
 
@@ -42,31 +42,30 @@
 
 .newChat {
     width: 100%;
-    height: 32px;
+    height: 36px;
     display: flex;
     align-items: center;
     gap: var(--sp-2);
-    padding: 0 var(--sp-2);
-    border-radius: var(--radius-md);
-    background: transparent;
+    padding: 0 var(--sp-3);
+    border-radius: var(--radius-lg);
+    background: var(--accent-muted);
+    border: 1px solid var(--accent-muted);
     color: var(--text-primary);
     cursor: pointer;
-    font-size: 12.5px;
-    font-weight: 500;
+    font-size: 13.5px;
+    font-weight: 600;
 }
-.newChat:hover { background: var(--elevated); }
+.newChat:hover { background: var(--accent-glow); border-color: var(--accent-glow); }
 
 .newChatIcon {
-    width: 20px;
-    height: 20px;
+    width: 18px;
+    height: 18px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    border: 1px solid var(--border-strong);
-    border-radius: var(--radius-full);
-    color: var(--text-secondary);
-    font-size: 11px;
+    color: var(--accent);
+    font-size: 13px;
 }
 
 /* ── Search ──────────────────────────────────────────── */
@@ -76,10 +75,17 @@
     flex-shrink: 0;
     margin: 0 var(--sp-2) var(--sp-1);
 }
-/* SearchInput brings its own visuals; it just needs to flex to fill the row. */
+/* SearchInput brings its own visuals; it just needs to flex to fill the row.
+ * The doubled selector below beats the primitive's own single-class rule on
+ * specificity (rather than relying on CSS bundling order) so only this call
+ * site (the sidebar search) gets the fully-rounded pill treatment. */
 .search {
     flex: 1;
     min-width: 0;
+}
+.search.search {
+    border-radius: var(--radius-full);
+    background: var(--surface);
 }
 
 /* ── Scrollable list ─────────────────────────────────── */
@@ -102,12 +108,13 @@
     display: flex;
     align-items: center;
     gap: var(--sp-2);
-    height: 30px;
-    padding: 0 var(--sp-1) 0 10px;
+    height: 34px;
+    padding: 0 var(--sp-1) 0 16px;
     border-radius: var(--radius-md);
     cursor: pointer;
     color: var(--text-secondary);
-    font-size: 12.5px;
+    font-size: 13.5px;
+    font-weight: 500;
 }
 .item:hover { background: var(--accent-muted); color: var(--text-primary); }
 .item.active { background: var(--accent-muted); color: var(--text-primary); }
@@ -124,8 +131,8 @@
 /* Slim relative-age stamp shown on search-result rows. */
 .itemAge {
     flex: none;
-    font-family: var(--font-code);
-    font-size: 9.5px;
+    font-family: var(--font-body);
+    font-size: 11px;
     color: var(--text-tertiary);
 }
 

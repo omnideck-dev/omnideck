@@ -117,6 +117,20 @@ class StalledReadyDriver(FakeDriver):
         }
 
 
+class DisconnectedOpenDriver(StalledReadyDriver):
+    def __init__(self, opened: bool, error: str = "Remote end closed connection without response") -> None:
+        super().__init__()
+        self.open_on_disconnect = opened
+        self.error = error
+
+    def click(self, selector: str) -> None:
+        if not self.clicked:
+            self.clicked.append(selector)
+            self.opened = self.open_on_disconnect
+            raise CLIENT.WebDriverError(self.error)
+        super().click(selector)
+
+
 class CustomAppDriver(FakeDriver):
     def handles(self) -> list[str]:
         return ["hosted"]
@@ -387,6 +401,50 @@ class WebDriverClientTests(unittest.TestCase):
             self.assertEqual(
                 (markers / "hosted-open-recovery").read_text(), "attempt=1\n"
             )
+
+    def test_ready_disconnect_still_requires_a_real_hosted_page(self) -> None:
+        parity, initial = CLIENT.load_contract(
+            self.parity, self.mockup_parity, self.mockup_html
+        )
+        for already_opened in (True, False):
+            with self.subTest(already_opened=already_opened), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                driver = DisconnectedOpenDriver(already_opened)
+                journey = CLIENT.Journey(
+                    driver, parity, root, root, 4, False, initial,
+                    hosted_action="Get Started",
+                )
+                ready = parity["setupCopy"]["ready"]
+                journey.wait_for = lambda *_args, **_kwargs: {
+                    "stage": "ready",
+                    "title": {"text": ready["title"]},
+                    "detail": {"text": ready["detail"]},
+                    "primary": {"text": "Open omnideck"},
+                }
+                self.assertEqual(journey.finish_setup("Welcome to Omnideck", "main"), "opened")
+                self.assertEqual(len(driver.clicked), 1 if already_opened else 2)
+                self.assertTrue((root / "hosted-open-disconnect.txt").is_file())
+                hosted = json.loads((root / "hosted.json").read_text())
+                self.assertEqual(hosted["url"], "http://127.0.0.1:2338/")
+
+    def test_ready_action_errors_are_not_treated_as_disconnects(self) -> None:
+        parity, initial = CLIENT.load_contract(
+            self.parity, self.mockup_parity, self.mockup_html
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            driver = DisconnectedOpenDriver(False, "no such element")
+            journey = CLIENT.Journey(driver, parity, root, root, 4, False, initial)
+            ready = parity["setupCopy"]["ready"]
+            journey.wait_for = lambda *_args, **_kwargs: {
+                "stage": "ready",
+                "title": {"text": ready["title"]},
+                "detail": {"text": ready["detail"]},
+                "primary": {"text": "Open omnideck"},
+            }
+            with self.assertRaisesRegex(CLIENT.WebDriverError, "no such element"):
+                journey.finish_setup("Welcome to Omnideck", "main")
+            self.assertFalse((root / "hosted.json").exists())
 
     def test_custom_app_invokes_through_the_hosted_iframe_and_records_evidence(self) -> None:
         parity, initial = CLIENT.load_contract(

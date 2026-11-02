@@ -115,7 +115,7 @@ RUN case "${TARGETARCH}" in \
         apt-get clean && rm -rf /var/lib/apt/lists/* \
         ;; \
       arm64) \
-        python3.12 -m pip install --no-cache-dir playwright==1.52.0 && \
+        python3.12 -m pip install --no-cache-dir playwright==1.59.0 && \
         python3.12 -m playwright install --with-deps chromium \
         ;; \
       *) \
@@ -126,7 +126,7 @@ RUN case "${TARGETARCH}" in \
 # ── Users & permissions ──────────────────────────────────────────────────────
 # Two-user trust split for credential isolation:
 #   omnideck (UID 1000) — runs the app server, agent tools, and desktop.
-#   broker   (UID 1001) — runs the integrations supervisor and the broker
+#   broker   (UID 1001) — runs the credential supervisor and the broker
 #                         subprocesses it spawns. Owns the credential vault
 #                         (mode 0700) so omnideck can't read decrypted creds.
 # omnideck is in the broker group ONLY so it can connect to /run/cvault/app.sock
@@ -196,11 +196,12 @@ RUN chmod 755 /opt/desktop/a11y_tree.py && \
 # ── App dependencies (cached unless manifests change) ────────────────────────
 WORKDIR /opt/omnideck
 COPY pyproject.toml uv.lock ./
-RUN uv pip install --system --no-cache -e . 2>/dev/null || true
+COPY scripts/install-python-dependencies.sh scripts/install-python-dependencies.sh
+RUN bash scripts/install-python-dependencies.sh
 
 # ── App source ───────────────────────────────────────────────────────────────
 COPY --chmod=755 . /opt/omnideck/
-RUN uv pip install --system --no-cache -e .
+RUN uv pip install --system --no-cache --no-deps -e .
 
 # Prebuilt UI assets from the ui-builder stage (no node_modules in this image).
 COPY --from=ui-builder /ui/dist /opt/omnideck/server/ui/dist

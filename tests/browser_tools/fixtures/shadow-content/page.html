@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Shadow fund profile</title></head>
+<body>
+  <p>Privacy choices: accept or reject optional cookies.</p>
+  <fund-overview>
+    <span slot="name">Example Money Market Fund</span>
+    <p slot="description">An investment profile rendered with web components.</p>
+    <p>Default slot paragraph.</p>
+    <p slot="unused">Unassigned light DOM content.</p>
+  </fund-overview>
+  <p>Light DOM footer.</p>
+  <script>
+    window.componentConstructions = 0;
+    class YieldDetails extends HTMLElement {
+      constructor() {
+        super();
+        window.componentConstructions += 1;
+        this.attachShadow({mode: 'closed'}).innerHTML = `
+          <h2>Performance</h2>
+          <p>Seven-day yield: <strong>3.63%</strong>.</p>
+          <ul><li>NAV: $1.00</li><li>Expense ratio: 0.11%</li></ul>
+          <p><a href="/documents/prospectus.pdf">Prospectus</a></p>
+          <slot name="note"><p>Unused nested fallback.</p></slot>`;
+      }
+    }
+    customElements.define('yield-details', YieldDetails);
+    class FundOverview extends HTMLElement {
+      constructor() {
+        super();
+        window.componentConstructions += 1;
+        this.attachShadow({mode: 'open'}).innerHTML = `
+          <article>
+            <h1><slot name="name">Unused title fallback</slot></h1>
+            <slot name="description"></slot>
+            <yield-details><p slot="note">Slotted risk disclosure.</p></yield-details>
+            <slot name="empty"><p>Default disclosure.</p></slot>
+            <slot></slot>
+          </article>`;
+      }
+    }
+    customElements.define('fund-overview', FundOverview);
+  </script>
+</body>
+</html>

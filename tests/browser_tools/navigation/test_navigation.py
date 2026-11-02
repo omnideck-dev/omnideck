@@ -49,7 +49,7 @@ async def test_parallel_goto_keeps_real_tabs_associated(open_tab, servers):
 
     first, second = await asyncio.gather(
         goto(f"{servers.primary}/scope/page.html", tab=first_tab),
-        goto(f"{servers.primary}/signup-form/form.html", tab=second_tab),
+        goto(f"{servers.primary}/forms/signup.html", tab=second_tab),
     )
 
     assert "Alpha button" in first
@@ -64,7 +64,7 @@ async def test_concurrent_goto_on_same_tab_reports_in_flight(open_tab, servers):
 
     results = await asyncio.gather(
         goto(f"{servers.primary}/scope/page.html", tab=tab),
-        goto(f"{servers.primary}/signup-form/form.html", tab=tab),
+        goto(f"{servers.primary}/forms/signup.html", tab=tab),
         return_exceptions=True,
     )
 

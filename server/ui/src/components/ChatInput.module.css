@@ -19,7 +19,7 @@
   margin: 0 auto;
   padding: 6px 6px 6px 14px;
   background: var(--elevated);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-md);
   transition: border-color 120ms var(--ease), box-shadow 120ms var(--ease);
@@ -178,25 +178,37 @@
 }
 
 /* ── Expand in place ─────────────────────────────────────
-   The composer grows to fill the chat area below the title bar (no modal).
-   It is absolutely positioned within the chat panel, offset from the top by
-   --titlebar-height (inherited from .panel), and reverts on collapse. */
+   The composer grows tall and floats over the chat transcript rather than
+   taking over the whole panel — same width and horizontal position as the
+   collapsed composer (.inputArea keeps its own max-width/margin), just
+   anchored to the bottom of the panel at roughly 80% of its height. `top`
+   is clamped to at least --titlebar-height so this can never creep above
+   the title bar on a very short panel. The wrapper itself stays transparent
+   and click-through outside the card so the transcript underneath is still
+   visible and scrollable. */
 .expandedWrapper {
   position: absolute;
-  top: var(--titlebar-height);
+  top: max(var(--titlebar-height), 20%);
   left: 0;
   right: 0;
   bottom: 0;
   z-index: 4;
   display: flex;
   flex-direction: column;
-  background: var(--canvas);
+  pointer-events: none;
 }
 
-/* In expanded mode the card and textarea stretch to fill the wrapper. */
+/* In expanded mode the card and textarea stretch to fill the wrapper.
+ * .inputArea's own `margin: 0 auto` centers it in normal block layout
+ * (collapsed mode), but that same auto margin disables flex stretch once
+ * it's a flex item here — align-self: center takes over that centering job
+ * so the width: 100% (clamped by .inputArea's own max-width) actually applies. */
 .expandedWrapper .inputArea {
   flex: 1;
   min-height: 0;
+  align-self: center;
+  width: 100%;
+  pointer-events: auto;
 }
 
 .expandedWrapper .textareaWrapper {

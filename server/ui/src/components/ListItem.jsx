@@ -2,8 +2,7 @@ import styles from './ListItem.module.css';
 
 /**
  * Per-row list item with the canonical SIGNAL styling:
- * Signal Line (2px accent left border) on active, border-bottom between rows,
- * accent-muted background on active/hover.
+ * Rounded object boundary, accent outline and muted background on selection.
  *
  * Use `name` / `description` / `badges` for the common list-row pattern,
  * or pass `children` for custom content layouts.
@@ -14,6 +13,7 @@ import styles from './ListItem.module.css';
  * @param {React.ReactNode} [props.name]
  * @param {React.ReactNode} [props.description]
  * @param {React.ReactNode} [props.badges]
+ * @param {React.ReactNode} [props.icon] - optional leading icon
  * @param {React.ReactNode} [props.children] - overrides name/description/badges when provided
  * @param {string} [props.className]
  */
@@ -23,6 +23,7 @@ export default function ListItem({
     name,
     description,
     badges,
+    icon,
     children,
     className = '',
     ...rest
@@ -32,6 +33,7 @@ export default function ListItem({
         .join(' ');
     return (
         <button type="button" className={classes} onClick={onClick} {...rest}>
+            {icon && <span className={styles.icon} aria-hidden="true">{icon}</span>}
             {children ?? (
                 <div className={styles.body}>
                     {name && <span className={styles.name}>{name}</span>}

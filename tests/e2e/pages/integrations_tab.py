@@ -1,18 +1,18 @@
-"""POM for the Integrations tab inside Settings + the Add modal wizard."""
+"""POM for the Integrations tab and its modal setup flow."""
 
 from __future__ import annotations
 
 from playwright.sync_api import Locator, Page
 
 
-class AddIntegrationModal:
-    """Multi-step wizard launched by the Add buttons.
+class AddIntegrationFlow:
+    """Modal settings subflow launched by the Add buttons.
 
-    Step 1: provider picker — one card per catalog entry, each tagged
+    Step 1: integration picker — one card per catalog entry, each tagged
     ``provider-<slug>``.
-    Step 2: explainer — has a ``Next`` button (testid ``wizard-next``).
-    Step 3: credentials form — email + app password + Verify button.
-    Step 4: verifying spinner / success page.
+    Step 2: concrete connection adapter.
+    Step 3: exact operation picker.
+    Step 4: review and finish.
     """
 
     def __init__(self, page: Page):
@@ -20,16 +20,13 @@ class AddIntegrationModal:
 
     @property
     def root(self) -> Locator:
-        """The modal heading — anchors waits for "is the modal open?"."""
-        return self.page.get_by_text("ADD INTEGRATION", exact=True)
+        return self.page.get_by_test_id("integration-setup-flow")
 
-    def pick_provider(self, slug: str) -> "AddIntegrationModal":
-        """Click a provider card on step 1 and advance to the explainer."""
+    def pick_provider(self, slug: str) -> "AddIntegrationFlow":
         self.page.get_by_test_id(f"provider-{slug}").click()
         return self
 
-    def next_(self) -> "AddIntegrationModal":
-        """Advance from the explainer to the credentials step."""
+    def next_(self) -> "AddIntegrationFlow":
         self.page.get_by_test_id("wizard-next").click()
         return self
 
@@ -43,13 +40,17 @@ class AddIntegrationModal:
 
     @property
     def submit(self) -> Locator:
-        """Verify & save button on the credentials step."""
+        """Connect button on the credentials step."""
         return self.page.get_by_test_id("wizard-submit")
 
     @property
     def done(self) -> Locator:
-        """Done button on the success screen."""
+        """Add integration button on the Review step."""
         return self.page.get_by_test_id("wizard-done")
+
+    @property
+    def tools_heading(self) -> Locator:
+        return self.page.get_by_text("Choose tools")
 
     # ── Token (http) flow fields ─────────────────────────────────────
     @property
@@ -78,7 +79,7 @@ class AddIntegrationModal:
         base_url: str,
         token: str,
         label: str = "",
-    ) -> "AddIntegrationModal":
+    ) -> "AddIntegrationFlow":
         """Fill the token-flow credentials step (assumes it's visible)."""
         self.base_url_input.fill(base_url)
         self.token_input.fill(token)
@@ -86,8 +87,20 @@ class AddIntegrationModal:
             self.label_input.fill(label)
         return self
 
+    def fill_test(
+        self,
+        *,
+        token: str,
+        label: str = "",
+    ) -> "AddIntegrationFlow":
+        """Fill the deterministic test-broker connection form."""
+        self.token_input.fill(token)
+        if label:
+            self.label_input.fill(label)
+        return self
+
     def cancel(self) -> None:
-        """Close via the footer Cancel link."""
+        """Exit before a connection has been registered."""
         self.page.get_by_role("button", name="Cancel").first.click()
 
 
@@ -96,7 +109,7 @@ class IntegrationsTab:
 
     def __init__(self, page: Page):
         self.page = page
-        self.add_modal = AddIntegrationModal(page)
+        self.add_flow = AddIntegrationFlow(page)
 
     # ── Empty / unavailable states ───────────────────────────────────
     @property
@@ -106,7 +119,7 @@ class IntegrationsTab:
 
     @property
     def empty_state_add(self) -> Locator:
-        """The CTA in the empty state — opens the Add modal."""
+        """The CTA in the empty state — opens modal setup."""
         return self.page.get_by_test_id("integrations-add-first")
 
     @property
@@ -119,25 +132,31 @@ class IntegrationsTab:
         """The "Try again" button on the unavailable state."""
         return self.page.get_by_test_id("integrations-retry")
 
-    # ── Add modal launch ─────────────────────────────────────────────
-    def open_add_modal_from_empty(self) -> AddIntegrationModal:
-        """Click the empty-state CTA to open the Add modal."""
-        self.empty_state_add.click()
-        self.add_modal.root.wait_for(state="visible")
-        return self.add_modal
+    # ── Modal setup launch ───────────────────────────────────────────
+    def open_add_flow(self) -> AddIntegrationFlow:
+        """Open setup from either the empty state or a populated list."""
+        add_from_list = self.page.get_by_test_id("integrations-add-another")
+        self.empty_state_add.or_(add_from_list).wait_for(state="visible")
+        if self.empty_state_add.is_visible():
+            return self.open_add_flow_from_empty()
+        return self.open_add_flow_from_list()
 
-    def open_add_modal_from_list(self) -> AddIntegrationModal:
-        """Click the in-list ADD button (only present when the list isn't empty)."""
+    def open_add_flow_from_empty(self) -> AddIntegrationFlow:
+        self.empty_state_add.click()
+        self.add_flow.root.wait_for(state="visible")
+        return self.add_flow
+
+    def open_add_flow_from_list(self) -> AddIntegrationFlow:
         self.page.get_by_test_id("integrations-add-another").click()
-        self.add_modal.root.wait_for(state="visible")
-        return self.add_modal
+        self.add_flow.root.wait_for(state="visible")
+        return self.add_flow
 
     # ── List + detail (master-detail UI) ─────────────────────────────
     def row(self, integration_id: str) -> Locator:
         return self.page.get_by_test_id(f"integrations-row-{integration_id}")
 
     def open_detail(self, integration_id: str) -> None:
-        """Click a row to open its detail tab group."""
+        """Click a row to open its read-only overview."""
         self.row(integration_id).click()
 
     def label_input(self, integration_id: str) -> Locator:
@@ -146,5 +165,48 @@ class IntegrationsTab:
     def save_button(self, integration_id: str) -> Locator:
         return self.page.get_by_test_id(f"integrations-save-{integration_id}")
 
+    def save_and_wait(self, integration_id: str) -> None:
+        """Save an edit and wait for both persistence and the UI refresh."""
+        integration_url = f"/api/integrations/{integration_id}"
+        with (
+            self.page.expect_response(
+                lambda response: response.request.method == "PATCH"
+                and response.url.endswith(integration_url),
+            ) as saved,
+            self.page.expect_response(
+                lambda response: response.request.method == "GET"
+                and response.url.rstrip("/").endswith("/api/integrations"),
+            ) as refreshed,
+        ):
+            self.save_button(integration_id).click()
+        assert saved.value.ok, saved.value.text()
+        assert refreshed.value.ok, refreshed.value.text()
+        self.page.get_by_role("dialog").wait_for(state="hidden")
+
     def remove_button(self, integration_id: str) -> Locator:
         return self.page.get_by_test_id(f"integrations-remove-{integration_id}")
+
+    @property
+    def connection_settings(self) -> Locator:
+        return self.page.get_by_test_id("integration-overview").locator("details")
+
+    def open_connection_settings(self) -> None:
+        """Expand the initially collapsed settings without closing an open section."""
+        if self.connection_settings.get_attribute("open") is None:
+            self.connection_settings.locator("summary").click()
+
+    def change_tools_button(self, integration_id: str) -> Locator:
+        return self.page.get_by_test_id(f"integrations-change-tools-{integration_id}")
+
+    def rename_button(self, integration_id: str) -> Locator:
+        return self.page.get_by_test_id(f"integrations-rename-{integration_id}")
+
+    def cancel_edit(self, integration_id: str) -> None:
+        self.page.get_by_test_id(f"integrations-cancel-{integration_id}").click()
+        self.page.get_by_role("dialog").wait_for(state="hidden")
+
+    def tool_checkbox(self, operation_id: str) -> Locator:
+        return self.page.get_by_test_id(f"integration-tool-{operation_id}")
+
+    def reconnect_button(self, integration_id: str) -> Locator:
+        return self.page.get_by_test_id(f"integrations-reconnect-{integration_id}")

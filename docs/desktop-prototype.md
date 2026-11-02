@@ -149,29 +149,35 @@ container version and digest in each installer, and publishes the installers in
 the omnideck repository. On first setup, packaged applications pull the pinned
 digest from GHCR; later launches reuse the local image.
 
-Container releases have their own version line. Run the **Release container**
-workflow from `main` with a plain `X.Y.Z` version. It promotes the tested
-`main-<commit>` multi-architecture image to that GHCR tag and requires the
-matching checked-in `docs/releases/app-vX.Y.Z.md` notes. It does not create a
-GitHub Release or publish desktop installers; the in-app **What’s new** link
-opens the checked-in notes directly. An existing version can never be moved to
-a different digest. Update `desktop/container-version.txt` only when a desktop
-release should ship a different container release.
+Container releases have their own version line. The **Release container**
+workflow runs on Mondays and can also run manually from `main`. It chooses a
+plain `X.Y.Z` version, combines new app release-note fragments, and promotes the
+tested `main-<commit>` multi-architecture image to that GHCR tag. A corresponding
+`app-vX.Y.Z` GitHub Release holds the notes and recorded source digest; the
+fragments remain in the repository. The in-app **What’s new** link opens this
+release page for versions after 0.5.0. Container releases do not publish desktop
+installers, and an existing version can never be moved to a different digest.
+See [App releasing](APP_RELEASING.md) for scheduling, retries, and compatibility.
+Update `desktop/container-version.txt` only when a desktop release should ship
+a different container release.
 
-The workflow accepts these optional repository secrets:
+Signed and notarized macOS builds use required secrets in the protected
+`desktop-signing` GitHub environment:
 
 | Secret | Purpose |
 | --- | --- |
-| `DESKTOP_MAC_CSC_LINK` | Base64 or URL for the macOS signing certificate |
-| `DESKTOP_MAC_CSC_KEY_PASSWORD` | macOS signing-certificate password |
+| `DESKTOP_MAC_CERTIFICATE_P12_BASE64` | Base64 PKCS#12 archive containing the Developer ID certificate and private key |
+| `DESKTOP_MAC_CERTIFICATE_PASSWORD` | Password for the PKCS#12 archive |
+| `DESKTOP_APPLE_API_KEY_ID` | App Store Connect API key ID for notarization |
+| `DESKTOP_APPLE_API_ISSUER_ID` | App Store Connect issuer UUID for notarization |
+| `DESKTOP_APPLE_API_PRIVATE_KEY_BASE64` | Base64 App Store Connect `.p8` private key |
 | `DESKTOP_WINDOWS_CSC_LINK` | Base64 or URL for the Windows signing certificate |
 | `DESKTOP_WINDOWS_CSC_KEY_PASSWORD` | Windows signing-certificate password |
-| `DESKTOP_APPLE_ID` | Apple account used for notarization |
-| `DESKTOP_APPLE_APP_SPECIFIC_PASSWORD` | App-specific Apple password |
-| `DESKTOP_APPLE_TEAM_ID` | Apple developer team |
 
-The macOS and Windows jobs remain unsigned when the matching credentials are
-not present, which keeps local and internal prototype builds possible.
+Tag builds require the macOS credentials and fail closed when they are absent.
+Pull-request, `main`, and ordinary manual macOS builds retain the ad-hoc
+signature used for internal testing. Windows jobs remain unsigned when their
+credentials are not present.
 
 ## Desktop boundary
 

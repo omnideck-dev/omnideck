@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import MarkdownContent from '../MarkdownContent.jsx';
 import Modal from '../primitives/Modal.jsx';
+import Button from '../primitives/Button.jsx';
+import IconButton from '../primitives/IconButton.jsx';
 import styles from './TaskOutputModal.module.css';
 
 /**
@@ -20,7 +22,7 @@ export default function TaskOutputModal({ output, taskName, runNumber, onClose }
             onClose={onClose}
             width={900}
             labelledBy="task-output-title"
-            className={styles.modal}
+            layout="contained"
             testId="task-output-modal"
         >
             <div className={styles.header}>
@@ -31,20 +33,19 @@ export default function TaskOutputModal({ output, taskName, runNumber, onClose }
                     </div>
                 </div>
                 <div className={styles.headerActions}>
-                    <button
-                        className={styles.copyBtn}
+                    <Button
+                        variant="ghost"
                         onClick={handleCopy}
                         aria-label="Copy task output"
                     >
                         {copied ? <><i className="bi bi-check-lg" /> Copied</> : <><i className="bi bi-clipboard" /> Copy</>}
-                    </button>
-                    <button
-                        className={styles.closeBtn}
+                    </Button>
+                    <IconButton
                         onClick={onClose}
                         aria-label="Close"
                     >
                         <i className="bi bi-x-lg" />
-                    </button>
+                    </IconButton>
                 </div>
             </div>
             <div className={styles.content}>

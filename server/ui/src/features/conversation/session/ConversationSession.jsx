@@ -17,6 +17,7 @@ import { APP_EFFECT_TYPES } from '../../app/appEffectTypes.js';
 
 const ConversationSessionStateContext = createContext(null);
 const ActiveConversationIdContext = createContext(undefined);
+const SavedConversationIdContext = createContext(undefined);
 const ConversationSessionCommandsContext = createContext(null);
 
 export function ConversationSessionProvider({ children }) {
@@ -69,7 +70,15 @@ export function ConversationSessionProvider({ children }) {
 
     const loadConversation = useCallback(async (conversationId) => {
         const previousConversationId = session.activeConversationId;
-        const loaded = await session.loadConversation(conversationId);
+        let loaded;
+        try {
+            loaded = await session.loadConversation(conversationId);
+        } catch {
+            addToast("Couldn't open that conversation. Your current chat is still open.", {
+                type: 'error',
+            });
+            return false;
+        }
         if (!loaded) return false;
 
         if (
@@ -94,6 +103,7 @@ export function ConversationSessionProvider({ children }) {
         if (loaded.activeRun) void session.reattachActiveRun(loaded);
         return true;
     }, [
+        addToast,
         agentDispatch,
         appEffectDispatch,
         session.activeConversationId,
@@ -195,13 +205,24 @@ export function ConversationSessionProvider({ children }) {
         <ActiveConversationIdContext.Provider
             value={session.activeConversationId}
         >
-            <ConversationSessionStateContext.Provider value={state}>
-                <ConversationSessionCommandsContext.Provider value={commands}>
-                    {children}
-                </ConversationSessionCommandsContext.Provider>
-            </ConversationSessionStateContext.Provider>
+            <SavedConversationIdContext.Provider value={session.savedConversationId}>
+                <ConversationSessionStateContext.Provider value={state}>
+                    <ConversationSessionCommandsContext.Provider value={commands}>
+                        {children}
+                    </ConversationSessionCommandsContext.Provider>
+                </ConversationSessionStateContext.Provider>
+            </SavedConversationIdContext.Provider>
         </ActiveConversationIdContext.Provider>
     );
+}
+
+/** Subscribe to the server-confirmed identity available for workspace restoration. */
+export function useSavedConversationId() {
+    const savedConversationId = useContext(SavedConversationIdContext);
+    if (savedConversationId === undefined) {
+        throw new Error('useSavedConversationId must be used within ConversationSessionProvider');
+    }
+    return savedConversationId;
 }
 
 /** Subscribe to conversation identity without receiving streamed turn state. */

@@ -2,8 +2,8 @@ import styles from './SplitPanel.module.css';
 
 /**
  * Master-detail container following the SIGNAL Split Panel pattern.
- * Owns the flex row, list-panel width (35%, min 280, max 420), border-right on
- * the list, and responsive stack behavior on mobile.
+ * Owns outer gutters, spaced panes, a divider, and independent desktop scrolling.
+ * Narrow screens use stacked document flow instead of two scroll panes.
  */
 export default function SplitPanel({ children, className = '' }) {
     return <div className={`${styles.container} ${className}`}>{children}</div>;
@@ -15,4 +15,8 @@ SplitPanel.List = function SplitPanelList({ children, className = '' }) {
 
 SplitPanel.Detail = function SplitPanelDetail({ children, className = '' }) {
     return <div className={`${styles.detail} ${className}`}>{children}</div>;
+};
+
+SplitPanel.Header = function SplitPanelHeader({ children, actions }) {
+    return <div className={styles.header}><span>{children}</span>{actions}</div>;
 };

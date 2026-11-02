@@ -180,3 +180,9 @@ Release browser resources after scheduled tasks.
     /^# omnideck app 1\.2\.3/m,
   );
 });
+
+test('explicit compatibility bumps are validated and preserved', () => {
+  const breaking = validFragment.replace('type: added', 'type: changed\nbump: major');
+  assert.equal(parseFragment(breaking).bump, 'major');
+  assert.throws(() => parseFragment(breaking.replace('bump: major', 'bump: breaking')), /bump must be/);
+});

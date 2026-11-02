@@ -36,11 +36,13 @@ describe('conversation session new conversation', () => {
             return Promise.resolve({ ok: true });
         });
         const { result } = renderHook(() => useConversationSessionController());
+        expect(result.current.savedConversationId).toBeNull();
 
         await act(async () => {
             await result.current.loadConversation('existing-conversation');
         });
         expect(result.current.turns).toHaveLength(1);
+        expect(result.current.savedConversationId).toBe('existing-conversation');
 
         let nextId;
         act(() => {
@@ -49,6 +51,7 @@ describe('conversation session new conversation', () => {
 
         expect(nextId).not.toBe('existing-conversation');
         expect(result.current.activeConversationId).toBe(nextId);
+        expect(result.current.savedConversationId).toBeNull();
         expect(result.current.turns).toEqual([]);
         expect(result.current.draft).toBe('next task');
     });

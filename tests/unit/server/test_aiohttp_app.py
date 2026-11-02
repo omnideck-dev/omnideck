@@ -19,7 +19,7 @@ from server._agent_run_routes import (
     stop_handler,
 )
 from server._agent_runtime import AGENT_RUNTIME_KEY
-from server._ui_routes import index_handler
+from server._ui_routes import index_handler, manifest_handler
 
 
 def _make_request(*, raw_body: str | None = None, query: dict | None = None) -> MagicMock:
@@ -185,3 +185,30 @@ async def test_index_handler_sets_no_cache_header(monkeypatch, tmp_path) -> None
     resp = await index_handler(_make_request())
 
     assert resp.headers["Cache-Control"] == "no-cache"
+
+
+# -- manifest_handler ---------------------------------------------------------
+
+
+@pytest.mark.unit
+async def test_manifest_handler_sets_no_cache_header(monkeypatch, tmp_path) -> None:
+    """The dist/ root isn't otherwise routed, so this must serve the manifest directly."""
+    ui_dist = tmp_path / "dist"
+    ui_dist.mkdir()
+    (ui_dist / "manifest.webmanifest").write_text("{}")
+    monkeypatch.setattr("server._ui_routes.UI_DIST_DIR", ui_dist)
+
+    resp = await manifest_handler(_make_request())
+
+    assert resp.headers["Cache-Control"] == "no-cache"
+
+
+@pytest.mark.unit
+async def test_manifest_handler_404s_when_missing(monkeypatch, tmp_path) -> None:
+    ui_dist = tmp_path / "dist"
+    ui_dist.mkdir()
+    monkeypatch.setattr("server._ui_routes.UI_DIST_DIR", ui_dist)
+
+    resp = await manifest_handler(_make_request())
+
+    assert resp.status == 404
