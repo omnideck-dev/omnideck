@@ -45,7 +45,7 @@ describe('MCP connection setup', () => {
                 expect(JSON.parse(options.body)).toEqual({ slug: 'slack', label: 'Slack', client_id: '123.456' });
                 return response({ state: 'mcp_attempt', status: 'pending', authorize_url: 'https://slack.com/authorize' });
             }
-            expect(url).toBe('/api/integrations/mcp/oauth/status/mcp_attempt');
+            expect(url).toBe('/api/integrations/oauth/status/mcp_attempt');
             return response({ status: 'success', integration_id: 'slack_fixture' });
         });
         render(<SlackOAuthConnection entry={{ id: 'slack', title: 'Slack' }} onBack={vi.fn()}
@@ -93,7 +93,7 @@ describe('MCP connection setup', () => {
     it('routes cancellation through the same owned MCP attempt', async () => {
         globalThis.fetch = vi.fn(() => response({ status: 'cancelled' }));
         await cancelIntegrationOAuth('mcp_attempt');
-        expect(fetch).toHaveBeenCalledWith('/api/integrations/mcp/oauth/status/mcp_attempt', { method: 'DELETE' });
+        expect(fetch).toHaveBeenCalledWith('/api/integrations/oauth/status/mcp_attempt', { method: 'DELETE' });
     });
 
     it('reconnects Slack without changing its identity or selecting newly discovered tools', async () => {

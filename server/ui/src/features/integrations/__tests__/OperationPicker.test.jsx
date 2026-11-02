@@ -14,6 +14,37 @@ const GROUPS = [
 ];
 
 describe('OperationPicker', () => {
+    it('disables rejected schemas and excludes them from individual, group and bulk selection', () => {
+        const onChange = vi.fn();
+        const reason = 'Unavailable: the service supplied an invalid input schema.';
+        render(<OperationPicker operations={[
+            { id: 'mcp.good', title: 'Good tool' },
+            { id: 'mcp.bad', title: 'Bad tool', unavailable_reason: reason },
+        ]} selectedIds={['mcp.bad']} onChange={onChange} collapsible />);
+        const rejected = screen.getByTestId('integration-tool-mcp.bad');
+        expect(rejected).toBeDisabled();
+        expect(rejected).not.toBeChecked();
+        expect(screen.getByText(reason)).toBeVisible();
+        expect(screen.getByText('0 of 1 selected')).toBeVisible();
+        fireEvent.click(screen.getByRole('checkbox', { name: 'Select all in Tools' }));
+        expect(onChange).toHaveBeenLastCalledWith(['mcp.good']);
+        fireEvent.click(screen.getByRole('button', { name: 'Select all', exact: true }));
+        expect(onChange).toHaveBeenLastCalledWith(['mcp.good']);
+        fireEvent.click(screen.getByTestId('integration-tool-mcp.good'));
+        expect(onChange).toHaveBeenLastCalledWith(['mcp.good']);
+    });
+
+    it('keeps an entirely unavailable catalog visible with selection controls disabled', () => {
+        render(<OperationPicker operations={[
+            { id: 'mcp.bad', title: 'Unsupported tool', unavailable_reason: 'Unavailable: unsupported schema version.' },
+        ]} selectedIds={[]} collapsible />);
+        expect(screen.getByText('Unsupported tool')).toBeVisible();
+        expect(screen.getByText('0 of 0 selected')).toBeVisible();
+        expect(screen.getByRole('button', { name: 'Select all', exact: true })).toBeDisabled();
+        expect(screen.getByRole('checkbox', { name: 'Select all in Tools' })).toBeDisabled();
+        expect(screen.getByRole('checkbox', { name: 'Select all in Tools' })).toHaveAttribute('aria-checked', 'false');
+    });
+
     it('keeps MCP model descriptions out of rendering and search without changing metadata', () => {
         const operations = [
             { id: 'mcp.search', title: 'Search messages', description: '# Model-only instructions' },

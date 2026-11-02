@@ -16,7 +16,7 @@ async def authorization_server():
         "authorization": None, "cimd": False, "accepted_access": "fixture-access",
         "expires_in": 3600,
         "preregistered": False,
-        "mcp": False, "calls": [], "tools": ["read_value", "write_value"],
+        "mcp": False, "calls": [], "tools": ["read_value", "write_value"], "schemas": {},
         "auth_methods": ["none"], "reject_refresh": False,
     }
 
@@ -64,7 +64,7 @@ async def authorization_server():
     async def token(request):
         body = await request.post()
         if body["grant_type"] == "refresh_token":
-            assert body["refresh_token"] == "fixture-refresh"
+            assert body["refresh_token"] == ("rotated-refresh" if state["refreshes"] else "fixture-refresh")
             assert body["resource"] == state["endpoint"]
             state["refreshes"] += 1
             if state["reject_refresh"]:
@@ -106,7 +106,7 @@ async def authorization_server():
                       "serverInfo": {"name": "OAuth fixture", "version": "1"}}
         elif method == "tools/list":
             result = {"tools": [{"name": name, "description": name.replace("_", " "),
-                                 "inputSchema": {"type": "object", "properties": {"value": {"type": "string"}}}}
+                                 "inputSchema": state["schemas"].get(name, {"type": "object", "properties": {"value": {"type": "string"}}})}
                                 for name in state["tools"]]}
         elif method == "tools/call":
             state["calls"].append(body["params"])

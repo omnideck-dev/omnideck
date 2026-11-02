@@ -169,7 +169,8 @@ test('Rust owns all CLI arguments and guards navigation plus command origin', ()
   assert.match(cliRust, /Self::Version => &\["--version"\]/);
   assert.match(cliRust, /Self::RuntimeStatus => &\["--json", "runtime", "status"\]/);
   assert.match(cliRust, /Self::InstanceStatus =>/);
-  assert.match(cliRust, /Self::StartInstance =>/);
+  assert.match(cliRust, /Self::StartInstance \| Self::WaitInstance =>/);
+  assert.match(cliRust, /self == Self::WaitInstance/);
   assert.match(cliRust, /platform::resource_name\(CONTAINER_NAME\)/);
   assert.match(rust, /"environment"\.into\(\),\s+"ensure"\.into\(\)/);
   assert.match(rust, /WebviewWindowBuilder::new\(app, "main"/);

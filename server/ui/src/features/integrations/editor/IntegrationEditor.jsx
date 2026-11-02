@@ -2,7 +2,7 @@ import { useState } from 'react';
 
 import Button from '../../../components/primitives/Button.jsx';
 import Callout from '../../../components/primitives/Callout.jsx';
-import ConfirmButton from '../../../components/primitives/ConfirmButton.jsx';
+import Modal from '../../../components/primitives/Modal.jsx';
 import { getConnectionAdapter } from '../catalog/adapterRegistry.js';
 import IntegrationIcon from '../components/IntegrationIcon.jsx';
 import { operationGroups } from '../components/OperationPicker.jsx';
@@ -16,11 +16,12 @@ export default function IntegrationEditor({
     onSave, onRemove, onReconnect, onClearSaveError,
 }) {
     const [dialog, setDialog] = useState(null);
+    const [removing, setRemoving] = useState(false);
     const adapter = getConnectionAdapter(record.slug);
     const groups = operationGroups(record.operations || [], catalogEntry?.operation_groups || []);
     const selected = new Set(record.operation_grants || []);
     const selectedCount = groups.reduce((count, group) => count + group.operations.filter(
-        operation => selected.has(operation.id),
+        operation => selected.has(operation.id) && !operation.unavailable_reason,
     ).length, 0);
     const open = (next) => {
         onClearSaveError?.();
@@ -39,7 +40,14 @@ export default function IntegrationEditor({
             {record.state !== 'running' && (
                 <div className={styles.attention}>
                     <Callout tone="warning" title="This integration needs attention"
-                        description={`Use “${adapter.updateAction}” in Connection settings to restore access.`} />
+                        description={`${adapter.updateAction} to restore access.`}>
+                        <div className={styles.recoveryAction}>
+                            <Button variant="filled" onClick={onReconnect} disabled={saving}
+                                data-testid={`integrations-repair-${record.id}`}>
+                                {adapter.updateAction}
+                            </Button>
+                        </div>
+                    </Callout>
                 </div>
             )}
             <section aria-labelledby="integration-tools-heading">
@@ -47,7 +55,7 @@ export default function IntegrationEditor({
                 <p className={styles.description}>{toolCount(selectedCount)} for this integration.</p>
                 <div className={styles.toolSummary}>
                     {groups.map(group => {
-                        const enabled = group.operations.filter(operation => selected.has(operation.id));
+                        const enabled = group.operations.filter(operation => selected.has(operation.id) && !operation.unavailable_reason);
                         return (
                             <section className={styles.summaryGroup} key={group.id} aria-label={group.title}>
                                 {groups.length > 1 && <h3>{group.title}</h3>}
@@ -81,11 +89,30 @@ export default function IntegrationEditor({
                         {adapter.updateAction}
                     </Button>
                 </div>
-                <ConfirmButton className={styles.remove} label="Remove integration" confirmLabel="Confirm removal?"
-                    busyLabel="Removing…" title="Remove this integration" onConfirm={onRemove} disabled={saving}
-                    data-testid={`integrations-remove-${record.id}`} />
-                {removeError && <Callout tone="danger" description={removeError} />}
+                <Button variant="danger" className={styles.remove} onClick={() => open('remove')} disabled={saving}
+                    data-testid={`integrations-remove-${record.id}`}>Remove integration…</Button>
             </details>
+            {dialog === 'remove' && (
+                <Modal labelledBy="integration-delete-title" layout="contained"
+                    onClose={removing ? undefined : () => setDialog(null)}>
+                    <header className={styles.dialogHeader}>
+                        <h2 id="integration-delete-title">Delete {record.label}?</h2>
+                    </header>
+                    <div className={styles.dialogBody}>
+                        <p className={styles.description}>This removes the connection and its tool assignments from all agents and skills. Reconnecting later won’t restore those assignments.</p>
+                        {removeError && <Callout tone="danger" description={removeError} />}
+                    </div>
+                    <footer className={styles.dialogFooter}>
+                        <div className={styles.actions}>
+                            <Button variant="ghost" disabled={removing} onClick={() => setDialog(null)}>Cancel</Button>
+                            <Button variant="danger" loading={removing} loadingLabel="Deleting…" onClick={async () => {
+                                setRemoving(true);
+                                try { await onRemove(); } finally { setRemoving(false); }
+                            }}>Delete integration</Button>
+                        </div>
+                    </footer>
+                </Modal>
+            )}
             {dialog === 'tools' && (
                 <IntegrationToolsDialog record={record} groups={catalogEntry?.operation_groups || []}
                     saving={saving} error={saveError} onSave={onSave} onClose={() => setDialog(null)} />

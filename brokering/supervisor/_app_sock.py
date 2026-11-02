@@ -6,7 +6,7 @@ and responses use the shared length-prefixed JSON framing.
 Verbs
 -----
 
-**add** (slug, user_suffix, label, auth_blob, operation_grants)
+**add** (slug, user_suffix, label, auth_blob, operation_grants, discovered_operations?)
     Encrypt credentials, spawn a broker, return the new record.
     Both the app-password and OAuth add flows end here.
 
@@ -17,12 +17,16 @@ Verbs
     Look up a broker's UDS path by integration ID. Called by the
     broker_client before every tool invocation.
 
+**renew_authorization** (id, generation)
+    Renew rejected Google/MCP credentials, or reuse an already-replaced
+    generation. Never execute or replay a tool operation.
+
 **update** (id, operation_grants?, label?)
     Change operation grants and/or label on a live integration. At least one
     field required. Label changes are meta-only; grant changes are saved and
     sent to the running broker over its private control channel.
 
-**reconnect** (id, auth_blob)
+**reconnect** (id, auth_blob, discovered_operations?)
     Replace credentials in a healthy broker, or start one if degraded. Save
     accepted credentials and preserve exact grants regardless of scope changes.
 
@@ -38,6 +42,7 @@ The handler is a thin dispatcher: it parses args and delegates to a
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -45,6 +50,7 @@ from brokering._rpc import RpcError
 from brokering.connection_data import BrokerConnectionData
 from integrations.operation_grants import OperationGrants
 from integrations.operations import operation_descriptors
+from integrations.discovery import DiscoveredOperation, parse_discovered_operations
 from brokering.supervisor._manager import BrokerManager
 from brokering.supervisor._registry import BrokeredConnectionRecord, Registry
 from brokering.supervisor.types import IntegrationConnectionMeta
@@ -73,8 +79,8 @@ class AppSockHandler:
         if verb == "resolve":
             connection_id = _require_str(args, "id")
             record = self._registry.get(connection_id)
-            # Native connections keep their cheap, unchanged resolution path.
-            if record is not None and record.driver_id == "remote.mcp":
+            # Both OAuth drivers resolve through supervisor-owned renewal.
+            if record is not None and record.driver_id in {"remote.mcp", "native.google_workspace"}:
                 await self._manager.ensure_fresh_authorization(connection_id)
             return self._resolve(args)
         if verb == "update":
@@ -85,6 +91,11 @@ class AppSockHandler:
             return await self._remove(args)
         if verb == "mcp_setup_settings":
             return await self._manager.mcp_setup_settings(_require_str(args, "id"))
+        if verb == "renew_authorization":
+            renewed = await self._manager.renew_rejected_authorization(
+                _require_str(args, "id"), _require_str(args, "generation"),
+            )
+            return {"renewed": renewed}
         msg = f"unknown verb: {verb}"
         raise RpcError("BAD_REQUEST", msg)
 
@@ -99,6 +110,7 @@ class AppSockHandler:
             user_suffix=_optional_str(args, "user_suffix"),
             label=_require_str(args, "label"),
             auth_blob=auth_blob,
+            discovered_operations=_parse_discovery(args),
             operation_grants=operation_grants,
             kind=args.get("kind"),
         )
@@ -131,6 +143,8 @@ class AppSockHandler:
             "socket": str(record.broker.socket_path),
             "kind": record.meta.kind,
         }
+        if record.driver_id in {"remote.mcp", "native.google_workspace"}:
+            result["authorization_generation"] = record.authorization_generation
         if isinstance(record.meta, IntegrationConnectionMeta):
             result["operation_grants"] = sorted(record.meta.agent_operation_grants)
             result["available_operation_ids"] = sorted(record.available_operations)
@@ -169,14 +183,26 @@ class AppSockHandler:
         record = await self._manager.reconnect(
             connection_id,
             auth_blob=auth_blob,
+            discovered_operations=_parse_discovery(args),
             kind=args.get("kind"),
         )
         return _record_to_dict(record)
 
 
+def _parse_discovery(args: dict[str, Any]) -> tuple[DiscoveredOperation, ...]:
+    # Native integrations have no remote catalog; MCP setup supplies a list.
+    try:
+        return parse_discovered_operations(json.dumps(args.get("discovered_operations", []), allow_nan=False))
+    except (TypeError, ValueError) as exc:
+        raise RpcError("BAD_REQUEST", "Invalid connection tool catalog.") from exc
+
+
 def _parse_connection_data(value: object) -> BrokerConnectionData:
     try:
-        return BrokerConnectionData.from_wire(value)
+        fields = BrokerConnectionData.from_wire(value)
+        if "discovered_operations" in fields:
+            raise ValueError("Discovered tools must be supplied separately from credentials")
+        return fields
     except ValueError as exc:
         raise RpcError("BAD_REQUEST", str(exc)) from exc
 
@@ -202,7 +228,7 @@ def _record_to_dict(record: BrokeredConnectionRecord) -> dict[str, Any]:
 
 def _operations(record: BrokeredConnectionRecord) -> list[dict[str, Any]]:
     return operation_descriptors(record.available_operations) + [
-        operation.public_dict()
+        operation.selection_dict()
         for operation in record.discovered_operations
     ]
 

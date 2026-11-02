@@ -19,6 +19,7 @@ pub(crate) enum FixedOperation {
     RuntimeEnsure,
     InstanceStatus,
     StartInstance,
+    WaitInstance,
 }
 
 impl FixedOperation {
@@ -35,12 +36,17 @@ impl FixedOperation {
                     "status".into(),
                 ];
             }
-            Self::StartInstance => {
+            Self::StartInstance | Self::WaitInstance => {
                 return vec![
                     "--json".into(),
                     "--name".into(),
                     platform::resource_name(CONTAINER_NAME),
-                    "start".into(),
+                    if self == Self::WaitInstance {
+                        "wait"
+                    } else {
+                        "start"
+                    }
+                    .into(),
                 ];
             }
         };
@@ -49,7 +55,7 @@ impl FixedOperation {
 
     fn timeout(self) -> Duration {
         match self {
-            Self::RuntimeEnsure | Self::StartInstance => SETUP_TIMEOUT,
+            Self::RuntimeEnsure | Self::StartInstance | Self::WaitInstance => SETUP_TIMEOUT,
             _ => INSPECTION_TIMEOUT,
         }
     }
@@ -493,6 +499,25 @@ mod tests {
     use super::*;
 
     #[test]
+    fn migration_failure_preserves_safe_detail_for_recovery_screen() {
+        let error = require_success(ProcessResult {
+            exit_code: 1,
+            stdout: r#"{"error":{"code":"MIGRATION_FAILED","message":"Saved settings couldn’t be upgraded.","detail":"Failed startup phase: migrations (step: broker:001_operation_grants)"}}"#.into(),
+            stderr: String::new(),
+        }, "startup").unwrap_err();
+        assert_eq!(error.code, "MIGRATION_FAILED");
+        assert!(error.technical().contains("broker:001_operation_grants"));
+        let state = crate::parity::error("migration", "resume", 3, error.technical());
+        assert_eq!(state.title, "omnideck couldn’t start");
+        assert!(state.can_retry);
+        assert!(!state.can_open);
+        assert!(state
+            .technical
+            .unwrap()
+            .contains("broker:001_operation_grants"));
+    }
+
+    #[test]
     fn operation_arguments_are_fixed() {
         assert_eq!(FixedOperation::Version.args(), ["--version"]);
         assert_eq!(
@@ -506,6 +531,10 @@ mod tests {
         assert_eq!(
             FixedOperation::StartInstance.args(),
             ["--json", "--name", CONTAINER_NAME, "start"]
+        );
+        assert_eq!(
+            FixedOperation::WaitInstance.args(),
+            ["--json", "--name", CONTAINER_NAME, "wait"]
         );
     }
 

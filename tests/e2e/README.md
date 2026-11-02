@@ -66,7 +66,8 @@ Coverage includes:
   searchable picker, exact-account navigation, approval refresh, and draft
   preservation when leaving the skill editor.
 - `settings/test_selection_recovery.py`: failed-save retry, catalog outage
-  without selection loss, and exports excluding local connection authority.
+  without selection loss, exports excluding local connection authority, and
+  integration deletion cleaning saved assignments without stale drafts restoring them.
 
 Selection tests use real application APIs and the local test integration broker.
 Failure tests intercept only the request being failed; retries and persistence

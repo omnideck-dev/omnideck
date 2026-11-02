@@ -82,7 +82,7 @@ def connection_tools(connection: IntegrationConnection) -> list[Callable[..., An
     tools.extend(
         build_mcp_tool(connection, operation)
         for operation in connection.discovered_operations
-        if operation.id in connection.operation_grants
+        if operation.id in connection.operation_grants and operation.unavailable_reason is None
     )
     return tools
 

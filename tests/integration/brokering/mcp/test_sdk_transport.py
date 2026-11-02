@@ -1,8 +1,8 @@
 """Exercise the pinned SDK over real loopback HTTP, without external accounts.
 
-The modern fixture is an official SDK server. The small legacy wire fixture
-deliberately rejects discovery, proving automatic fallback rather than forcing
-the client into legacy mode. These are compatibility gates, not app E2E tests.
+The official SDK server exercises tool discovery and calls with both protocol
+versions. A separate wire fixture rejects discovery to prove automatic fallback
+to the initialize handshake. These are compatibility gates, not app E2E tests.
 """
 
 import asyncio
@@ -44,7 +44,14 @@ async def serve_sdk(server):
                     await asyncio.gather(task, return_exceptions=True)
 
 
-async def test_modern_discovery_and_call_over_http():
+@pytest.mark.parametrize(
+    ("connection_mode", "protocol_version"),
+    [
+        pytest.param("auto", "2026-07-28", id="2026-07-28-discovery"),
+        pytest.param("legacy", "2025-11-25", id="2025-11-25-initialize"),
+    ],
+)
+async def test_tool_discovery_and_call_over_http(connection_mode, protocol_version):
     server = MCPServer("omnideck compatibility fixture")
 
     @server.tool()
@@ -53,8 +60,8 @@ async def test_modern_discovery_and_call_over_http():
         return value
 
     async with serve_sdk(server) as endpoint:
-        async with Client(endpoint) as client:
-            assert client.protocol_version == "2026-07-28"
+        async with Client(endpoint, mode=connection_mode) as client:
+            assert client.protocol_version == protocol_version
             catalog = await client.list_tools()
             assert [tool.name for tool in catalog.tools] == ["echo"]
             assert catalog.tools[0].input_schema["properties"]["value"]["type"] == "string"
@@ -69,7 +76,7 @@ async def test_empty_catalog_is_a_successful_connection():
             assert (await client.list_tools()).tools == []
 
 
-async def test_legacy_fallback_and_pagination_preserve_schema():
+async def test_discovery_rejection_falls_back_to_initialize_and_preserves_paginated_schema():
     seen = []
     schema = {
         "type": "object",

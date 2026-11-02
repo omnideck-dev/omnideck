@@ -36,9 +36,8 @@ from server._custom_app_routes import register_custom_app_routes
 from server._custom_tool_routes import register_custom_tool_routes
 from server._desktop_routes import register_desktop_routes
 from server._feature_routes import register_feature_routes
-from server._integrations_oauth_routes import register_oauth_routes
+from server.oauth_setup.routes import register_oauth_routes
 from server._integrations_routes import register_integrations_routes
-from server._mcp_routes import register_mcp_routes
 from server._memory_routes import register_memory_routes
 from server._model_routes import register_model_routes
 from server._pack_routes import register_pack_routes
@@ -115,12 +114,14 @@ def create_app(
     from integrations.connection_cache import IntegrationConnectionCache
     from integrations.service import integration_service
     from server._integration_cache import INTEGRATION_CACHE_KEY
+    from server._integration_selections import SELECTION_MUTATION_LOCK
 
     browser_runtime = BrowserRuntime()
     app = web.Application(client_max_size=client_max_size, middlewares=[cors_and_error_middleware])
     app[BROWSER_RUNTIME_KEY] = browser_runtime
     integration_cache = IntegrationConnectionCache(integration_service)
     app[INTEGRATION_CACHE_KEY] = integration_cache
+    app[SELECTION_MUTATION_LOCK] = asyncio.Lock()
     app[AGENT_RUNTIME_KEY] = AgentRuntime(
         conversations=ConversationStore(), browser_runtime=browser_runtime,
         integration_cache=integration_cache,
@@ -180,7 +181,6 @@ def create_app(
     # Integrations (supervisor / brokers)
     register_integrations_routes(app)
     register_oauth_routes(app)
-    register_mcp_routes(app)
 
     # Container file serving — lets the frontend (and agent-authored HTML) reference
     # container files by their real path instead of base64-encoding them.

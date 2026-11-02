@@ -3884,10 +3884,13 @@ body {
       <p>Keep disclosure titles in <code>--text-primary</code> on hover, not link blue.
         Hover uses <code>--surface</code> on the disclosure button and brightens its
         chevron to <code>--text-primary</code>, with <code>--radius-md</code> corners.
+        Give the disclosure button <code>--sp-2</code> padding on all sides, with
+        <code>--sp-1</code> vertical header padding to preserve row density.
         Retain the accent keyboard-focus outline. The separate remove button keeps
         its own shared IconButton hover treatment.</p>
       <p>The leading icon occupies 20px, followed by a 12px gap; disclosed content
-        aligns with the row title. An optional quiet summary may follow the description.
+        aligns with the row title, including the disclosure button's inset.
+        An optional quiet summary may follow the description.
         Skill groups use headings, not a second nested disclosure. Expanded tools use
         a responsive multi-column <code>SelectionToolList</code>: MCP titles only,
         native integration titles with their existing short descriptions. Truncate long

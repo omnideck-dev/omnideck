@@ -76,22 +76,16 @@ export async function getMCPConnectionSettings(connectionId) {
 }
 
 export async function getIntegrationOAuthStatus(state) {
-    const prefix = oauthPrefix(state);
     return readJson(await fetch(
-        `${prefix}/status/${encodeURIComponent(state)}`,
+        `/api/integrations/oauth/status/${encodeURIComponent(state)}`,
     ));
 }
 
 export async function cancelIntegrationOAuth(state) {
-    const prefix = oauthPrefix(state);
     return readJson(await fetch(
-        `${prefix}/status/${encodeURIComponent(state)}`,
+        `/api/integrations/oauth/status/${encodeURIComponent(state)}`,
         { method: 'DELETE' },
     ));
-}
-
-function oauthPrefix(state) {
-    return state.startsWith('mcp_') ? '/api/integrations/mcp/oauth' : '/api/integrations/oauth';
 }
 
 export function integrationError(error, fallback = 'Request failed') {

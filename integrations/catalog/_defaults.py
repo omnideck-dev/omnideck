@@ -25,13 +25,8 @@ _GOOGLE_WORKSPACE_DRIVER = BrokerDriver(
     id="native.google_workspace",
     command=("python", "-m", "brokering.brokers.google_workspace_broker"),
     env_injection={
-        "client_id": "OAUTH_CLIENT_ID",
-        "client_secret": "OAUTH_CLIENT_SECRET",
         "access_token": "OAUTH_ACCESS_TOKEN",
-        "refresh_token": "OAUTH_REFRESH_TOKEN",
-        "token_uri": "OAUTH_TOKEN_URI",
         "scopes": "OAUTH_SCOPES",
-        "expires_at": "OAUTH_EXPIRES_AT",
     },
     host_paths=(HostPathBinding(role="downloads", env_var="DOWNLOADS_DIR", mode="write"),),
 )

@@ -4,6 +4,14 @@ import { describe, expect, it } from 'vitest';
 import IntegrationRowSummary from '../components/IntegrationRowSummary.jsx';
 
 describe('IntegrationRowSummary', () => {
+    it('excludes saved selections whose tool schema became unavailable', () => {
+        render(<IntegrationRowSummary record={{ state: 'running', slug: 'mcp',
+            operation_grants: ['read', 'write'], operations: [
+                { id: 'read' }, { id: 'write', unavailable_reason: 'Invalid schema' },
+            ],
+        }} />);
+        expect(screen.getByText('1 tool selected')).toBeInTheDocument();
+    });
     it.each([
         [[], 'No tools selected'],
         [['read'], '1 tool selected'],

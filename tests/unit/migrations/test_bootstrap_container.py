@@ -14,6 +14,10 @@ def test_real_root_bootstrap_preserves_history_and_runtime_boundaries(tmp_path):
         pytest.skip("requires isolated root container and disposable /var/lib/omnideck")
     from migrations.__main__ import bootstrap
     from migrations._runner import _migration_plan
+    from brokering.supervisor._store import read_raw_meta, read_secrets, write_secrets
+    from brokering.supervisor._operation_metadata import bind_mcp_catalog
+    from brokering.connection_data import BrokerConnectionData
+    from integrations.discovery import parse_discovered_operations
 
     assert os.geteuid() == 0
     app, broker = pwd.getpwnam("omnideck"), pwd.getpwnam("broker")
@@ -36,11 +40,30 @@ def test_real_root_bootstrap_preserves_history_and_runtime_boundaries(tmp_path):
         )
     )
     (creds / "work.enc").write_bytes(b"encrypted sentinel")
-    (vault / ".master-key").write_bytes(b"key sentinel")
+    key = b"k" * 32
+    (vault / ".master-key").write_bytes(key)
+    tools = [{"id": "mcp.search", "title": "Search", "description": "Find documents",
+              "input_schema": {"type": "object", "properties": {}}}]
+    # MCP is introduced by this branch: seed its current storage contract,
+    # not an unreleased catalog-in-secrets format requiring a fictional migration.
+    operations = parse_discovered_operations(json.dumps(tools))
+    tools = [operation.public_dict() for operation in operations]
+    (creds / "mcp_work.meta").write_text(json.dumps({
+        "version": 3, "id": "mcp_work", "kind": "integration", "slug": "mcp", "label": "Work",
+        "added_at": "2026-10-25T12:00:00Z", "updated_at": "2026-10-25T12:00:00Z",
+        "agent_operation_grants": ["mcp.search"], "discovered_operations": tools,
+    }))
+    credentials = bind_mcp_catalog(BrokerConnectionData({"access_token": "test-only-token"}), operations)
+    write_secrets(vault, "mcp_work", key, credentials)
+    mcp_before = {suffix: (creds / f"mcp_work.{suffix}").read_bytes() for suffix in ("meta", "enc")}
     (state / "skills").mkdir()
     skill = state / "skills" / "mail.json"
     skill.write_text('{"tool_categories":["email"]}')
     bootstrap(state, vault, **owner_args)
+    assert read_raw_meta(vault, "mcp_work")["discovered_operations"] == tools
+    assert read_raw_meta(vault, "mcp_work")["agent_operation_grants"] == ["mcp.search"]
+    assert read_secrets(vault, "mcp_work", key) == credentials
+    assert mcp_before == {suffix: (creds / f"mcp_work.{suffix}").read_bytes() for suffix in ("meta", "enc")}
     assert json.loads(skill.read_text())["tool_categories"] == ["integration:work"]
     assert not (state / "skills" / "assistant.json").exists()
     assert not (state / "agent_profiles").exists()

@@ -15,7 +15,7 @@ from mcp.client.auth import AuthorizationCodeResult, OAuthClientProvider, OAuthF
 from mcp.shared.auth import OAuthClientInformationFull, OAuthClientMetadata, OAuthToken
 from pydantic import AnyUrl
 
-from server._mcp_oauth_callback import listen_for_mcp_oauth
+from tests.integration.server.oauth_callback_fixture import listen_for_oauth
 from tests.integration.brokering.mcp.fixtures import authorization_server as run_authorization_server
 
 
@@ -138,7 +138,7 @@ async def test_preregistered_client_uses_real_loopback_callback(authorization_se
     state = authorization_server
     state["preregistered"] = True
     state["auth_methods"] = auth_methods
-    async with listen_for_mcp_oauth() as receiver:
+    async with listen_for_oauth() as receiver:
         storage = MemoryTokenStorage(client_info=OAuthClientInformationFull(
             client_id="preregistered-fixture", issuer=state["origin"],
             redirect_uris=[AnyUrl(receiver.redirect_uri)], token_endpoint_auth_method="none",

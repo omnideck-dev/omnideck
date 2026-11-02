@@ -146,6 +146,44 @@ def test_mcp_oauth_tools_and_cancel_cleanup(page, remote_service):
                 page.request.delete(f'{base}/api/integrations/{record["id"]}')
 
 
+@pytest.mark.parametrize("viewport", [{"width": 1280, "height": 900}, {"width": 390, "height": 844}], ids=["desktop", "phone"])
+def test_mcp_invalid_schema_is_disabled_while_valid_tool_can_be_saved(page, remote_service, viewport):
+    page.set_viewport_size(viewport)
+    base = os.environ.get("OMNIDECK_URL", "http://localhost:8080")
+    label = "MCP schema availability fixture"
+    remote_service["schemas"]["write_value"] = {
+        "type": "object", "properties": {"value": {"type": "integerish"}},
+    }
+    try:
+        tab, flow, popup = connect(page, remote_service, label)
+        popup.get_by_role("button", name="Allow test access").click()
+        expect(flow.tools_heading).to_be_visible(timeout=20_000)
+        record = next(item for item in connections(page) if item["label"] == label)
+        integration_id = record["id"]
+        assert record["available_operation_ids"] == ["mcp.read_value"]
+        picker = page.get_by_test_id("integration-operation-picker")
+        expect(tab.tool_checkbox("mcp.write_value")).to_be_disabled()
+        expect(picker.get_by_text("Unavailable: the service supplied an invalid input schema.", exact=True)).to_be_visible()
+        assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+        page.get_by_test_id("integration-tools-enable-all").click()
+        expect(tab.tool_checkbox("mcp.read_value")).to_be_checked()
+        expect(tab.tool_checkbox("mcp.write_value")).not_to_be_checked()
+        expect(picker.get_by_text("1 of 1 selected", exact=True)).to_be_visible()
+        flow.next_()
+        flow.done.click()
+        expect(tab.row(integration_id)).to_be_visible()
+        assert next(item for item in connections(page) if item["id"] == integration_id)["operation_grants"] == ["mcp.read_value"]
+        tab.open_detail(integration_id)
+        tab.change_tools_button(integration_id).click()
+        expect(tab.tool_checkbox("mcp.write_value")).to_be_disabled()
+        expect(tab.tool_checkbox("mcp.read_value")).to_be_checked()
+        popup.close()
+    finally:
+        for record in connections(page):
+            if record["label"] == label:
+                page.request.delete(f'{base}/api/integrations/{record["id"]}')
+
+
 def test_mcp_cancelling_browser_signin_creates_nothing(page, remote_service):
     _, flow, popup = connect(page, remote_service, "Never authorized")
     page.get_by_role("button", name="Exit setup", exact=True).click()

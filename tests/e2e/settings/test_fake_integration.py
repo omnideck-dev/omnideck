@@ -224,18 +224,13 @@ def test_fake_integration_full_lifecycle(page: Page) -> None:
 
     tab.open_connection_settings()
     tab.remove_button(_ID).click()
-    # Feature styling must not override the shared armed palette. This catches
-    # danger-colored text disappearing against the solid danger hover fill.
-    expect(tab.remove_button(_ID)).to_have_text("Confirm removal?")
-    expect(tab.remove_button(_ID)).to_have_css("color", "rgb(255, 255, 255)")
-    assert tab.remove_button(_ID).evaluate("""element => {
-        const style = getComputedStyle(element);
-        return style.backgroundColor !== style.color
-            && style.backgroundColor !== 'rgba(0, 0, 0, 0)';
-    }""")
-    page.get_by_role("heading", name=_RENAMED, exact=True).hover()
-    expect(tab.remove_button(_ID)).to_have_css("color", "rgb(255, 255, 255)")
+    dialog = page.get_by_role("dialog", name=f"Delete {_RENAMED}?")
+    expect(dialog).to_contain_text("its tool assignments from all agents and skills")
+    expect(dialog).to_contain_text("Reconnecting later won’t restore those assignments.")
+    dialog.get_by_role("button", name="Cancel", exact=True).click()
+    expect(tab.row(_ID)).to_be_visible()
     tab.remove_button(_ID).click()
+    page.get_by_role("button", name="Delete integration", exact=True).click()
     expect(tab.row(_ID)).to_be_hidden()
     removed = _invoke(_ID, "test.value.get")
     assert removed["ok"] is False

@@ -9,11 +9,12 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from typing import Literal
+from uuid import uuid4
 
 from integrations.operation_grants import OperationGrants
 from integrations.discovery import DiscoveredOperation
 from brokering.supervisor._spawn import BrokerHandle
-from brokering.supervisor.types import ConnectionMeta
+from brokering.supervisor.types import ConnectionMeta, IntegrationConnectionMeta
 
 ConnectionState = Literal["running", "auth_failed", "broken"]
 
@@ -50,8 +51,12 @@ class BrokeredConnectionRecord:
     expected_termination: bool = False
     # Serialize grant handoffs with reconnect/remove and watcher respawns.
     mutation_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
-    discovered_operations: tuple[DiscoveredOperation, ...] = ()
     driver_id: str = ""
+    authorization_generation: str = field(default_factory=lambda: uuid4().hex)
+
+    @property
+    def discovered_operations(self) -> tuple[DiscoveredOperation, ...]:
+        return self.meta.discovered_operations if isinstance(self.meta, IntegrationConnectionMeta) else ()
 
 
 class Registry:

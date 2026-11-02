@@ -42,11 +42,28 @@ describe('Unified selections', () => {
         expect(onOpenIntegration).toHaveBeenCalledWith('work');
     });
 
-    it('keeps missing selections visible rather than silently granting a replacement', () => {
-        render(<ToolSelection categories={[integration]} categoryIds={['integration:deleted']} />);
-        expect(screen.getByTestId('selected-tool:integration:deleted')).toHaveTextContent('Integration');
+    it('omits deleted integration rows without selecting a replacement or rewriting selections', () => {
+        const onCategoriesChange = vi.fn();
+        render(<ToolSelection categories={[integration]} categoryIds={['integration:deleted']} onCategoriesChange={onCategoriesChange} />);
+        expect(screen.queryByTestId('selected-tool:integration:deleted')).not.toBeInTheDocument();
         expect(screen.queryByText(/No longer available|Integration unavailable/)).not.toBeInTheDocument();
         expect(screen.queryByTestId('selected-tool:integration:work')).not.toBeInTheDocument();
+        expect(onCategoriesChange).not.toHaveBeenCalled();
+    });
+
+    it('removes deleted integration details from skills when the catalog refreshes', async () => {
+        const user = userEvent.setup();
+        const props = { skills: [skill], skillIds: [skill.id], onCategoriesChange: vi.fn(), onSkillsChange: vi.fn() };
+        const { rerender } = render(<ToolSelection {...props} categories={[integration]} />);
+        await user.click(screen.getByRole('button', { name: skill.name, exact: true }));
+        expect(screen.getByRole('region', { name: integration.label })).toBeVisible();
+        rerender(<ToolSelection {...props} categories={[]} />);
+        expect(screen.queryByRole('region', { name: integration.label })).not.toBeInTheDocument();
+        expect(screen.queryByText('Integration', { exact: true })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /Manage in Integrations/ })).not.toBeInTheDocument();
+        expect(screen.getByTestId('selected-skill:triage')).toBeInTheDocument();
+        expect(props.onSkillsChange).not.toHaveBeenCalled();
+        expect(props.onCategoriesChange).not.toHaveBeenCalled();
     });
 
     it('shows skill groups immediately after expanding the skill, without nested disclosures', async () => {

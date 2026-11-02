@@ -6,14 +6,15 @@ import time
 import httpx2
 import pytest
 
-from brokering.brokers.mcp_broker.authorization import OAuthStorage, PersistentOAuthProvider
+from brokering.mcp_protocol import OAuthStorage, PersistentOAuthProvider
 from brokering.connection_data import BrokerConnectionData
 from brokering.supervisor._mcp_refresh import refresh_mcp_authorization
 from tests.integration.brokering.mcp.test_sdk_oauth import authorization_server, provider_for  # noqa: F401
 
 
 @pytest.mark.parametrize("reject_refresh", [False, True])
-async def test_restart_restores_expiry_endpoint_and_persists_rotation(authorization_server, monkeypatch, reject_refresh):
+@pytest.mark.parametrize("force", [False, True])
+async def test_restart_restores_expiry_endpoint_and_persists_rotation(authorization_server, monkeypatch, reject_refresh, force):
     state = authorization_server
     monkeypatch.setenv("OMNIDECK_ENABLE_TEST_INTEGRATIONS", "1")
     storage = OAuthStorage()
@@ -25,7 +26,7 @@ async def test_restart_restores_expiry_endpoint_and_persists_rotation(authorizat
     async with httpx2.AsyncClient(auth=provider, trust_env=False) as client:
         assert (await client.get(state["endpoint"])).status_code == 200
     storage.capture_metadata(provider)
-    storage.expires_at = time.time() - 1
+    storage.expires_at = None if force else time.time() - 1
     state["accepted_access"] = "renewed-access"
     state["reject_refresh"] = reject_refresh
     fields = BrokerConnectionData({"endpoint": state["endpoint"], "access_token": "fixture-access",
@@ -33,16 +34,16 @@ async def test_restart_restores_expiry_endpoint_and_persists_rotation(authorizat
     saved = []
     if reject_refresh:
         with pytest.raises(ValueError, match="Sign in again"):
-            await refresh_mcp_authorization(fields, saved.append)
+            await refresh_mcp_authorization(fields, saved.append, force=force)
         assert saved == []
         assert state["refreshes"] == 1 and state["exchanges"] == state["registrations"] == 1
         return
-    refreshed = await refresh_mcp_authorization(fields, saved.append)
+    refreshed = await refresh_mcp_authorization(fields, saved.append, force=force)
     assert saved == [refreshed]
     assert refreshed["access_token"] == "renewed-access"
     assert json.loads(refreshed["oauth_state"])["tokens"]["refresh_token"] == "rotated-refresh"
     assert state["refreshes"] == 1 and state["exchanges"] == state["registrations"] == 1
-    assert await refresh_mcp_authorization(refreshed, saved.append) is refreshed
+    assert await refresh_mcp_authorization(refreshed, saved.append, force=False) is refreshed
     assert len(saved) == 1
 
 

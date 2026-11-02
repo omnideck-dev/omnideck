@@ -2,12 +2,13 @@
 
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
+from urllib.parse import urlencode, urlsplit
 
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 import pytest
 
-from server._mcp_routes import MCP_SETUP_KEY, register_mcp_routes
+from server.oauth_setup.routes import SETUP_KEY, register_oauth_routes
 from integrations.catalog import build_integration_catalog
 from integrations.catalog.slack import SLACK_MCP_SCOPES
 
@@ -25,10 +26,10 @@ async def client(monkeypatch):
     # Even a leftover preview env var must not select a shared registration.
     monkeypatch.setenv("OMNIDECK_SLACK_CLIENT_ID", "old-shared-registration")
     app = web.Application()
-    register_mcp_routes(app)
-    manager = app[MCP_SETUP_KEY]
+    register_oauth_routes(app)
+    manager = app[SETUP_KEY]
     manager.start = AsyncMock(return_value=SimpleNamespace(
-        authorize_url="https://slack.com/authorize",
+        browser=SimpleNamespace(authorize_url="https://slack.com/authorize"),
         public_status=lambda: {"state": "mcp_fixture", "status": "pending"},
     ))
     async with TestClient(TestServer(app)) as client:
@@ -39,11 +40,11 @@ async def test_slack_setup_uses_organization_client_id(client):
     http, manager = client
     response = await http.post("/api/integrations/mcp/oauth/start", json={"slug": "slack", "label": "Work Slack", "client_id": "123.456"})
     assert response.status == 200
-    manager.start.assert_awaited_once_with({
+    assert manager.start.call_args.args[0].settings == {
         "slug": "slack", "label": "Work Slack", "client_id": "123.456",
         "endpoint": "https://mcp.slack.com/mcp", "issuer": "https://mcp.slack.com",
         "scopes": " ".join(SLACK_MCP_SCOPES),
-    })
+    }
     settings = await (await http.get("/api/integrations/mcp/connection-settings")).json()
     manifest = settings["slack_manifest"]
     assert manifest["oauth_config"] == {
@@ -73,14 +74,14 @@ def test_slack_scope_policy_covers_the_reviewed_mcp_catalog():
 
 async def test_slack_reconnect_uses_full_preset_without_changing_grants(client, monkeypatch):
     http, manager = client
-    monkeypatch.setattr("server._mcp_routes.supervisor_call", AsyncMock(return_value={
+    monkeypatch.setattr("server.oauth_setup.mcp_routes.supervisor_call", AsyncMock(return_value={
         "connections": [{"id": "slack_existing", "slug": "slack", "operation_grants": ["mcp.slack_read_channel"]}],
     }))
     response = await http.post("/api/integrations/mcp/oauth/start", json={
         "slug": "slack", "label": "Work Slack", "reconnect_id": "slack_existing", "client_id": "123.456",
     })
     assert response.status == 200
-    settings = manager.start.call_args.args[0]
+    settings = manager.start.call_args.args[0].settings
     assert settings["reconnect_id"] == "slack_existing"
     assert settings["scopes"] == " ".join(SLACK_MCP_SCOPES)
     assert "operation_grants" not in settings
@@ -111,7 +112,7 @@ async def test_missing_or_invalid_client_id_cannot_fall_back_to_shared_registrat
 async def test_reconnect_settings_come_from_supervisor(client, monkeypatch):
     http, _ = client
     lookup = AsyncMock(return_value={"endpoint": "https://mcp.slack.com/mcp", "client_id": "123.456", "issuer": "https://mcp.slack.com"})
-    monkeypatch.setattr("server._mcp_routes.supervisor_call", lookup)
+    monkeypatch.setattr("server.oauth_setup.mcp_routes.supervisor_call", lookup)
     response = await http.get("/api/integrations/mcp/connection-settings?connection_id=slack_existing")
     assert response.status == 200
     assert (await response.json())["connection"]["client_id"] == "123.456"
@@ -120,7 +121,57 @@ async def test_reconnect_settings_come_from_supervisor(client, monkeypatch):
 
 async def test_reconnect_settings_failure_is_not_a_silent_reset(client, monkeypatch):
     http, _ = client
-    monkeypatch.setattr("server._mcp_routes.supervisor_call", AsyncMock(side_effect=RuntimeError("secret details")))
+    monkeypatch.setattr("server.oauth_setup.mcp_routes.supervisor_call", AsyncMock(side_effect=RuntimeError("secret details")))
     response = await http.get("/api/integrations/mcp/connection-settings?connection_id=slack_existing")
     assert response.status >= 400
     assert "secret details" not in await response.text()
+
+
+@pytest.mark.parametrize("origin", ["http://llm1:9094", "https://llm1.example.ts.net"])
+async def test_configured_remote_callback_completes_setup_and_rejects_wrong_host_and_replay(monkeypatch, origin):
+    from server.oauth_setup.coordinator import OAuthSetupCoordinator
+    from server.oauth_setup.models import PreparedConnection
+
+    monkeypatch.setenv("OMNIDECK_EXTERNAL_URL", origin)
+    redirect_uri = origin + "/api/integrations/mcp/oauth/callback"
+    state = "fixture-public-origin-oauth-state-123456789"
+
+    async def prepare(browser):
+        assert browser.receiver.redirect_uri == redirect_uri
+        browser.present("https://provider.example/authorize?" + urlencode({
+            "state": state, "redirect_uri": redirect_uri, "response_type": "code",
+            "code_challenge_method": "S256", "code_challenge": "fixture-challenge",
+        }))
+        response = await browser.receiver.wait_for_result()
+        assert response.code == "fixture-code"
+        return PreparedConnection({"access_token": "private-fixture-token"})
+
+    monkeypatch.setattr("server.oauth_setup.mcp_routes.MCPOAuthAdapter", lambda settings: SimpleNamespace(prepare=prepare))
+    app = web.Application()
+    register_oauth_routes(app)
+    commit = AsyncMock(return_value={"id": "saved"})
+    app[SETUP_KEY] = OAuthSetupCoordinator(commit=commit, refresh=AsyncMock())
+    async with TestClient(TestServer(app)) as http:
+        # A proxy's forwarded headers or an arbitrary Host cannot select the
+        # redirect. The configured public origin is used throughout setup.
+        headers = {"Host": "other.example", "X-Forwarded-Host": "other.example", "X-Forwarded-Proto": "http"}
+        settings = await (await http.get("/api/integrations/mcp/connection-settings", headers=headers)).json()
+        assert settings["redirect_uri"] == redirect_uri
+        assert settings["slack_manifest"]["oauth_config"]["redirect_urls"] == [redirect_uri]
+        started = await http.post("/api/integrations/mcp/oauth/start", headers=headers, json={
+            "slug": "mcp", "label": "Remote", "endpoint": "https://provider.example/mcp",
+        })
+        assert started.status == 200
+        pending = app[SETUP_KEY].status((await started.json())["state"])
+        path = urlsplit(redirect_uri).path
+        params = {"state": state, "code": "fixture-code"}
+        assert (await http.get(path, params=params, headers=headers)).status == 400
+        public_host = {"Host": urlsplit(origin).netloc}
+        assert (await http.get(path, params={**params, "state": "wrong"}, headers=public_host)).status == 410
+        assert (await http.get(path, params=params, headers=public_host)).status == 200
+        await pending.task
+        status = await (await http.get(f"/api/integrations/mcp/oauth/status/{pending.handle}")).json()
+        assert status["status"] == "success" and status["integration_id"] == "saved"
+        assert "private-fixture-token" not in str(status)
+        commit.assert_awaited_once()
+        assert (await http.get(path, params=params, headers=public_host)).status == 410

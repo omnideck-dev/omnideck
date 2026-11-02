@@ -1,24 +1,22 @@
 """MCP setup routes; provider tokens never cross the browser boundary."""
 
 import json
-import os
+import secrets
 import re
 
 from aiohttp import web
 
-from integrations.catalog import integration_catalog, test_integrations_enabled
+from integrations.catalog import integration_catalog
 from integrations.catalog.slack import SLACK_MCP_ENDPOINT, SLACK_MCP_ISSUER, SLACK_MCP_SCOPES, slack_app_manifest
 from server._brokering import supervisor_call
-from server._integration_cache import INTEGRATION_CACHE_KEY
 from server._integrations_http import error_response
-from server._mcp_oauth_callback import CALLBACK_PATH, MCPOAuthCallback
-from server._mcp_setup import MCPSetupManager
-
-MCP_SETUP_KEY = web.AppKey("mcp_setup", MCPSetupManager)
+from .adapters.mcp import MCPOAuthAdapter
+from .models import NewConnection, Reconnect
+from .routes import SETUP_KEY, MCP_REDIRECT_KEY
 
 
 async def connection_settings(request: web.Request) -> web.Response:
-    redirect_uri = request.app[MCP_SETUP_KEY].redirect_uri
+    redirect_uri = request.app[MCP_REDIRECT_KEY]
     settings = {"redirect_uri": redirect_uri, "slack_manifest": slack_app_manifest(redirect_uri)}
     if connection_id := request.query.get("connection_id"):
         try:
@@ -58,53 +56,14 @@ async def start(request: web.Request) -> web.Response:
             existing = next((item for item in records["connections"] if item["id"] == body["reconnect_id"]), None)
             if existing is None or existing["slug"] != entry.slug:
                 raise ValueError("The integration to reconnect was not found.")
-        pending = await request.app[MCP_SETUP_KEY].start(body)
+        target = (Reconnect(body["reconnect_id"]) if body.get("reconnect_id") else
+                  NewConnection(entry.slug, body["label"], secrets.token_hex(8), ()))
+        pending = await request.app[SETUP_KEY].start(
+            MCPOAuthAdapter(body), target,
+            redirect_uri=request.app[MCP_REDIRECT_KEY],
+        )
     except (ValueError, json.JSONDecodeError):
         return error_response("BAD_REQUEST", "Check the connection settings and try again.")
     except Exception:
         return error_response("UPSTREAM", "Could not start sign-in. Check the server and retry.")
-    return web.json_response({**pending.public_status(), "authorize_url": pending.authorize_url}, headers={"Cache-Control": "no-store"})
-
-
-async def callback(request: web.Request) -> web.Response:
-    receiver = request.app[MCP_SETUP_KEY].callback(request.query.get("state", ""))
-    if receiver is None:
-        return MCPOAuthCallback._response(410, "This sign-in attempt is no longer available. Return to omnideck.")
-    return await receiver.handle_callback(request)
-
-
-async def status(request: web.Request) -> web.Response:
-    pending = request.app[MCP_SETUP_KEY].status(request.match_info["state"])
-    if pending is None:
-        return error_response("NOT_FOUND", "Sign-in attempt expired. Start again.")
-    return web.json_response(pending.public_status(), headers={"Cache-Control": "no-store"})
-
-
-async def cancel(request: web.Request) -> web.Response:
-    pending = await request.app[MCP_SETUP_KEY].cancel(request.match_info["state"])
-    if pending is None:
-        return error_response("NOT_FOUND", "Sign-in attempt expired.")
-    return web.json_response(pending.public_status(), headers={"Cache-Control": "no-store"})
-
-
-def register_mcp_routes(app: web.Application) -> None:
-    origin = os.environ.get("OMNIDECK_EXTERNAL_URL")
-    if not origin:
-        return
-    async def commit(verb: str, args: dict) -> dict:
-        result = await supervisor_call(verb, args)
-        await app[INTEGRATION_CACHE_KEY].refresh()
-        return result
-
-    manager = MCPSetupManager(callback_origin=origin, commit=commit, allow_loopback=test_integrations_enabled())
-    app[MCP_SETUP_KEY] = manager
-    app.router.add_get("/api/integrations/mcp/connection-settings", connection_settings)
-    app.router.add_post("/api/integrations/mcp/oauth/start", start)
-    app.router.add_get(CALLBACK_PATH, callback, allow_head=False)
-    app.router.add_get("/api/integrations/mcp/oauth/status/{state}", status)
-    app.router.add_delete("/api/integrations/mcp/oauth/status/{state}", cancel)
-
-    async def cleanup(_app: web.Application) -> None:
-        await manager.close()
-
-    app.on_cleanup.append(cleanup)
+    return web.json_response({**pending.public_status(), "authorize_url": pending.browser.authorize_url}, headers={"Cache-Control": "no-store"})

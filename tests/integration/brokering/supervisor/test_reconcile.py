@@ -114,6 +114,7 @@ async def test_startup_preserves_grants_despite_narrower_scope_availability(tmp_
         ).model_dump(mode="json")
         if version == 2:
             raw.pop("agent_operation_grants")
+            raw.pop("discovered_operations")
             raw.pop("kind")
             raw.update(version=2, permissions={"email": "rw"})
         vault = tmp_path / "vault"

@@ -9,6 +9,8 @@ import tempfile
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
+from migrations._startup_report import current_step
+
 logger = logging.getLogger(__name__)
 _APPLIED_FILE = ".migrations.json"
 
@@ -56,6 +58,7 @@ def run_migration_plan(
 
     logger.info("%d pending migration(s)", len(pending))
     for name, fn in pending:
+        current_step.set(name)
         logger.info("Running migration: %s", name)
         fn(state_dir)
         applied.add(name)

@@ -8,6 +8,7 @@ from pathlib import Path
 import pwd
 
 from migrations import run_migrations
+from migrations._startup_report import report_migrations
 
 
 def _restore_owner(
@@ -37,7 +38,8 @@ def bootstrap(
     vault_dir.mkdir(parents=True, exist_ok=True)
     vault_dir.chmod(0o700)
     try:
-        run_migrations(state_dir, vault_dir)
+        with report_migrations():
+            run_migrations(state_dir, vault_dir)
     finally:
         # Atomic replacements and new backups created as root must remain usable
         # by the service that owns each store. Do not follow links outside them.

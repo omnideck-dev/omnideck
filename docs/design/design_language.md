@@ -103,6 +103,9 @@ in `--text-primary` on hover; use `--surface` for the disclosure button's hover
 background and brighten its chevron to `--text-primary`. Use `--radius-md` and
 retain the accent keyboard-focus outline. The separate remove button keeps its
 own shared IconButton interaction states.
+Give the disclosure button `--sp-2` padding on all sides so the hover surface
+surrounds its content. Use `--sp-1` vertical header padding to preserve row density,
+and include the button inset when aligning expanded content with the title.
 
 **Deliberate exception to the tinted destructive-button resting state:** inside
 an action menu, Delete uses a red icon/label on a transparent background. A filled

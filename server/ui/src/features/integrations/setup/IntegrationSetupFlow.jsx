@@ -327,7 +327,7 @@ function ReviewStep({
 }) {
     const selected = new Set(selectedIds);
     const selectedOperations = (connection.operations || []).filter(
-        operation => selected.has(operation.id),
+        operation => selected.has(operation.id) && !operation.unavailable_reason,
     );
     return (
         <div className={styles.stepPage}>

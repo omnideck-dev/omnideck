@@ -4,7 +4,8 @@ import pytest
 from mcp.server import MCPServer
 
 from brokering._rpc import RpcError
-from brokering.brokers.mcp_broker.client import MCPDispatcher, connect, discover
+from brokering.brokers.mcp_broker.client import MCPDispatcher
+from brokering.mcp_protocol import connect, discover
 from tests.integration.brokering.mcp.test_sdk_transport import serve_sdk
 
 
@@ -19,7 +20,7 @@ async def test_discovery_grants_revocation_and_error_results():
         return value
 
     async with serve_sdk(server) as endpoint:
-        async with connect(endpoint, allow_loopback=True) as client:
+        async with connect(endpoint) as client:
             operations = await discover(client)
             assert [operation.id for operation in operations] == ["mcp.set_value"]
             dispatcher = MCPDispatcher(client, operations)
@@ -38,5 +39,5 @@ async def test_discovery_grants_revocation_and_error_results():
 
 async def test_empty_catalog_connects_without_tools():
     async with serve_sdk(MCPServer("empty")) as endpoint:
-        async with connect(endpoint, allow_loopback=True) as client:
+        async with connect(endpoint) as client:
             assert await discover(client) == ()

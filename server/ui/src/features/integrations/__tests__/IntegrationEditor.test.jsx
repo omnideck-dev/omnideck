@@ -29,20 +29,49 @@ const openRename = () => {
 describe('IntegrationEditor', () => {
     afterEach(() => vi.useRealTimers());
 
-    it('requires a second removal click and disarms an expired confirmation', async () => {
-        vi.useFakeTimers();
+    it('excludes unavailable saved tools from the overview and disables them in the picker', () => {
+        render(<IntegrationEditor {...props({ record: { ...RECORD,
+            operation_grants: ['email.messages.get', 'email.messages.send'],
+            operations: [RECORD.operations[0], { ...RECORD.operations[1], unavailable_reason: 'Invalid schema' }],
+        } })} />);
+        expect(screen.getByText('1 tool selected for this integration.')).toBeInTheDocument();
+        expect(screen.queryByText('Send email')).not.toBeInTheDocument();
+        openTools();
+        expect(screen.getByTestId('integration-tool-email.messages.send')).toBeDisabled();
+        expect(screen.getByText('1 of 1 selected')).toBeInTheDocument();
+    });
+
+    it('warns about assignment removal and allows cancellation before deleting', async () => {
         const p = props();
         render(<IntegrationEditor {...p} />);
         openSettings();
-        fireEvent.click(screen.getByRole('button', { name: 'Remove integration' }));
-        expect(screen.getByRole('button', { name: 'Confirm removal?' })).toHaveTextContent('Confirm removal?');
+        fireEvent.click(screen.getByRole('button', { name: 'Remove integration…' }));
+        const dialog = screen.getByRole('dialog', { name: 'Delete Work mail?' });
+        expect(dialog).toHaveTextContent('This removes the connection and its tool assignments from all agents and skills. Reconnecting later won’t restore those assignments.');
         expect(p.onRemove).not.toHaveBeenCalled();
-        act(() => vi.advanceTimersByTime(3000));
-        fireEvent.click(screen.getByRole('button', { name: 'Remove integration' }));
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
         expect(p.onRemove).not.toHaveBeenCalled();
-        await act(async () => {
-            fireEvent.click(screen.getByRole('button', { name: 'Confirm removal?' }));
-        });
+        fireEvent.click(screen.getByRole('button', { name: 'Remove integration…' }));
+        await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Delete integration' })));
+        expect(p.onRemove).toHaveBeenCalledOnce();
+    });
+
+    it('prevents duplicate deletion and shows errors in the confirmation', async () => {
+        let finish;
+        const p = props({ onRemove: vi.fn(() => new Promise(resolve => { finish = resolve; })) });
+        const { rerender } = render(<IntegrationEditor {...p} />);
+        openSettings();
+        fireEvent.click(screen.getByRole('button', { name: 'Remove integration…' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Delete integration' }));
+        expect(screen.getByRole('button', { name: 'Deleting…' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+        fireEvent.keyDown(document, { key: 'Escape' });
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
+        rerender(<IntegrationEditor {...p} removeError="Connection service unavailable" />);
+        await act(async () => finish());
+        expect(within(screen.getByRole('dialog')).getByText('Connection service unavailable')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Delete integration' })).toBeEnabled();
         expect(p.onRemove).toHaveBeenCalledOnce();
     });
 
@@ -158,7 +187,7 @@ describe('IntegrationEditor', () => {
         fireEvent.click(screen.getByTestId('integration-tool-email.messages.send'));
         rerender(<IntegrationEditor {...p} saving />);
         for (const checkbox of screen.getAllByRole('checkbox')) expect(checkbox).toBeDisabled();
-        for (const name of ['Select all', 'Deselect all', 'Cancel', 'Close', 'Rename', 'Update app password', 'Remove integration']) {
+        for (const name of ['Select all', 'Deselect all', 'Cancel', 'Close', 'Rename', 'Update app password', 'Remove integration…']) {
             expect(screen.getByRole('button', { name, exact: true })).toBeDisabled();
         }
         expect(screen.getByRole('button', { name: 'Saving…' })).toHaveAttribute('aria-busy', 'true');
@@ -203,12 +232,47 @@ describe('IntegrationEditor', () => {
     });
 
     it.each(['broken', 'auth_failed', 'unknown'])('shows recovery without a duplicate status for %s connections', (state) => {
-        render(<IntegrationEditor {...props({ record: { ...RECORD, state } })} />);
+        const p = props({ record: { ...RECORD, state } });
+        render(<IntegrationEditor {...p} />);
+        const alert = screen.getByRole('alert');
+        const repair = within(alert).getByRole('button', { name: 'Update app password' });
+        expect(repair).toBeVisible();
+        expect(screen.getByText('Connection settings', { exact: true }).closest('details')).not.toHaveAttribute('open');
+        fireEvent.click(repair);
+        expect(p.onReconnect).toHaveBeenCalledOnce();
         openSettings();
         expect(screen.getByRole('button', { name: 'Change tools' })).toBeDisabled();
         expect(screen.getByRole('button', { name: 'Rename' })).toBeEnabled();
-        expect(screen.getByRole('button', { name: 'Update app password' })).toBeEnabled();
+        expect(screen.getByTestId(`integrations-reconnect-${RECORD.id}`)).toBeEnabled();
         expect(screen.getByRole('alert')).toHaveTextContent('This integration needs attention');
         expect(screen.queryByTestId('integration-status')).not.toBeInTheDocument();
+    });
+
+    it.each([
+        ['mcp', 'Sign in again'], ['slack', 'Sign in again'],
+        ['google_workspace', 'Sign in again'], ['http', 'Update token'],
+    ])('uses the existing %s recovery action without opening connection settings', (slug, action) => {
+        const p = props({ record: { ...RECORD, slug, state: 'broken' } });
+        render(<IntegrationEditor {...p} />);
+        const alert = screen.getByRole('alert');
+        expect(alert).toHaveTextContent(`${action} to restore access.`);
+        fireEvent.click(within(alert).getByRole('button', { name: action }));
+        expect(p.onReconnect).toHaveBeenCalledOnce();
+        expect(p.onSave).not.toHaveBeenCalled();
+        expect(p.onRemove).not.toHaveBeenCalled();
+    });
+
+    it('blocks repair while saving and clears the warning after recovery without changing selected tools', () => {
+        const p = props({ record: { ...RECORD, slug: 'mcp', state: 'broken' }, saving: true });
+        const { rerender } = render(<IntegrationEditor {...p} />);
+        const repair = within(screen.getByRole('alert')).getByRole('button', { name: 'Sign in again' });
+        expect(repair).toBeDisabled();
+        fireEvent.click(repair);
+        expect(p.onReconnect).not.toHaveBeenCalled();
+        rerender(<IntegrationEditor {...p} saving={false} record={{ ...p.record, state: 'running' }} />);
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+        expect(screen.queryByTestId(`integrations-repair-${RECORD.id}`)).not.toBeInTheDocument();
+        expect(screen.getByRole('region', { name: 'Email' })).toHaveTextContent('Read email message');
+        expect(screen.getByRole('button', { name: 'Change tools' })).toBeEnabled();
     });
 });

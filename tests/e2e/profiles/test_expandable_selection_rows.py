@@ -72,6 +72,26 @@ def _assert_actions_aligned(row):
         assert abs(a["height"] - b["height"]) < 1
 
 
+def _assert_hover_inset(toggle):
+    toggle.hover()
+    # Hover colors use the shared button transition; wait for it to begin.
+    expect(toggle).not_to_have_css("background-color", "rgba(0, 0, 0, 0)")
+    geometry = toggle.evaluate("""el => {
+        const style = getComputedStyle(el);
+        const button = el.getBoundingClientRect();
+        const children = [...el.children].map(child => child.getBoundingClientRect());
+        return {
+            inset: parseFloat(style.getPropertyValue('--sp-2')),
+            gaps: [children[0].left - button.left,
+                button.right - children.at(-1).right,
+                Math.min(...children.map(rect => rect.top)) - button.top,
+                button.bottom - Math.max(...children.map(rect => rect.bottom))],
+        };
+    }""")
+    assert geometry["inset"] > 0
+    assert all(abs(gap - geometry["inset"]) < 1 for gap in geometry["gaps"]), geometry
+
+
 @pytest.mark.parametrize("width", [880, 1440])
 def test_selection_row_actions_align_when_wrapped_and_expanded(page, width):
     """Both editors use the same centered actions; removal only edits the draft."""
@@ -104,6 +124,7 @@ def test_selection_row_actions_align_when_wrapped_and_expanded(page, width):
             expect(toggle).to_be_visible()
             row.scroll_into_view_if_needed()
             _assert_actions_aligned(row)
+            _assert_hover_inset(toggle)
             if label == "Research":
                 description = row.locator(f'[id="{toggle.get_attribute("aria-describedby")}"]')
                 assert description.bounding_box()["height"] > 30, "fixture must wrap the description"
@@ -111,6 +132,7 @@ def test_selection_row_actions_align_when_wrapped_and_expanded(page, width):
             toggle.press("Enter")
             expect(toggle).to_have_attribute("aria-expanded", "true")
             _assert_actions_aligned(row)
+            _assert_hover_inset(toggle)
             toggle.press("Space")
             expect(toggle).to_have_attribute("aria-expanded", "false")
             _assert_actions_aligned(row)
@@ -129,6 +151,7 @@ def test_selection_row_actions_align_when_wrapped_and_expanded(page, width):
             toggle = row.get_by_role("button", name=label, exact=True)
             row.scroll_into_view_if_needed()
             _assert_actions_aligned(row)
+            _assert_hover_inset(toggle)
             toggle.click()
             expect(toggle).to_have_attribute("aria-expanded", "true")
             _assert_actions_aligned(row)

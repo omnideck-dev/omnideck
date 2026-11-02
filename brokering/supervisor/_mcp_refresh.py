@@ -4,13 +4,11 @@ import asyncio
 from collections.abc import Callable
 
 from brokering.connection_data import BrokerConnectionData
-from brokering.brokers.mcp_broker.authorization import OAuthStorage, PersistentOAuthProvider
-from brokering.brokers.mcp_broker._network import mcp_http_client
-from integrations.catalog import test_integrations_enabled
+from brokering.mcp_protocol import OAuthStorage, PersistentOAuthProvider, mcp_http_client
 
 
 async def refresh_mcp_authorization(
-    fields: BrokerConnectionData, persist: Callable[[BrokerConnectionData], None],
+    fields: BrokerConnectionData, persist: Callable[[BrokerConnectionData], None], *, force: bool,
 ) -> BrokerConnectionData:
     """Persist rotation immediately; never roll it back if broker startup fails."""
     result = fields
@@ -21,17 +19,19 @@ async def refresh_mcp_authorization(
         persist(result)
 
     storage = OAuthStorage(fields.get("oauth_state", ""), persist=save)
-    if not storage.needs_refresh():
+    if not force and not storage.needs_refresh():
         return fields
     if storage.client_info is None or storage.metadata is None:
         raise ValueError("Sign in again to restore authorization.")
+    if force:
+        storage.expires_at = 0
     endpoint = fields["endpoint"]
     provider = PersistentOAuthProvider(
         server_url=endpoint, storage=storage, client_metadata=storage.client_info,
     )
     async with asyncio.timeout(30):
         async with mcp_http_client(
-            auth=provider, allow_loopback=test_integrations_enabled(), background_resource=endpoint,
+            auth=provider, background_resource=endpoint,
             resource_endpoint=endpoint,
         ) as http:
             # OAuth runs before this harmless protocol request. A legacy server

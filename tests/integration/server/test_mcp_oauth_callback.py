@@ -8,7 +8,8 @@ from urllib.parse import urlencode, urlsplit
 import aiohttp
 import pytest
 
-from server._mcp_oauth_callback import MCPOAuthCallbackError, listen_for_mcp_oauth
+from server.oauth_setup.callback import OAuthCallbackError
+from tests.integration.server.oauth_callback_fixture import listen_for_oauth
 
 
 STATE = "fixture-oauth-state-not-a-real-secret-12345"
@@ -28,7 +29,7 @@ def authorize_url(callback, **overrides):
 
 async def test_early_callback_is_single_use_and_does_not_leak_query(caplog):
     caplog.set_level(logging.INFO, logger="aiohttp.access")
-    async with listen_for_mcp_oauth() as callback, aiohttp.ClientSession() as client:
+    async with listen_for_oauth() as callback, aiohttp.ClientSession() as client:
         callback.arm(authorize_url(callback))
         params = {"code": "private-fixture-code", "state": STATE, "iss": "https://auth.example"}
         response = await client.get(callback.redirect_uri, params=params)
@@ -45,7 +46,7 @@ async def test_early_callback_is_single_use_and_does_not_leak_query(caplog):
             "private-fixture-code", STATE, "https://auth.example",
         )
         assert (await client.get(callback.redirect_uri, params=params)).status == 410
-        with pytest.raises(MCPOAuthCallbackError, match="No sign-in response"):
+        with pytest.raises(OAuthCallbackError, match="No sign-in response"):
             await callback.wait_for_result()
     assert "private-fixture-code" not in caplog.text and STATE not in caplog.text
 
@@ -65,7 +66,7 @@ async def test_early_callback_is_single_use_and_does_not_leak_query(caplog):
     {"code": "code", "state": STATE, "iss": ""},
 ])
 async def test_invalid_callback_does_not_consume_valid_attempt(params):
-    async with listen_for_mcp_oauth() as callback, aiohttp.ClientSession() as client:
+    async with listen_for_oauth() as callback, aiohttp.ClientSession() as client:
         callback.arm(authorize_url(callback))
         assert (await client.get(callback.redirect_uri, params=params)).status == 400
         assert (await client.get(callback.redirect_uri, params={"code": "good", "state": STATE})).status == 200
@@ -77,7 +78,7 @@ async def test_invalid_callback_does_not_consume_valid_attempt(params):
     ("upstream-error-with-private-details", "The provider could not complete sign-in."),
 ])
 async def test_provider_error_is_sanitized_and_terminal(error, message):
-    async with listen_for_mcp_oauth() as callback, aiohttp.ClientSession() as client:
+    async with listen_for_oauth() as callback, aiohttp.ClientSession() as client:
         callback.arm(authorize_url(callback))
         response = await client.get(callback.redirect_uri, params={
             "error": error, "error_description": "private description <script>", "state": STATE,
@@ -85,7 +86,7 @@ async def test_provider_error_is_sanitized_and_terminal(error, message):
         assert response.status == 200
         body = await response.text()
         assert message in body and "private" not in body and STATE not in body
-        with pytest.raises(MCPOAuthCallbackError) as exc:
+        with pytest.raises(OAuthCallbackError) as exc:
             await callback.wait_for_result()
         assert str(exc.value) == message
         assert (await client.get(callback.redirect_uri, params={"code": "late", "state": STATE})).status == 410
@@ -93,18 +94,18 @@ async def test_provider_error_is_sanitized_and_terminal(error, message):
 
 async def test_cancel_before_and_after_browser_response():
     for receive_first in (False, True):
-        async with listen_for_mcp_oauth() as callback, aiohttp.ClientSession() as client:
+        async with listen_for_oauth() as callback, aiohttp.ClientSession() as client:
             callback.arm(authorize_url(callback))
             if receive_first:
                 await client.get(callback.redirect_uri, params={"code": "discard", "state": STATE})
             callback.cancel()
-            with pytest.raises(MCPOAuthCallbackError, match="cancelled"):
+            with pytest.raises(OAuthCallbackError, match="cancelled"):
                 await callback.wait_for_result()
             assert (await client.get(callback.redirect_uri, params={"code": "late", "state": STATE})).status == 410
 
 
 async def test_waiter_cancellation_invalidates_callback():
-    async with listen_for_mcp_oauth() as callback, aiohttp.ClientSession() as client:
+    async with listen_for_oauth() as callback, aiohttp.ClientSession() as client:
         callback.arm(authorize_url(callback))
         waiter = asyncio.create_task(callback.wait_for_result())
         await asyncio.sleep(0)
@@ -115,21 +116,21 @@ async def test_waiter_cancellation_invalidates_callback():
 
 
 async def test_timeout_starts_at_browser_handoff_not_when_waiter_starts():
-    async with listen_for_mcp_oauth(timeout=0.01) as callback, aiohttp.ClientSession() as client:
+    async with listen_for_oauth(timeout=0.01) as callback, aiohttp.ClientSession() as client:
         callback.arm(authorize_url(callback))
         await asyncio.sleep(0.03)
         assert (await client.get(callback.redirect_uri, params={"code": "late", "state": STATE})).status == 410
-        with pytest.raises(MCPOAuthCallbackError, match="timed out"):
+        with pytest.raises(OAuthCallbackError, match="timed out"):
             await callback.wait_for_result()
 
 
 async def test_context_cleanup_wakes_waiter_and_closes_listener():
-    async with listen_for_mcp_oauth() as callback:
+    async with listen_for_oauth() as callback:
         callback.arm(authorize_url(callback))
         waiter = asyncio.create_task(callback.wait_for_result())
         await asyncio.sleep(0)
         url = callback.redirect_uri
-    with pytest.raises(MCPOAuthCallbackError, match="cancelled"):
+    with pytest.raises(OAuthCallbackError, match="cancelled"):
         await waiter
     async with aiohttp.ClientSession() as client:
         with pytest.raises(aiohttp.ClientConnectorError):
@@ -137,7 +138,7 @@ async def test_context_cleanup_wakes_waiter_and_closes_listener():
 
 
 async def test_wrong_host_and_non_get_do_not_consume_callback():
-    async with listen_for_mcp_oauth() as callback, aiohttp.ClientSession() as client:
+    async with listen_for_oauth() as callback, aiohttp.ClientSession() as client:
         callback.arm(authorize_url(callback))
         params = {"code": "code", "state": STATE}
         response = await client.get(callback.redirect_uri, params=params, headers={
@@ -151,7 +152,7 @@ async def test_wrong_host_and_non_get_do_not_consume_callback():
 
 
 async def test_concurrent_callbacks_only_accept_one():
-    async with listen_for_mcp_oauth() as callback, aiohttp.ClientSession() as client:
+    async with listen_for_oauth() as callback, aiohttp.ClientSession() as client:
         callback.arm(authorize_url(callback))
         responses = await asyncio.gather(*[
             client.get(callback.redirect_uri, params={"code": code, "state": STATE})
@@ -168,22 +169,22 @@ async def test_concurrent_callbacks_only_accept_one():
     {"response_type": "token"},
 ])
 async def test_arm_rejects_invalid_sdk_handoff(overrides):
-    async with listen_for_mcp_oauth() as callback:
-        with pytest.raises(MCPOAuthCallbackError, match="invalid callback configuration"):
+    async with listen_for_oauth() as callback:
+        with pytest.raises(OAuthCallbackError, match="invalid callback configuration"):
             callback.arm(authorize_url(callback, **overrides))
 
 
 async def test_attempt_cannot_be_rearmed_or_waited_by_two_consumers():
-    async with listen_for_mcp_oauth() as callback:
+    async with listen_for_oauth() as callback:
         callback.arm(authorize_url(callback))
-        with pytest.raises(MCPOAuthCallbackError, match="cannot be started again"):
+        with pytest.raises(OAuthCallbackError, match="cannot be started again"):
             callback.arm(authorize_url(callback))
         waiter = asyncio.create_task(callback.wait_for_result())
         await asyncio.sleep(0)
-        with pytest.raises(MCPOAuthCallbackError, match="No sign-in response"):
+        with pytest.raises(OAuthCallbackError, match="No sign-in response"):
             await callback.wait_for_result()
         callback.cancel()
-        with pytest.raises(MCPOAuthCallbackError, match="cancelled"):
+        with pytest.raises(OAuthCallbackError, match="cancelled"):
             await waiter
 
 
@@ -192,9 +193,9 @@ async def test_listener_uses_loopback_and_never_falls_back_from_occupied_port():
         occupied.bind(("127.0.0.1", 0))
         occupied.listen()
         with pytest.raises(OSError):
-            async with listen_for_mcp_oauth(port=occupied.getsockname()[1]):
+            async with listen_for_oauth(port=occupied.getsockname()[1]):
                 pytest.fail("Must not switch to an unregistered port")
-    async with listen_for_mcp_oauth() as callback:
+    async with listen_for_oauth() as callback:
         port = urlsplit(callback.redirect_uri).port
         # A wildcard-bound callback would prevent binding the same port on a
         # different loopback address. Do not touch the machine's real LAN IP.
@@ -203,11 +204,11 @@ async def test_listener_uses_loopback_and_never_falls_back_from_occupied_port():
 
 
 async def test_unarmed_or_closed_attempt_cannot_accept_callback():
-    async with listen_for_mcp_oauth() as callback, aiohttp.ClientSession() as client:
+    async with listen_for_oauth() as callback, aiohttp.ClientSession() as client:
         assert (await client.get(callback.redirect_uri, params={"code": "early", "state": STATE})).status == 410
-        with pytest.raises(MCPOAuthCallbackError, match="No sign-in response"):
+        with pytest.raises(OAuthCallbackError, match="No sign-in response"):
             await callback.wait_for_result()
-    with pytest.raises(MCPOAuthCallbackError, match="cannot be started again"):
+    with pytest.raises(OAuthCallbackError, match="cannot be started again"):
         callback.arm(authorize_url(callback))
 
 
@@ -217,5 +218,14 @@ async def test_unarmed_or_closed_attempt_cannot_accept_callback():
 ])
 async def test_invalid_listener_configuration(options):
     with pytest.raises(ValueError, match="valid loopback port"):
-        async with listen_for_mcp_oauth(**options):
+        async with listen_for_oauth(**options):
             pytest.fail("Invalid listener configuration must not bind a socket")
+
+
+async def test_callback_preserves_encoded_code_without_double_decoding():
+    async with listen_for_oauth() as callback, aiohttp.ClientSession() as client:
+        callback.arm(authorize_url(callback))
+        code = "code+percent%2B/equals="
+        response = await client.get(callback.redirect_uri, params={"code": code, "state": STATE})
+        assert response.status == 200
+        assert (await callback.wait_for_result()).code == code

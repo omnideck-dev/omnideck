@@ -4,6 +4,7 @@ Focused on the disable-default-agent rule (400 response) and the
 ``?include_disabled=true`` query parameter on the list endpoint.
 """
 
+import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock
 
@@ -37,12 +38,18 @@ def _make_request(*, match_info=None, json_body=None, query=None):
 
 
 @pytest.mark.unit
-async def test_direct_tools_persist_and_browser_grant_is_rejected():
+async def test_direct_tools_persist_and_browser_grant_is_rejected(monkeypatch):
+    monkeypatch.setattr("server._integration_selections.supervisor_call", AsyncMock(return_value={
+        "connections": [{"id": "work", "state": "running"}],
+    }))
     save_agent_profile(AgentProfile(id="test", name="Test", model="m"))
-    response = await handle_update_profile(_make_request(
+    request = _make_request(
         match_info={"id": "test"},
         json_body={"id": "test", "name": "Test", "tool_categories": ["memory", "integration:work"]},
-    ))
+    )
+    from server._integration_selections import SELECTION_MUTATION_LOCK
+    request.app[SELECTION_MUTATION_LOCK] = asyncio.Lock()
+    response = await handle_update_profile(request)
     assert response.status == 200
     assert get_agent_profile("test").tool_categories == ["memory", "integration:work"]
     response = await handle_update_profile(_make_request(

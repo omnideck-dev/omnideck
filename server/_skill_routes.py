@@ -12,6 +12,7 @@ import logging
 from uuid import uuid4
 
 from aiohttp import web
+from server._integration_selections import save_selection_record
 
 from skills._policy import grants_restricted_tool_category, is_reserved_skill_id
 from skills._store import (
@@ -55,8 +56,10 @@ async def handle_create_skill(request: web.Request) -> web.Response:
     if is_reserved_skill_id(body.get("id", "")) or grants_restricted_tool_category(body.get("tool_categories", [])):
         return web.json_response({"error": "Browser access is configured on the agent"}, status=400)
     try:
-        saved = save_skill_record(SkillRecord.model_validate(body))
+        saved = await save_selection_record(request, SkillRecord.model_validate(body), save_skill_record)
         return web.json_response(saved.model_dump(), status=201)
+    except web.HTTPException:
+        raise
     except Exception as exc:
         logger.warning("Failed to create skill: %s", exc)
         return web.json_response({"error": str(exc)}, status=400)
@@ -77,8 +80,10 @@ async def handle_update_skill(request: web.Request) -> web.Response:
     if grants_restricted_tool_category(body.get("tool_categories", [])):
         return web.json_response({"error": "Browser access is configured on the agent"}, status=400)
     try:
-        saved = save_skill_record(SkillRecord.model_validate(body))
+        saved = await save_selection_record(request, SkillRecord.model_validate(body), save_skill_record)
         return web.json_response(saved.model_dump())
+    except web.HTTPException:
+        raise
     except Exception as exc:
         logger.warning("Failed to update skill '%s': %s", skill_id, exc)
         return web.json_response({"error": str(exc)}, status=400)

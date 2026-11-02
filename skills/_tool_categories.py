@@ -69,7 +69,8 @@ async def tool_categories(connections: ConnectionSnapshot = ()) -> dict[str, Too
                 operations.append(operation.public_dict())
         operations.extend(
             {"id": op.id, "title": op.title, "description": op.description}
-            for op in connection.discovered_operations if op.id in connection.operation_grants
+            for op in connection.discovered_operations
+            if op.id in connection.operation_grants and op.unavailable_reason is None
         )
         categories[cid] = ToolCategory(
             cid,

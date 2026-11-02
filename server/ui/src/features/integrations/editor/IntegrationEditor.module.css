@@ -48,6 +48,9 @@
 .attention {
     margin-bottom: var(--sp-6);
 }
+.recoveryAction {
+    padding: 0 var(--sp-4) var(--sp-3) var(--sp-10);
+}
 .summaryGroup {
     padding: var(--sp-4) 0;
     border-bottom: 1px solid var(--border);
@@ -90,7 +93,7 @@
     min-width: 160px;
 }
 .remove {
-    /* Only position the shared ConfirmButton; it owns resting and armed colors. */
+    /* Only position the shared button; it owns destructive colors. */
     margin-top: var(--sp-4);
 }
 .dialogForm {

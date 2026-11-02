@@ -22,17 +22,19 @@ export default function ToolSelection({
         if (adding) search.current?.querySelector('input')?.focus();
     }, [adding]);
     const byId = new Map(categories.map(c => [c.id, c]));
-    const getCategory = id => byId.get(id) || {
-        id, label: id.startsWith('integration:') ? 'Integration' : id,
+    // Missing connections have no selectable tools; don't invent anonymous rows.
+    // This only controls display, never rewrites saved selections on catalog failure.
+    const getCategory = id => byId.get(id) || (id.startsWith('integration:') ? null : {
+        id, label: id,
         description: '',
         connected: false, tools: [], missing: true,
-    };
+    });
     const rows = skillIds.map(id => {
         const skill = skills.find(s => s.id === id);
         return { key: `skill:${id}`, id, skill: true, label: skill?.name || id,
-            description: skill?.description || '', groups: (skill?.tool_categories || []).map(getCategory),
+            description: skill?.description || '', groups: (skill?.tool_categories || []).map(getCategory).filter(Boolean),
             missing: !skill };
-    }).concat(categoryIds.map(id => ({ ...getCategory(id), key: `tool:${id}` })));
+    }).concat(categoryIds.map(getCategory).filter(Boolean).map(category => ({ ...category, key: `tool:${category.id}` })));
     const availableGroups = [
         ...(onSkillsChange ? [{ label: 'Skills', options: skills.filter(s => !skillIds.includes(s.id)).map(s => ({ ...s, label: s.name, skill: true })) }] : []),
         { label: 'Built-in tools', options: categories.filter(c => !c.connection_id && !categoryIds.includes(c.id)) },

@@ -32,9 +32,17 @@ as the setup action and **Connection** for account/authentication details.
 | MCP server (preview) | Tools discovered per connection | OAuth discovery + DCR or preregistration; unauthenticated servers also supported |
 
 The MCP preview is only offered when the runtime supplies
-`OMNIDECK_EXTERNAL_URL=http://localhost:<published-app-port>` to **both**
-the app and supervisor. This must be the port reachable from the user's browser,
-not an arbitrary inbound Host header or an unpublished container port. The
+`OMNIDECK_EXTERNAL_URL` to **both** the app and supervisor. Set it to the HTTP or
+HTTPS origin reachable from the user's browser, for example
+`http://localhost:9094`, `http://llm1:9094`, or `https://llm1.example.ts.net`.
+Use an origin without a path, credentials, query, or fragment. The MCP callback
+is that origin followed by `/api/integrations/mcp/oauth/callback`; register that
+exact address with the provider when required. Providers may impose their own
+HTTPS or redirect-address requirements. A reverse proxy must route this path
+to the app and preserve the public Host header. The address is never inferred
+from inbound Host or forwarded headers. When signing in from another device,
+use the server's reachable address rather than localhost, which refers to the
+device running the browser. The
 companion CLI change supplies this address from its published host port and
 bumps container layout to reconcile older instances without deleting volumes.
 That change still needs a CLI release and updated desktop bundle pin before
@@ -58,8 +66,7 @@ approve the Slack consent screen, then select tools. Do not enter a Client Secre
 or copy tokens. PKCE makes the app a public OAuth client; reversing that setting
 requires Slack support, so use a dedicated app rather than converting a bot.
 Teammates can reuse the internal app's public Client ID but authorize separately.
-Add each installation's redirect URL if its published port differs. The current
-callback requires the browser to run on the same computer as omnideck.
+Add each installation's configured redirect URL if its public address differs.
 
 The endpoint, issuer and scope policy remain pinned by the backend. Reconnect
 loads the saved Client ID from the existing encrypted OAuth registration; it
@@ -269,13 +276,15 @@ If persistence itself fails, the edit is not saved and the broker is stopped.
 Healthy brokers also accept credential replacements over this control channel:
 prepare a candidate, persist the accepted fields, then activate it. Preparation
 rejection leaves the running connection and vault unchanged. Email authenticates
-the configured IMAP/SMTP/CalDAV clients; Google refreshes candidate OAuth tokens.
+the configured IMAP/SMTP/CalDAV clients; Google accepts access-only credentials
+issued by the supervisor.
 HTTP and model proxies validate local configuration only, not upstream access.
 No credentials are echoed in acknowledgments or control errors.
 
-Activation switches subsequent calls to the new connection and closes old
-clients immediately; in-flight operations may fail and are not automatically
-retried by the update protocol. There is no graceful draining. A failed or
+Activation switches subsequent calls to the new connection. In-flight integration
+calls retain a lease on the old session until they finish, then its transport is
+closed. The update protocol never replays those operations. Shutdown/removal still
+closes unfinished sessions. A failed or
 cancelled control handoff stops the uncertain child. Recovery uses the credentials
 saved on disk (old before persistence, new after persistence). A storage error
 attempts to restore the old vault data and discard the candidate; failure of that
@@ -311,7 +320,7 @@ base class; brokers share a lifecycle, not identical contents.
 | Broker | Session object and resources |
 |---|---|
 | Email | `VerbDispatcher` with configured, authenticated IMAP/SMTP/CalDAV clients |
-| Google Workspace | `VerbDispatcher` backed by refreshed OAuth credentials; API services are built per request |
+| Google Workspace | `VerbDispatcher` backed by supervisor-issued access-only credentials; API services are built per request |
 | HTTP | `VerbDispatcher` with request/auth settings and an owned `aiohttp.ClientSession` |
 | LLM proxy | Immutable `ProxyCredentials`; its process-wide HTTP client survives session replacement |
 | Development test broker | Reused `VerbDispatcher` preserving simulated upstream state across credential updates |
@@ -325,8 +334,8 @@ Factories must also clean up partially created resources if preparation fails.
 - **`brokering._session_slot.BrokerSessionSlot`** owns the active session.
   `prepare()` builds a candidate without changing `session_slot.current` and
   returns `PreparedBrokerSession` callbacks. Activation publishes the new session
-  and closes the old one; discard closes only the candidate. There is no draining
-  or automatic retry, so retiring old clients can interrupt in-flight calls.
+  while existing calls retain their borrowed session until completion; discard
+  closes only the candidate. There is no automatic operation retry.
 - **`brokering._control.BrokerControl`** owns the pending update ID and decides
   which candidate to activate or discard in response to supervisor commands.
   It does not interpret the provider-specific object or write the vault. The
@@ -368,13 +377,24 @@ path sends credentials to the LLM tool adapter.
 
 ### Remote MCP preview
 
-`server._mcp_setup.MCPSetupManager` owns bounded, expiring OAuth setup attempts.
+`server.oauth_setup.coordinator.OAuthSetupCoordinator` owns bounded, expiring OAuth setup attempts for Google, generic MCP, and the Slack MCP preset. Provider adapters prepare credentials; the coordinator alone saves them through the supervisor. Google uses its existing OAuth library in a worker thread with a network timeout; MCP uses the pinned MCP SDK. Cancellation stops consent or exchange, but an in-flight save finishes before setup can close. A saved connection stays successful even if the discovery-cache refresh fails. Application shutdown cancels pending attempts and drains saves. Registered callback URLs and stored credential formats are unchanged; this refactor needs no data migration.
 The official SDK handles discovery, registration, PKCE, issuer verification and
 code exchange; omnideck accepts one state-matched callback on the configured
 loopback origin. Setup holds tokens in memory until the supervisor encrypts the
 connection. Browser status responses never include credentials. OAuth access
 logs omit callback queries and SDK protocol logs are suppressed because they
 can contain sensitive responses. Normal sanitized lifecycle logs remain enabled.
+
+`brokering.mcp_protocol` owns the shared SDK OAuth state adapter, protected HTTP
+transport (including bounded decompression), transport lifetime, tool discovery,
+and safe protocol errors. Setup, supervisor refresh, and the MCP broker consume
+its public package API. It does not import the server, supervisor, or broker
+implementations and does not own browser UI, credential persistence, or grants.
+The supervisor owns refresh tokens for both Google and MCP. MCP brokers receive
+only endpoint/access credentials; Google brokers receive only access token and
+scopes. Client secrets, refresh tokens, and token endpoints stay in the encrypted
+vault and supervisor. Existing Google vault records remain usable without a data
+migration; the broker environment projection changes.
 
 `brokering.brokers.mcp_broker` is the single Streamable HTTP broker implementation
 used by both Slack and custom MCP presets. Each connection gets its own process.
@@ -383,15 +403,39 @@ there is no MCP method passthrough, stdio execution, automatic resource fetching
 sampling, elicitation, or automatic retry of a tool call. Input schemas are
 preserved. There is no output-schema contract in omnideck.
 
-The encrypted bundle stores endpoint, access token, SDK OAuth state (registration,
-issuer-bound metadata, refresh token and absolute expiry), and the discovered
-tool catalog. Only endpoint and access token are injected into the broker.
-Before resolving an MCP broker, the supervisor refreshes an expiring token under
+The connection's owner-only `.meta` file stores the discovered tool catalog in
+`discovered_operations`: IDs, titles, descriptions and input schemas. Approvals
+remain a separate `agent_operation_grants` field. The encrypted `.enc` bundle
+stores endpoint, access token and SDK OAuth state (registration, issuer-bound
+metadata, refresh token and absolute expiry). It also stores a catalog checksum,
+not a second copy of the tool definitions. Reconciliation checks this checksum
+before starting the broker; an interrupted reconnect that leaves mismatched
+files remains broken and can be repaired by reconnecting. Only endpoint and
+access token are injected into the broker.
+Before resolving either OAuth broker, the supervisor refreshes an expiring token under
 the connection mutation lock. Rotated tokens are persisted immediately, before
 attempting the normal prepare/persist/activate credential handoff. They are
 never replaced by the old refresh token during recovery. Boot and crash recovery
 also refresh expired credentials before starting a broker. Refresh failure
 stops resolution and requires reconnect; it never opens consent automatically.
+
+When expiry is unknown, no lifetime is guessed. An explicit token rejection can
+request renewal through the supervisor using the credential generation returned
+at resolution. Concurrent failures of that generation share one renewal; a later
+failure from an old generation uses the already-replaced authorization. Google
+401s and MCP authenticated resource POST 401 Bearer challenges qualify; permission
+failures, arbitrary tool error text, timeouts and separate event-stream failures
+do not. Neither provider replays the tool operation: an operation may contain
+multiple remote requests and may have partially completed. The agent receives
+renewal status and instructions to check the service before repeating the action.
+The response only says renewal succeeded after persistence and broker activation.
+
+Google refresh responses preserve an existing refresh token when none is returned,
+and save a rotated token before activation. MCP uses the shared SDK storage
+adapter for the same guarantee. Cancellation waits for bounded in-flight renewal
+and persistence before releasing the connection lock, preventing removal from
+racing a late credential write. Renewal never changes the saved tool grants.
+
 
 Discovered descriptors travel through the existing `operations` list and immutable
 connection cache. `tools.integrations._mcp_tools` builds connection-bound
@@ -411,8 +455,10 @@ cancellation never deletes the existing account.
 Network policy is public HTTPS only: DNS answers are checked and pinned for each
 request, private/link-local addresses are rejected, TLS SNI/Host retain the
 original hostname, and environment proxies and HTTP redirects are not followed.
-Catalogs, responses and tool results are bounded. Compressed responses are not
-accepted. `OMNIDECK_ENABLE_TEST_INTEGRATIONS=1` additionally permits loopback
+Catalogs, responses and tool results are bounded. Gzip and deflate responses
+are decoded incrementally, with separate 4 MiB limits on transferred and expanded
+response bytes. Other encodings are not advertised or accepted.
+`OMNIDECK_ENABLE_TEST_INTEGRATIONS=1` additionally permits loopback
 HTTP fixtures; it does not permit arbitrary private-network endpoints.
 
 Slack's preset requests the reviewed scope policy described above. The internal
@@ -539,7 +585,7 @@ The wizard does **not** support renaming the connection ID after the fact — on
 | `/var/lib/omnideck/vault/.master-key` | `broker:broker` | `0600` | AES-256 master key |
 | `/var/lib/omnideck/vault/.migrations.json` | `broker:broker` | `0600` | Vault migration ledger |
 | `/var/lib/omnideck/vault/creds/` | `broker:broker` | `0700` | Credential and metadata files |
-| `/var/lib/omnideck/vault/creds/<id>.meta` | `broker:broker` | `0600` | Plaintext metadata (label, operation grants, slug) |
+| `/var/lib/omnideck/vault/creds/<id>.meta` | `broker:broker` | `0600` | Plaintext metadata (label, operation grants, slug, discovered MCP tools) |
 | `/var/lib/omnideck/vault/creds/<id>.enc` | `broker:broker` | `0600` | Encrypted credential blob |
 | `/var/lib/omnideck/vault/creds/<id>.meta.pre-v3.bak` | `broker:broker` | `0600` | Original legacy metadata, if migrated |
 | `/run/cvault/` | `broker:broker` | `0750` | Runtime sockets; not part of the persistent state volume |
@@ -616,9 +662,10 @@ The broker reconnects automatically when the upstream server drops an idle conne
 |---|---|
 | Supervisor (vault, lifecycle, RPC) | `brokering/supervisor/` |
 | Email broker (IMAP + SMTP + CalDAV) | `brokering/brokers/email_broker/` |
-| Remote MCP broker, network policy and SDK OAuth adapter | `brokering/brokers/mcp_broker/` |
-| MCP setup coordinator and browser callback routes | `server/_mcp_setup.py`, `server/_mcp_routes.py`, `server/_mcp_oauth_callback.py` |
-| Supervisor-owned MCP refresh | `brokering/supervisor/_mcp_refresh.py` |
+| Shared MCP protocol, network policy and SDK OAuth adapter | `brokering/mcp_protocol/` |
+| Remote MCP broker and tool-grant enforcement | `brokering/brokers/mcp_broker/` |
+| MCP setup coordinator and browser callback routes | `server/oauth_setup/` |
+| Supervisor-owned OAuth refresh | `brokering/supervisor/_manager.py`, `_mcp_refresh.py`, `_google_refresh.py` |
 | Wire framing + ready signal + exit codes | `brokering/_rpc.py`, `brokering/_ready.py`, `brokering/_exit_codes.py` |
 | Tool-integration catalog | `integrations/catalog/` |
 | Model-provider presets and HTTP proxy | `brokering/brokers/llm_proxy/` |
@@ -630,7 +677,7 @@ The broker reconnects automatically when the upstream server drops an idle conne
 | Vault migration plan | `brokering/migrations/` |
 | Broker session ownership and private control | `brokering/_session_slot.py`, `brokering/_control.py` |
 | Shared integration broker runtime | `brokering/brokers/_common/_runtime.py` |
-| App-server HTTP/OAuth routes | `server/_integrations_routes.py`, `server/_integrations_oauth_routes.py` |
+| App-server HTTP/OAuth routes | `server/_integrations_routes.py`, `server/oauth_setup/routes.py` |
 | Agent-side broker client | `brokering/broker_client/` |
 | Agent tool wrappers | `tools/integrations/` |
 | React UI | `server/ui/src/features/integrations/` |
@@ -674,3 +721,27 @@ tests. Do not enable it in a production deployment.
 ---
 
 See [`plans/integrations-followups.md`](../plans/integrations-followups.md) for what's next.
+
+### Local and tailnet MCP servers
+
+Custom MCP connections support Streamable HTTP servers on loopback, LAN, and
+Tailscale addresses without a test-mode switch. HTTP is supported for those
+local address ranges; public servers require HTTPS. Link-local, multicast,
+unspecified and reserved destinations remain blocked. Every DNS answer is checked
+and the selected address is pinned for the request. Redirects remain disabled
+and bearer credentials remain scoped to the connected origin.
+
+OAuth is optional: a server that accepts the initial protocol requests without
+a challenge connects directly. Tailscale Serve can supply HTTPS and tailnet
+identity enforcement without OAuth. The omnideck runtime/container must itself
+be able to resolve and route to that tailnet hostname. `localhost` refers to the
+runtime container, not the desktop host; use a reachable host or tailnet address.
+
+A tailnet-only HTTP endpoint using a literal Tailscale IP can be entered directly
+without special container launch settings, provided the container host is on the
+tailnet. For example, a companion may expose `http://<tailnet-ip>:8767/mcp` through
+a proxy that enforces Tailscale identity. WireGuard encrypts the traffic between
+hosts; the HTTP endpoint does not add its own TLS layer. The server must support
+the IP Host header. HTTPS hostname endpoints still require working DNS inside
+the container; avoid changing global DNS when the companion supports direct-IP
+access instead.

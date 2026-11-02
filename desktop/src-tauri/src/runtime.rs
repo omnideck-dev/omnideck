@@ -24,14 +24,12 @@ use std::{
     time::Duration,
 };
 use tauri::{ipc::Channel, AppHandle, WebviewWindow};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 pub(crate) const CONTAINER_NAME: &str = "omnideck-desktop";
 const HOME_VOLUME: &str = "omnideck-desktop-home";
 const STATE_VOLUME: &str = "omnideck-desktop-state";
 const DOWNLOAD_URL: &str = "https://github.com/omnideck-dev/omnideck/releases";
 const SUPPORTED_SYSTEMS_URL: &str = "https://github.com/omnideck-dev/omnideck#prerequisites";
-const HEALTH_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -328,7 +326,8 @@ fn failure_kind_for(platform: &str, error: &BridgeError) -> &'static str {
         "DOWNLOAD_FAILED" => "podmanDownload",
         "UNSUPPORTED" => "support",
         "RUNTIME_SETUP_FAILED" | "ENGINE_NOT_FOUND" | "ENGINE_NOT_READY" => "environment",
-        "PORT_IN_USE" | "CONTAINER_CONFLICT" | "APP_HEALTH_TIMEOUT" => "startup",
+        "MIGRATION_FAILED" => "migration",
+        "PORT_IN_USE" | "CONTAINER_CONFLICT" | "APP_STARTUP_FAILED" => "startup",
         "INVALID_IMAGE_MANIFEST" => "release",
         "SIDECAR_NOT_BUNDLED"
         | "UNEXPECTED_CLI_VERSION"
@@ -339,41 +338,12 @@ fn failure_kind_for(platform: &str, error: &BridgeError) -> &'static str {
     }
 }
 
-async fn wait_for_http(port: u16) -> BridgeResult<()> {
-    let started = tokio::time::Instant::now();
-    loop {
-        if let Ok(Ok(mut stream)) = tokio::time::timeout(
-            Duration::from_secs(2),
-            tokio::net::TcpStream::connect(("127.0.0.1", port)),
-        )
-        .await
-        {
-            let request =
-                format!("GET / HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n");
-            if stream.write_all(request.as_bytes()).await.is_ok() {
-                let mut response = [0u8; 64];
-                if let Ok(Ok(read)) =
-                    tokio::time::timeout(Duration::from_secs(2), stream.read(&mut response)).await
-                {
-                    let status = std::str::from_utf8(&response[..read])
-                        .ok()
-                        .and_then(|value| value.lines().next())
-                        .and_then(|line| line.split_whitespace().nth(1))
-                        .and_then(|value| value.parse::<u16>().ok());
-                    if status.is_some_and(|status| (200..300).contains(&status)) {
-                        return Ok(());
-                    }
-                }
-            }
-        }
-        if started.elapsed() >= HEALTH_TIMEOUT {
-            return Err(BridgeError::new(
-                "APP_HEALTH_TIMEOUT",
-                "omnideck did not become ready in time.",
-            ));
-        }
-        tokio::time::sleep(Duration::from_millis(500)).await;
-    }
+async fn wait_for_application(app: &AppHandle) -> BridgeResult<()> {
+    require_success(
+        run_fixed(app, FixedOperation::WaitInstance).await?,
+        "Application startup checks",
+    )?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -493,7 +463,7 @@ pub(crate) async fn bootstrap(
             .web_ui_port
             .parse::<u16>()
             .map_err(|error| BridgeError::new("INVALID_APP_PORT", error.to_string()))?;
-        wait_for_http(port).await?;
+        wait_for_application(&app).await?;
         show_hosted(&app, &host, port)?;
         Ok(BootstrapResult {
             action: "open",
@@ -670,7 +640,7 @@ pub(crate) async fn begin_setup(
             .web_ui_port
             .parse::<u16>()
             .map_err(|error| BridgeError::new("INVALID_APP_PORT", error.to_string()))?;
-        wait_for_http(actual_port).await?;
+        wait_for_application(&app).await?;
         save_setup_record("complete", &reason, &manifest)?;
         if reason == "update" {
             updates::complete()?;
@@ -728,7 +698,7 @@ pub(crate) async fn open_app(
         .and_then(|value| *value)
         .or_else(persisted_port)
         .ok_or_else(|| BridgeError::new("PORT_MISSING", "The saved omnideck port is missing."))?;
-    wait_for_http(port).await?;
+    wait_for_application(&app).await?;
     show_hosted(&app, &host, port)
 }
 
@@ -828,6 +798,16 @@ pub(crate) fn start_packaged_smoke(app: AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn migration_failure_selects_specific_recovery_copy_on_all_platforms() {
+        for platform in ["linux", "darwin", "win32"] {
+            assert_eq!(
+                failure_kind_for(platform, &BridgeError::new("MIGRATION_FAILED", "failed")),
+                "migration"
+            );
+        }
+    }
 
     #[test]
     fn permission_cancellation_copy_is_platform_specific() {

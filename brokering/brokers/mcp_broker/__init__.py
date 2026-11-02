@@ -1,1 +1,1 @@
-"""Remote MCP transport shared by setup and per-connection broker processes."""
+"""Isolated MCP broker: connection lifecycle, tool grants and invocation."""

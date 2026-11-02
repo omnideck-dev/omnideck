@@ -1,6 +1,7 @@
 """Selection identity, approval boundaries, and direct/skill union."""
 
 from dataclasses import replace
+import json
 from unittest.mock import AsyncMock
 
 import pytest
@@ -64,3 +65,24 @@ async def test_mcp_and_native_connections_share_catalog_identity():
     assert cats["integration:mcp-one"].connection_id == "mcp-one"
     assert "email" not in cats and "mcp" not in cats
     assert len(cats["integration:mcp-one"].tools) == 1
+
+
+async def test_unavailable_mcp_schema_does_not_break_selected_or_unrelated_agents():
+    operations = parse_discovered_operations(json.dumps([
+        {"id": "mcp.good", "title": "Good", "description": "", "input_schema": {"type": "object"}},
+        {"id": "mcp.bad", "title": "Bad", "description": "", "input_schema": {
+            "type": "object", "properties": {"value": {"type": "integerish"}},
+        }},
+    ]))
+    remote = IntegrationConnection("mixed", "mcp", discovered_operations=operations,
+                                   operation_grants=frozenset({"mcp.good", "mcp.bad"}))
+    categories = await tool_categories((remote,))
+    category = categories["integration:mixed"]
+    assert len(category.tools) == 1
+    assert [operation["id"] for operation in category.operations] == ["mcp.good"]
+    for selected in ([], ["integration:mixed"]):
+        state = await AgentFactory().build_capabilities(
+            AgentProfile(id="schema-test", name="Schema test", tool_categories=selected),
+            spawn_agent=AsyncMock(), connections=(remote,),
+        )
+        assert (category.tools[0].__name__ in {tool.__name__ for tool in state.tools}) == bool(selected)
