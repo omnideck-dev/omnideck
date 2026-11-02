@@ -83,7 +83,7 @@ describe('BrowserSaveModal', () => {
         expect(target).toHaveAttribute('data-value', 'default');
         expect(screen.queryByLabelText('Profile name')).not.toBeInTheDocument();
         expect(screen.getByTestId('browser-save-confirm')).toHaveTextContent('Update Default');
-        expect(screen.getByTestId('browser-save-confirm')).toBeEnabled();
+        await waitFor(() => expect(screen.getByTestId('browser-save-confirm')).toBeEnabled());
     });
 
     it('waits for the takeover source profile instead of showing a fallback destination', async () => {

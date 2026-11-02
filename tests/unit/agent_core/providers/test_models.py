@@ -63,8 +63,8 @@ class TestChatMessage:
 class TestTokenUsage:
     def test_defaults(self):
         u = TokenUsage()
-        assert u.prompt_tokens == 0
-        assert u.completion_tokens == 0
+        assert u.prompt_tokens is None
+        assert u.completion_tokens is None
 
     def test_explicit_values(self):
         u = TokenUsage(prompt_tokens=100, completion_tokens=50)
@@ -77,7 +77,7 @@ class TestChatResponse:
     def test_minimal(self):
         r = ChatResponse(message=ChatMessage(content="hi"))
         assert r.message.content == "hi"
-        assert r.usage.prompt_tokens == 0
+        assert r.usage.prompt_tokens is None
         assert r.done_reason is None
         assert r.raw is None
 

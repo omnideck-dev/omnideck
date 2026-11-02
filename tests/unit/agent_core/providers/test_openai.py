@@ -13,6 +13,7 @@ from agent_core.providers._openai import (
     OpenAIProvider,
     _build_tool_calls,
     _convert_messages_for_openai,
+    _extract_usage,
     _normalize_response,
     _wrap_error,
 )
@@ -186,7 +187,7 @@ class TestNormalizeResponse:
             choices=[_FakeChoice(message=_FakeMessage(content="hello"), finish_reason="stop")],
             usage=_FakeUsage(prompt_tokens=10, completion_tokens=5),
         )
-        result = _normalize_response(raw)
+        result = _normalize_response(raw, usage=_extract_usage(raw.usage))
         assert result.message.content == "hello"
         assert result.message.tool_calls is None
         assert result.usage.prompt_tokens == 10
@@ -202,7 +203,7 @@ class TestNormalizeResponse:
         raw = _FakeResponse(
             choices=[_FakeChoice(message=_FakeMessage(tool_calls=[tc]), finish_reason="tool_calls")],
         )
-        result = _normalize_response(raw)
+        result = _normalize_response(raw, usage=_extract_usage(raw.usage))
         assert result.message.tool_calls is not None
         assert len(result.message.tool_calls) == 1
         assert result.message.tool_calls[0].id == "call_1"
@@ -213,19 +214,19 @@ class TestNormalizeResponse:
     def test_invalid_tool_call_arguments_become_empty(self):
         tc = _FakeToolCall(id="x", function=_FakeFunction(name="fn", arguments="bad{"))
         raw = _FakeResponse(choices=[_FakeChoice(message=_FakeMessage(tool_calls=[tc]))])
-        result = _normalize_response(raw)
+        result = _normalize_response(raw, usage=_extract_usage(raw.usage))
         assert result.message.tool_calls[0].function.arguments == {}
 
     def test_finish_reason_mapped(self):
         raw = _FakeResponse(choices=[_FakeChoice(message=_FakeMessage(content="hi"), finish_reason="length")])
-        result = _normalize_response(raw)
+        result = _normalize_response(raw, usage=_extract_usage(raw.usage))
         assert result.done_reason == "length"
 
     def test_no_usage(self):
         raw = _FakeResponse(choices=[_FakeChoice(message=_FakeMessage(content="hi"))], usage=None)
-        result = _normalize_response(raw)
-        assert result.usage.prompt_tokens == 0
-        assert result.usage.completion_tokens == 0
+        result = _normalize_response(raw, usage=_extract_usage(raw.usage))
+        assert result.usage.prompt_tokens is None
+        assert result.usage.completion_tokens is None
 
 
 # ---------------------------------------------------------------------------

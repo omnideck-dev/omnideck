@@ -18,6 +18,7 @@ def test_chat_opens_scoped_artifacts_and_artifact_tab(page: Page):
     # Produce in a conversation and stay in it so the scoped query is active.
     produce(page, (f"{VC_HOME}/{name}", "# conversation artifact\n\nhello"))
     try:
+        page.get_by_role("button", name="Details", exact=False).click()
         page.get_by_test_id("conversation-artifacts-trigger").click()
         hub = page.get_by_test_id("artifacts-hub")
         expect(hub).to_be_visible()

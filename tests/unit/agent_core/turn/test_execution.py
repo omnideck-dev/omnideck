@@ -212,6 +212,40 @@ async def test_simple_text_response() -> None:
     assert history.messages[-1]["content"] == "Hello!"
 
 
+@pytest.mark.parametrize("provider_name", ["openai", "anthropic", "openrouter", "ollama"])
+async def test_iteration_passes_through_provider_normalized_usage(
+    _patch_publish_event: MagicMock, provider_name: str,
+) -> None:
+    response = _text_response("Hello!")
+    response.usage.cache_read_tokens = 5
+    response.usage.cache_creation_tokens = 2
+    response.usage.reported_cost_usd = 0.0123
+    provider = FakeProvider([response])
+    history = ConversationHistory([{"role": "user", "content": "Hi"}])
+    await AgentExecutor().execute(
+        history=history, agent=_make_agent(provider=provider_name), **execution_inputs(provider, 1),
+    )
+    iterations = [call.args[0].payload for call in _patch_publish_event.call_args_list
+                  if call.args[0].payload.type == "iteration"]
+    assert len(iterations) == 1
+    assert iterations[0].usage == response.usage
+    assert iterations[0].total_tokens is None
+
+
+async def test_iteration_without_reported_usage_is_unknown(_patch_publish_event: MagicMock) -> None:
+    response = _text_response("Hello!")
+    response.usage = TokenUsage()
+    history = ConversationHistory([{"role": "user", "content": "Hi"}])
+    await AgentExecutor().execute(
+        history=history, agent=_make_agent(), **execution_inputs(FakeProvider([response]), 1),
+    )
+    iteration = next(call.args[0].payload for call in _patch_publish_event.call_args_list
+                     if call.args[0].payload.type == "iteration")
+    assert iteration.total_tokens is None
+    assert iteration.usage.prompt_tokens is None
+    assert iteration.usage.reported_cost_usd is None
+
+
 async def test_tool_call_then_final_response() -> None:
     """Provider requests a tool call, gets the result, then responds with text."""
     provider = FakeProvider(

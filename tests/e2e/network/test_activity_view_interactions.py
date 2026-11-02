@@ -32,7 +32,7 @@ def _open_helper_activity(page: Page):
         name="helper_agent",
     )).wait_streaming()
 
-    network = NetworkView(page)
+    network = NetworkView(page).show_details()
     expect(network.indicator).to_be_visible(timeout=5000)
     network.open()
     expect(network.agent_cards.first).to_be_visible(timeout=5000)

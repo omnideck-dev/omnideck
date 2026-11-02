@@ -92,8 +92,8 @@ class TestNormalizeResponse:
         raw.prompt_eval_count = None  # type: ignore[assignment]
         raw.eval_count = None  # type: ignore[assignment]
         result = _normalize_response(raw)
-        assert result.usage.prompt_tokens == 0
-        assert result.usage.completion_tokens == 0
+        assert result.usage.prompt_tokens is None
+        assert result.usage.completion_tokens is None
 
 
 async def _async_iter(items):
