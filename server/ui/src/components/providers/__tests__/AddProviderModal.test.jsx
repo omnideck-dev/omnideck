@@ -65,3 +65,39 @@ describe('AddProviderModal Ollama host prefill', () => {
         expect(input.getAttribute('placeholder')).not.toContain('localhost');
     });
 });
+
+describe('AddProviderModal failed add', () => {
+    it('refreshes the provider list without closing the modal or reporting success', async () => {
+        globalThis.fetch = vi.fn((url) => {
+            if (url === '/api/providers') {
+                return Promise.resolve({
+                    ok: false,
+                    status: 503,
+                    json: () => Promise.resolve({
+                        error: 'provider_unreachable',
+                        message: 'Could not reach host',
+                    }),
+                });
+            }
+            return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+        });
+        const onAdded = vi.fn();
+        const onRefresh = vi.fn();
+        render(<AddProviderModal onClose={vi.fn()} onAdded={onAdded} onRefresh={onRefresh} />);
+        await _openOllamaConfigure();
+
+        await act(async () => {
+            fireEvent.change(document.querySelector('#provider-url'), {
+                target: { value: 'http://localhost:9999' },
+            });
+        });
+        await act(async () => {
+            fireEvent.click(screen.getByTestId('provider-configure-submit-btn'));
+        });
+
+        expect(onRefresh).toHaveBeenCalledTimes(1);
+        expect(onAdded).not.toHaveBeenCalled();
+        expect(screen.getByTestId('add-provider-modal')).toBeInTheDocument();
+        expect(await screen.findByText(/Could not reach host/)).toBeInTheDocument();
+    });
+});
