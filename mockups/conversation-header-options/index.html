@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="en" data-option="a" data-state="unseen" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>omnideck conversation header options</title>
+<style>
+:root {
+  color-scheme: dark;
+  --canvas:#0c0e14;
+  --surface:#151821;
+  --elevated:#1e2130;
+  --text:#e8ecf4;
+  --secondary:#8892a8;
+  --tertiary:#4a5168;
+  --border:#252a3a;
+  --border-subtle:#1a1e2a;
+  --border-strong:#363d52;
+  --accent:#3b82f6;
+  --accent-hover:#60a5fa;
+  --accent-muted:rgba(59,130,246,.12);
+  --success:#4ade80;
+  --success-muted:rgba(74,222,128,.12);
+  --warning:#fbbf24;
+  --warning-muted:rgba(251,191,36,.12);
+  --shadow:0 12px 38px rgba(0,0,0,.38),0 2px 8px rgba(0,0,0,.28);
+  --font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:"JetBrains Mono","SFMono-Regular",Consolas,monospace;
+}
+* { box-sizing:border-box; }
+html,body { width:100%; min-width:1040px; height:100%; margin:0; overflow:hidden; }
+body { color:var(--text); background:#080a0f; font:13px/1.45 var(--font); -webkit-font-smoothing:antialiased; }
+button { color:inherit; font:inherit; cursor:pointer; }
+button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.icon { width:16px; height:16px; display:block; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+.icon.small { width:14px; height:14px; }
+
+/* Review controls are outside the simulated product surface. */
+.review-bar { height:58px; display:flex; align-items:center; gap:14px; padding:0 18px; border-bottom:1px solid #2e3443; background:#1a1d26; box-shadow:0 2px 12px rgba(0,0,0,.28); position:relative; z-index:100; }
+.review-label { min-width:170px; }
+.review-title { display:block; color:#dce2ed; font:650 11px/1 var(--mono); letter-spacing:.08em; text-transform:uppercase; }
+.review-subtitle { display:block; margin-top:5px; color:#687185; font-size:10px; }
+.option-switch { display:flex; gap:3px; padding:3px; border-radius:8px; background:#0e1118; }
+.option-switch button { height:34px; min-width:112px; padding:0 13px; border:0; border-radius:6px; background:transparent; color:#7d879b; font-size:11px; white-space:nowrap; }
+.option-switch button:hover { color:#dfe4ee; background:#171b24; }
+.option-switch button.active { color:#fff; background:#2b3140; box-shadow:0 1px 3px rgba(0,0,0,.35); }
+.state-switch button { min-width:96px; }
+.review-rationale { max-width:450px; margin-left:auto; color:#7f899d; font-size:10.5px; line-height:1.35; text-align:right; }
+.viewport { height:calc(100% - 58px); overflow:hidden; }
+
+/* Real product shell. */
+.product { width:100%; height:100%; display:flex; background:var(--canvas); }
+.sidebar { width:264px; flex:none; display:flex; flex-direction:column; border-right:1px solid var(--border); background:var(--surface); }
+.brand { height:44px; flex:none; display:flex; align-items:center; padding:0 8px 0 14px; border-bottom:1px solid var(--border); }
+.wordmark { flex:1; font:500 13px/1 var(--mono); letter-spacing:.06em; }
+.icon-btn { width:28px; height:28px; display:grid; place-items:center; border:0; border-radius:6px; background:transparent; color:var(--tertiary); }
+.icon-btn:hover { color:var(--text); background:var(--accent-muted); }
+.sidebar-nav { display:flex; flex-direction:column; gap:1px; padding:8px; }
+.nav-item { height:32px; display:flex; align-items:center; gap:11px; padding:0 9px; border:0; border-radius:6px; background:transparent; color:var(--secondary); font-size:12.5px; text-align:left; }
+.nav-item:hover { color:var(--text); background:var(--elevated); }
+.nav-icon { width:18px; display:grid; place-items:center; color:#69738a; }
+.conversations { flex:1; min-height:0; display:flex; flex-direction:column; margin-top:2px; border-top:1px solid var(--border); }
+.new-chat { height:32px; display:flex; align-items:center; gap:9px; margin:7px 8px 2px; padding:0 8px; border:0; border-radius:6px; background:transparent; text-align:left; }
+.new-chat:hover { background:var(--elevated); }
+.plus { width:20px; height:20px; display:grid; place-items:center; border:1px solid var(--border-strong); border-radius:50%; color:var(--secondary); font-size:15px; line-height:1; }
+.section-label { padding:8px 18px 5px; color:var(--tertiary); font:600 9px/1 var(--mono); letter-spacing:.08em; text-transform:uppercase; }
+.conversation-row { height:31px; display:flex; align-items:center; gap:8px; margin:0 8px; padding:0 9px; border-radius:6px; color:#687188; font-size:11.5px; white-space:nowrap; }
+.conversation-row.active { color:#cfd5e1; background:#1b1f2a; }
+.conversation-row .dot { width:5px; height:5px; border-radius:50%; background:#4c566e; flex:none; }
+.conversation-row.active .dot { background:var(--accent); }
+.sidebar-footer { height:45px; flex:none; display:flex; align-items:center; gap:4px; padding:8px; border-top:1px solid var(--border); }
+.sidebar-footer .spacer { flex:1; }
+.desktop { min-width:0; flex:1; display:flex; flex-direction:column; }
+.desktop-tabs { height:36px; flex:none; display:flex; align-items:stretch; border-bottom:1px solid var(--border); background:var(--surface); }
+.desktop-tab { height:36px; display:flex; align-items:center; gap:7px; padding:0 12px; border:0; border-bottom:2px solid transparent; background:transparent; color:#778198; font-size:13px; }
+.desktop-tab.active { border-bottom-color:var(--accent); color:var(--text); }
+.desktop-tab:hover { color:var(--text); background:#1a1e28; }
+.desktop-tab .tab-icon { color:var(--secondary); }
+.tab-close { margin-left:4px; color:#596277; font-size:15px; line-height:1; }
+.desktop-tabs .tab-space { flex:1; }
+.desktop-actions { display:flex; align-items:center; gap:1px; padding:0 5px; }
+.conversation-view { position:relative; flex:1; min-height:0; display:flex; flex-direction:column; overflow:hidden; background:var(--canvas); }
+
+/* Shared conversation content. */
+.proposal { display:none; flex:none; position:relative; z-index:6; }
+html[data-option="a"] .proposal-a,
+html[data-option="b"] .proposal-b { display:flex; }
+.chat-stage { flex:1; min-height:0; display:flex; overflow:hidden; }
+.chat-main { min-width:0; flex:1; display:flex; flex-direction:column; }
+.messages { flex:1; min-height:0; overflow:hidden; }
+.messages-inner { width:min(760px,calc(100% - 36px)); margin:0 auto; padding:20px 0 10px; }
+.user-message { display:flex; justify-content:flex-end; margin:0 0 16px; }
+.user-bubble { max-width:74%; padding:8px 13px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:#dfe4ed; line-height:1.5; }
+.assistant-message { padding:0 12px 18px; color:#cdd3de; line-height:1.58; }
+.assistant-message p { margin:0 0 12px; }
+.assistant-message p:last-child { margin-bottom:0; }
+.assistant-message strong { color:#eef1f7; font-weight:650; }
+.file-card { display:flex; align-items:center; gap:11px; width:330px; margin:14px 0 2px; padding:10px 12px; border:1px solid var(--border); border-radius:8px; background:#12151d; }
+.file-card .file-icon { width:32px; height:32px; display:grid; place-items:center; border-radius:7px; background:var(--accent-muted); color:#75a5ff; }
+.file-card strong { display:block; font-size:12px; }
+.file-card span { display:block; margin-top:2px; color:var(--tertiary); font-size:10px; }
+.activity-link { display:inline-flex; align-items:center; gap:5px; margin-top:9px; color:#59637a; font:500 10px/1 var(--mono); }
+.conversation-events { display:flex; flex-direction:column; gap:6px; margin:2px 12px 18px; }
+.conversation-event { min-height:42px; display:flex; align-items:center; gap:9px; padding:7px 9px; border:1px solid var(--border); border-radius:8px; background:#11141c; }
+.event-icon { width:27px; height:27px; display:grid; place-items:center; flex:none; border-radius:7px; color:#80aaff; background:var(--accent-muted); }
+.event-icon.agent { color:#d4a7fb; background:rgba(192,132,252,.12); }
+.event-copy { min-width:0; flex:1; }
+.event-copy strong { display:block; color:#b9c2d2; font-size:10.5px; font-weight:600; }
+.event-copy span { display:block; margin-top:1px; overflow:hidden; color:#5d677d; font-size:9.5px; text-overflow:ellipsis; white-space:nowrap; }
+.event-action { padding:3px 6px; border:0; border-radius:5px; background:transparent; color:#6f9fff; font-size:9.5px; font-weight:600; }
+.event-action:hover { background:var(--accent-muted); }
+.composer-wrap { flex:none; padding:14px 18px 18px; }
+.composer { max-width:760px; min-height:92px; margin:0 auto; padding:12px 8px 7px 14px; border:1px solid var(--border); border-radius:12px; background:var(--elevated); box-shadow:0 2px 8px rgba(0,0,0,.35); }
+.composer-placeholder { height:39px; color:#5d667b; font-size:13.5px; }
+.composer-row { display:flex; align-items:center; gap:6px; }
+.profile-pill { height:28px; display:flex; align-items:center; gap:6px; padding:0 9px; border:0; border-radius:6px; background:transparent; color:var(--secondary); font-size:11px; }
+.composer-row .grow { flex:1; }
+.round-btn { width:30px; height:30px; display:grid; place-items:center; border:0; border-radius:50%; background:transparent; color:var(--secondary); }
+.send { color:#fff; background:#303746; }
+.stage-drawer { display:none; }
+html[data-option="b"] .stage-drawer { display:flex; }
+
+/* Shared semantic pieces. */
+.conversation-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text); font-weight:650; }
+.meta { color:var(--tertiary); font:500 10px/1 var(--mono); white-space:nowrap; }
+.status-dot { width:7px; height:7px; border-radius:50%; background:var(--success); box-shadow:0 0 0 3px var(--success-muted); }
+.reopen-mark { width:17px; height:17px; display:grid; place-items:center; border-radius:50%; color:#82aaff; background:var(--accent-muted); }
+.resource-icon { width:32px; height:32px; display:grid; place-items:center; flex:none; border-radius:8px; color:#92a0b8; background:#202432; }
+.resource-icon.web { color:#7aa7ff; background:var(--accent-muted); }
+.resource-icon.terminal { color:#9be3af; background:var(--success-muted); }
+.resource-icon.people { color:#d7a9ff; background:rgba(192,132,252,.12); }
+.resource-icon.files { color:#91b4ff; background:var(--accent-muted); }
+
+/* A — compact workspace disclosure. */
+.proposal-a { height:48px; align-items:center; gap:12px; padding:0 14px 0 16px; border-bottom:1px solid var(--border); background:var(--canvas); }
+.a-identity { min-width:0; flex:1; display:flex; align-items:center; gap:10px; }
+.a-identity .conversation-title { max-width:460px; font-size:13.5px; }
+.workspace-trigger { height:30px; display:flex; align-items:center; gap:8px; padding:0 8px 0 10px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:#cbd2df; font-size:11.5px; }
+.workspace-trigger:hover { border-color:var(--border-strong); background:var(--elevated); }
+.workspace-popover { position:absolute; top:56px; right:14px; z-index:20; width:332px; overflow:hidden; border:1px solid var(--border-strong); border-radius:11px; background:#181b25; box-shadow:var(--shadow); }
+.popover-head { display:flex; align-items:center; padding:11px 14px 10px; border-bottom:1px solid var(--border); }
+.popover-head strong { display:block; font-size:12px; }
+.popover-head span { display:block; margin-top:2px; color:#59637a; font-size:9.5px; }
+.resource-list { padding:6px; }
+.resource-row { width:100%; min-height:48px; display:flex; align-items:center; gap:10px; padding:7px 8px; border:0; border-radius:7px; background:transparent; text-align:left; }
+.resource-row:hover { background:#202431; }
+.resource-copy { min-width:0; flex:1; }
+.resource-copy strong { display:block; color:#dfe4ee; font-size:11.5px; font-weight:600; }
+.resource-copy span { display:block; margin-top:2px; color:#69738a; font-size:10px; }
+.resource-copy .resource-count { display:inline-grid; min-width:17px; height:17px; place-items:center; margin:0 0 0 5px; padding:0 5px; border-radius:9px; color:#b9c3d5; background:#2b3040; font:600 8.5px/1 var(--mono); vertical-align:1px; }
+.resource-actions { display:flex; align-items:center; gap:7px; }
+.row-chevron { width:16px; flex:none; color:#68738a; font-size:18px; line-height:1; text-align:center; }
+.resource-row:hover .row-chevron { color:#9ebaff; }
+.new-marker { height:18px; display:inline-flex; align-items:center; padding:0 6px; border-radius:9px; color:#8eb4ff; background:var(--accent-muted); font:600 8px/1 var(--mono); letter-spacing:.03em; text-transform:uppercase; }
+.unseen-badge { height:18px; display:inline-flex; align-items:center; padding:0 6px; border-radius:9px; color:#dce8ff; background:#315da8; font:650 8.5px/1 var(--mono); }
+html[data-state="opened"] .unseen-badge { display:none; }
+.advanced-disclosure { width:100%; min-height:43px; display:flex; align-items:center; gap:9px; padding:8px 12px; border:0; border-top:1px solid var(--border); border-radius:0; background:#141720; color:#8f99ad; text-align:left; }
+.advanced-disclosure:hover { color:#cbd2de; background:#1b1f2a; }
+.advanced-disclosure .icon { margin-left:auto; }
+.advanced-copy { flex:1; }
+.advanced-copy strong { display:block; color:#aeb7c8; font-size:10.5px; font-weight:600; }
+.advanced-copy span { display:block; margin-top:2px; color:#59637a; font-size:9.5px; }
+.advanced-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:1px; border-top:1px solid var(--border); background:var(--border); }
+.advanced-stats[hidden] { display:none; }
+.stat { padding:10px 11px; background:#12151d; }
+.stat span { display:block; color:#566077; font-size:8.5px; text-transform:uppercase; letter-spacing:.06em; }
+.stat strong { display:block; margin-top:4px; color:#bdc5d4; font:600 10px/1 var(--mono); }
+.compaction-status { padding:10px 11px 11px; border-top:1px solid var(--border); background:#12151d; }
+.compaction-head { display:flex; align-items:center; color:#9fa9bc; font-size:9.5px; }
+.compaction-head strong { font-weight:600; }
+.compaction-head span { margin-left:auto; color:#8490a6; font:600 9px/1 var(--mono); }
+.compaction-meter { height:4px; margin-top:8px; overflow:hidden; border-radius:2px; background:#252a38; }
+.compaction-meter::after { content:""; display:block; width:62%; height:100%; border-radius:2px; background:#687894; }
+.compaction-note { display:block; margin-top:6px; color:#525c72; font-size:8.5px; }
+.agent-usage { padding:10px 11px 12px; border-top:1px solid var(--border); background:#12151d; }
+.agent-usage-title { display:flex; align-items:center; margin-bottom:7px; color:#aeb7c8; font-size:10px; font-weight:600; }
+.agent-usage-title span { margin-left:auto; color:#535d72; font-size:8.5px; font-weight:400; }
+.usage-row { display:grid; grid-template-columns:minmax(0,1fr) 64px 58px; align-items:center; min-height:27px; border-top:1px solid #1c202b; font-size:9.5px; }
+.usage-row.header { min-height:23px; border:0; color:#525c72; font:600 8px/1 var(--mono); letter-spacing:.06em; text-transform:uppercase; }
+.usage-row span:nth-child(2),.usage-row span:nth-child(3) { text-align:right; }
+.usage-agent { min-width:0; overflow:hidden; color:#9fa9bc; text-overflow:ellipsis; white-space:nowrap; }
+.usage-agent small { margin-left:5px; color:#525c72; font-size:8px; }
+.usage-value { color:#778399; font:500 9px/1 var(--mono); }
+
+/* B — details side panel. */
+.proposal-b { height:46px; align-items:center; gap:10px; padding:0 12px 0 16px; border-bottom:1px solid var(--border); background:var(--canvas); }
+.proposal-b .conversation-title { flex:1; font-size:13.5px; }
+.details-trigger { height:30px; display:flex; align-items:center; gap:7px; padding:0 10px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:#cbd2de; font-size:11px; }
+.details-trigger.active { color:#dfe8f8; border-color:#3a4e76; background:var(--accent-muted); }
+.stage-drawer { width:324px; flex:none; flex-direction:column; border-left:1px solid var(--border); background:#12151d; }
+.drawer-head { height:45px; display:flex; align-items:center; padding:0 14px; border-bottom:1px solid var(--border); }
+.drawer-head strong { flex:1; font-size:12px; }
+.drawer-body { flex:1; overflow:hidden; padding:9px 12px 16px; }
+.drawer-section { padding:12px 2px; border-bottom:1px solid var(--border-subtle); }
+.drawer-section:last-child { border:0; }
+.drawer-label { display:block; margin-bottom:10px; color:#59637a; font:600 9px/1 var(--mono); letter-spacing:.08em; text-transform:uppercase; }
+.fact-grid { display:grid; grid-template-columns:92px 1fr; gap:9px 7px; font-size:10.5px; }
+.fact-grid dt { color:#606a80; }
+.fact-grid dd { margin:0; color:#b7c0d1; }
+.drawer-resource { width:100%; display:flex; align-items:center; gap:9px; min-height:49px; padding:0; border:0; border-radius:7px; background:transparent; color:inherit; text-align:left; }
+.drawer-resource:hover { background:#191d27; }
+.drawer-resource .resource-icon { width:30px; height:30px; }
+.drawer-resource .resource-copy strong { font-size:11px; }
+.drawer-resource .resource-copy span { font-size:9.5px; }
+.drawer-resource .row-chevron { margin-left:3px; }
+.drawer-advanced { margin-top:4px; overflow:hidden; border:1px solid var(--border); border-radius:7px; background:#10131a; }
+.drawer-advanced .advanced-disclosure { border-top:0; background:transparent; }
+.drawer-advanced .advanced-stats { grid-template-columns:1fr; }
+
+@media (max-width:1200px) {
+  .review-rationale { display:none; }
+  .sidebar { width:224px; }
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+  <symbol id="i-robot" viewBox="0 0 24 24"><rect x="5" y="7" width="14" height="12" rx="3"/><path d="M12 3v4M8.5 12h.01M15.5 12h.01M9 16h6"/></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-files" viewBox="0 0 24 24"><rect x="4" y="6" width="12" height="13" rx="2"/><path d="M8 6V4h10a2 2 0 0 1 2 2v10h-4"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M5 17.5A7.5 7.5 0 1 1 8 20l-4 1 1-3.5Z"/></symbol>
+  <symbol id="i-web" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m7 9 3 3-3 3M12 15h5"/></symbol>
+  <symbol id="i-people" viewBox="0 0 24 24"><circle cx="9" cy="9" r="3"/><circle cx="17" cy="10" r="2"/><path d="M3 19c0-3 2.7-5 6-5s6 2 6 5M15 15c3 0 5 1.5 5 4"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/></symbol>
+  <symbol id="i-history" viewBox="0 0 24 24"><path d="M4 7v5h5M5 11a8 8 0 1 1 2 6M12 8v5l3 2"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m8 10 4 4 4-4"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+  <symbol id="i-paperclip" viewBox="0 0 24 24"><path d="m20 12-8 8a6 6 0 0 1-8-8l9-9a4 4 0 0 1 6 6l-9 9a2 2 0 0 1-3-3l8-8"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="m12 19 7-7-7-7M5 12h14"/></symbol>
+</svg>
+
+<div class="review-bar">
+  <div class="review-label">
+    <span class="review-title">Header directions</span>
+    <span class="review-subtitle">Interactive product mockups</span>
+  </div>
+  <div class="option-switch" role="tablist" aria-label="Mockup options">
+    <button class="active" data-option-button="a">A · Workspace menu ★</button>
+    <button data-option-button="b">B · Details panel ★</button>
+  </div>
+  <div class="option-switch state-switch" role="group" aria-label="Notification state">
+    <button class="active" data-state-button="unseen">Unseen updates</button>
+    <button data-state-button="opened">Details opened</button>
+  </div>
+  <div class="review-rationale" id="review-rationale">Best balance: one calm header with a structured, scannable place for everything connected to the conversation.</div>
+</div>
+
+<div class="viewport">
+  <div class="product">
+    <aside class="sidebar">
+      <div class="brand"><span class="wordmark">OMNIDECK</span><button class="icon-btn" aria-label="Collapse sidebar"><svg class="icon"><use href="#i-menu"/></svg></button></div>
+      <nav class="sidebar-nav" aria-label="Main navigation">
+        <button class="nav-item"><span class="nav-icon"><svg class="icon"><use href="#i-robot"/></svg></span>Agents</button>
+        <button class="nav-item"><span class="nav-icon"><svg class="icon"><use href="#i-target"/></svg></span>Routines</button>
+        <button class="nav-item"><span class="nav-icon"><svg class="icon"><use href="#i-files"/></svg></span>Artifacts</button>
+        <button class="nav-item"><span class="nav-icon"><svg class="icon"><use href="#i-grid"/></svg></span>Apps</button>
+      </nav>
+      <div class="conversations">
+        <button class="new-chat"><span class="plus">+</span><span>New chat</span></button>
+        <div class="section-label">Recent</div>
+        <div class="conversation-row active"><span class="dot"></span>Plan customer research workshop</div>
+        <div class="conversation-row"><span class="dot"></span>Summarize August feedback</div>
+        <div class="conversation-row"><span class="dot"></span>Compare offsite venues</div>
+        <div class="conversation-row"><span class="dot"></span>Q3 planning notes</div>
+      </div>
+      <div class="sidebar-footer"><button class="icon-btn" aria-label="Theme">☼</button><span class="spacer"></span><button class="icon-btn" aria-label="Settings">⚙</button></div>
+    </aside>
+
+    <main class="desktop">
+      <div class="desktop-tabs">
+        <button class="desktop-tab active"><svg class="icon small tab-icon"><use href="#i-chat"/></svg>Chat</button>
+        <button class="desktop-tab"><svg class="icon small tab-icon"><use href="#i-web"/></svg>Browser <span class="tab-close" aria-hidden="true">×</span></button>
+        <span class="tab-space"></span>
+        <div class="desktop-actions"><button class="icon-btn" aria-label="Tab options"><svg class="icon"><use href="#i-more"/></svg></button></div>
+      </div>
+
+      <section class="conversation-view">
+        <!-- Option A: one compact disclosure for the conversation workspace. -->
+        <header class="proposal proposal-a">
+          <div class="a-identity">
+            <span class="conversation-title">Plan the customer research workshop</span>
+          </div>
+          <button class="workspace-trigger" aria-expanded="false" aria-label="Details, 2 unseen updates">
+            Details <span class="unseen-badge">2 new</span><svg class="icon small"><use href="#i-chevron"/></svg>
+          </button>
+          <div class="workspace-popover">
+            <div class="popover-head"><div><strong>Conversation workspace</strong><span>Items remain available after their view is closed</span></div></div>
+            <div class="resource-list">
+              <button class="resource-row"><span class="resource-icon files"><svg class="icon"><use href="#i-files"/></svg></span><span class="resource-copy"><strong>Artifacts</strong><span>6 created in this conversation</span></span><span class="resource-actions"><span class="new-marker">New</span><span class="row-chevron" aria-hidden="true">›</span></span></button>
+              <button class="resource-row"><span class="resource-icon people"><svg class="icon"><use href="#i-people"/></svg></span><span class="resource-copy"><strong>Agents <span class="resource-count">3</span></strong><span>1 working · 2 finished</span></span><span class="resource-actions"><span class="new-marker">New</span><span class="row-chevron" aria-hidden="true">›</span></span></button>
+              <button class="resource-row"><span class="resource-icon web"><svg class="icon"><use href="#i-web"/></svg></span><span class="resource-copy"><strong>Browser</strong><span>Open in workspace · Web research</span></span><span class="row-chevron" aria-hidden="true">›</span></button>
+              <button class="resource-row"><span class="resource-icon terminal"><svg class="icon"><use href="#i-terminal"/></svg></span><span class="resource-copy"><strong>Terminal</strong><span>Closed · ready to continue</span></span><span class="row-chevron" aria-hidden="true">›</span></button>
+            </div>
+            <button class="advanced-disclosure" data-advanced-trigger="menu" aria-expanded="true"><svg class="icon small"><use href="#i-info"/></svg><span class="advanced-copy"><strong>Advanced</strong><span>Turns, tokens, cost, context, and agent usage</span></span><svg class="icon small"><use href="#i-chevron"/></svg></button>
+            <div data-advanced-panel="menu"><div class="advanced-stats"><div class="stat"><span>Turns</span><strong>7</strong></div><div class="stat"><span>Tokens used</span><strong>48.2K</strong></div><div class="stat"><span>Est. cost</span><strong>$0.84</strong></div><div class="stat"><span>Sub-agents</span><strong>3</strong></div></div><div class="compaction-status"><div class="compaction-head"><strong>Primary context</strong><span>62% used</span></div><div class="compaction-meter"></div><span class="compaction-note">About 29K tokens until compaction</span></div><div class="agent-usage"><div class="agent-usage-title">Usage by agent <span>Estimated</span></div><div class="usage-row header"><span>Agent</span><span>Tokens</span><span>Cost</span></div><div class="usage-row"><span class="usage-agent">Primary agent</span><span class="usage-value">31.4K</span><span class="usage-value">$0.55</span></div><div class="usage-row"><span class="usage-agent">Interview analyst <small>sub-agent</small></span><span class="usage-value">8.9K</span><span class="usage-value">$0.16</span></div><div class="usage-row"><span class="usage-agent">Workshop designer <small>sub-agent</small></span><span class="usage-value">5.1K</span><span class="usage-value">$0.09</span></div><div class="usage-row"><span class="usage-agent">Synthesis agent <small>sub-agent</small></span><span class="usage-value">2.8K</span><span class="usage-value">$0.04</span></div></div></div>
+          </div>
+        </header>
+
+        <!-- Option B: minimal header; facts and resources live in a details panel. -->
+        <header class="proposal proposal-b">
+          <span class="conversation-title">Plan the customer research workshop</span>
+          <button class="details-trigger active" aria-expanded="false" aria-label="Details, 2 unseen updates"><svg class="icon small"><use href="#i-info"/></svg>Details <span class="unseen-badge">2 new</span></button>
+          <button class="icon-btn" aria-label="More conversation actions"><svg class="icon"><use href="#i-more"/></svg></button>
+        </header>
+
+        <div class="chat-stage">
+          <div class="chat-main">
+            <div class="messages">
+              <div class="messages-inner">
+                <div class="user-message"><div class="user-bubble">Turn our customer interview notes into a practical two-hour workshop for the product team.</div></div>
+                <div class="assistant-message">
+                  <p>I pulled the strongest themes from the interviews and shaped them into a workshop that moves from evidence to decisions.</p>
+                  <p><strong>Recommended flow</strong><br>Start with a 15-minute evidence review, spend 35 minutes clustering needs, then use the second hour to prioritize opportunities and assign next steps.</p>
+                  <div class="file-card"><span class="file-icon"><svg class="icon"><use href="#i-files"/></svg></span><span><strong>Customer research workshop.docx</strong><span>Agenda, exercises, and facilitator notes</span></span></div>
+                  <span class="activity-link">› 8 steps completed</span>
+                </div>
+                <div class="conversation-events" aria-label="Conversation updates">
+                  <div class="conversation-event"><span class="event-icon"><svg class="icon small"><use href="#i-files"/></svg></span><span class="event-copy"><strong>Artifact created</strong><span>Customer research workshop.docx</span></span><button class="event-action">Open</button></div>
+                  <div class="conversation-event"><span class="event-icon agent"><svg class="icon small"><use href="#i-people"/></svg></span><span class="event-copy"><strong>Agent started</strong><span>Interview analyst is researching customer themes</span></span><button class="event-action">View</button></div>
+                </div>
+                <div class="user-message"><div class="user-bubble">Make the opening exercise easier for people who did not attend the interviews.</div></div>
+                <div class="assistant-message"><p>I’d replace the open discussion with a short evidence gallery. Each group gets three anonymized customer moments, then notes one need, one tension, and one surprise. That gives everyone the same grounding before prioritization.</p></div>
+              </div>
+            </div>
+            <div class="composer-wrap">
+              <div class="composer">
+                <div class="composer-placeholder">Message Research profile</div>
+                <div class="composer-row"><button class="round-btn" aria-label="Attach"><svg class="icon"><use href="#i-paperclip"/></svg></button><button class="profile-pill">Research profile <svg class="icon small"><use href="#i-chevron"/></svg></button><span class="grow"></span><button class="round-btn send" aria-label="Send"><svg class="icon"><use href="#i-arrow"/></svg></button></div>
+              </div>
+            </div>
+          </div>
+
+          <aside class="stage-drawer" aria-label="Conversation details">
+            <div class="drawer-head"><strong>Conversation details</strong><button class="icon-btn" aria-label="Close details">×</button></div>
+            <div class="drawer-body">
+              <section class="drawer-section"><span class="drawer-label">About</span><dl class="fact-grid"><dt>Profile</dt><dd>Research</dd><dt>Capacity</dt><dd>Plenty of room</dd></dl></section>
+              <section class="drawer-section"><span class="drawer-label">In this conversation</span>
+                <button class="drawer-resource"><span class="resource-icon files"><svg class="icon"><use href="#i-files"/></svg></span><span class="resource-copy"><strong>Artifacts</strong><span>6 created</span></span><span class="new-marker">New</span><span class="row-chevron" aria-hidden="true">›</span></button>
+                <button class="drawer-resource"><span class="resource-icon people"><svg class="icon"><use href="#i-people"/></svg></span><span class="resource-copy"><strong>Agents <span class="resource-count">3</span></strong><span>1 working · 2 finished</span></span><span class="new-marker">New</span><span class="row-chevron" aria-hidden="true">›</span></button>
+              </section>
+              <section class="drawer-section"><span class="drawer-label">Workspace items</span>
+                <button class="drawer-resource"><span class="resource-icon web"><svg class="icon"><use href="#i-web"/></svg></span><span class="resource-copy"><strong>Browser</strong><span>Open in workspace · Web research</span></span><span class="row-chevron" aria-hidden="true">›</span></button>
+                <button class="drawer-resource"><span class="resource-icon terminal"><svg class="icon"><use href="#i-terminal"/></svg></span><span class="resource-copy"><strong>Terminal</strong><span>Closed · ready to continue</span></span><span class="row-chevron" aria-hidden="true">›</span></button>
+              </section>
+              <section class="drawer-section"><span class="drawer-label">For power users</span><div class="drawer-advanced"><button class="advanced-disclosure" data-advanced-trigger="drawer" aria-expanded="false"><svg class="icon small"><use href="#i-info"/></svg><span class="advanced-copy"><strong>Advanced stats</strong><span>Turns, tokens, cost, context, and agent usage</span></span><svg class="icon small"><use href="#i-chevron"/></svg></button><div data-advanced-panel="drawer" hidden><div class="advanced-stats"><div class="stat"><span>Turns</span><strong>7</strong></div><div class="stat"><span>Tokens used</span><strong>48.2K</strong></div><div class="stat"><span>Estimated cost</span><strong>$0.84</strong></div><div class="stat"><span>Sub-agents</span><strong>3</strong></div></div><div class="compaction-status"><div class="compaction-head"><strong>Primary context</strong><span>62% used</span></div><div class="compaction-meter"></div><span class="compaction-note">About 29K tokens until compaction</span></div><div class="agent-usage"><div class="agent-usage-title">Usage by agent <span>Estimated</span></div><div class="usage-row header"><span>Agent</span><span>Tokens</span><span>Cost</span></div><div class="usage-row"><span class="usage-agent">Primary agent</span><span class="usage-value">31.4K</span><span class="usage-value">$0.55</span></div><div class="usage-row"><span class="usage-agent">Interview analyst</span><span class="usage-value">8.9K</span><span class="usage-value">$0.16</span></div><div class="usage-row"><span class="usage-agent">Workshop designer</span><span class="usage-value">5.1K</span><span class="usage-value">$0.09</span></div><div class="usage-row"><span class="usage-agent">Synthesis agent</span><span class="usage-value">2.8K</span><span class="usage-value">$0.04</span></div></div></div></div></section>
+            </div>
+          </aside>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<script>
+const rationales = {
+  a: 'Favorite #1: one calm header with a structured, scannable home for resources and optional power-user statistics.',
+  b: 'Favorite #2: a quiet message surface plus an organized panel that can absorb richer conversation details over time.'
+};
+const params = new URLSearchParams(location.search);
+const initial = ['a','b'].includes(params.get('option')) ? params.get('option') : 'a';
+const initialState = ['unseen','opened'].includes(params.get('state')) ? params.get('state') : 'unseen';
+function updateUrl() {
+  history.replaceState(null, '', `?option=${document.documentElement.dataset.option}&state=${document.documentElement.dataset.state}`);
+}
+function selectOption(option, updateHistory = true) {
+  document.documentElement.dataset.option = option;
+  document.querySelectorAll('[data-option-button]').forEach((button) => {
+    button.classList.toggle('active', button.dataset.optionButton === option);
+    button.setAttribute('aria-selected', button.dataset.optionButton === option ? 'true' : 'false');
+  });
+  document.getElementById('review-rationale').textContent = rationales[option];
+  if (updateHistory) updateUrl();
+}
+function selectState(state, updateHistory = true) {
+  const opened = state === 'opened';
+  document.documentElement.dataset.state = state;
+  document.querySelectorAll('[data-state-button]').forEach((button) => {
+    button.classList.toggle('active', button.dataset.stateButton === state);
+  });
+  document.querySelector('.workspace-popover').hidden = !opened;
+  document.querySelector('.stage-drawer').hidden = !opened;
+  [document.querySelector('.workspace-trigger'), document.querySelector('.details-trigger')].forEach((trigger) => {
+    trigger.setAttribute('aria-expanded', opened ? 'true' : 'false');
+    trigger.setAttribute('aria-label', opened ? 'Details' : 'Details, 2 unseen updates');
+  });
+  if (updateHistory) updateUrl();
+}
+document.querySelectorAll('[data-option-button]').forEach((button) => button.addEventListener('click', () => selectOption(button.dataset.optionButton)));
+document.querySelectorAll('[data-state-button]').forEach((button) => button.addEventListener('click', () => selectState(button.dataset.stateButton)));
+document.querySelector('.workspace-trigger').addEventListener('click', (event) => {
+  const popover = document.querySelector('.workspace-popover');
+  if (popover.hidden) {
+    selectState('opened');
+  } else {
+    popover.hidden = true;
+    event.currentTarget.setAttribute('aria-expanded', 'false');
+  }
+});
+document.querySelector('.details-trigger').addEventListener('click', (event) => {
+  const drawer = document.querySelector('.stage-drawer');
+  if (drawer.hidden) {
+    selectState('opened');
+  } else {
+    drawer.hidden = true;
+    event.currentTarget.setAttribute('aria-expanded', 'false');
+  }
+});
+document.querySelector('.stage-drawer [aria-label="Close details"]').addEventListener('click', () => {
+  document.querySelector('.stage-drawer').hidden = true;
+  document.querySelector('.details-trigger').setAttribute('aria-expanded', 'false');
+});
+document.querySelectorAll('[data-advanced-trigger]').forEach((trigger) => trigger.addEventListener('click', () => {
+  const key = trigger.dataset.advancedTrigger;
+  const panel = document.querySelector(`[data-advanced-panel="${key}"]`);
+  const hidden = panel.hidden;
+  panel.hidden = !hidden;
+  trigger.setAttribute('aria-expanded', hidden ? 'true' : 'false');
+}));
+selectOption(initial, false);
+selectState(initialState, false);
+</script>
+</body>
+</html>

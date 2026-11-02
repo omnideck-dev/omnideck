@@ -16,6 +16,38 @@ function event(type, fields = {}) {
 }
 
 describe('getAgentEventActions', () => {
+    it.each([undefined, null, []])('retains usage when tool calls are empty or omitted (%j)', (toolCalls) => {
+        const usage = { prompt_tokens: 862, completion_tokens: 252, cache_read_tokens: 0, reported_cost_usd: 0 };
+        const actions = getAgentEventActions(event('iteration', {
+            depth: 1, iteration_index: 0, content: 'Done', usage,
+            ...(toolCalls === undefined ? {} : { tool_calls: toolCalls }),
+        }));
+        expect(actions.immediate).toEqual([{
+            type: 'RECORD_AGENT_USAGE', agentId: 'agent-1', iterationIndex: 0, totalTokens: null, usage,
+        }]);
+        expect(actions.batched).toEqual([{
+            type: 'FINALIZE_AGENT_ITERATION', agentId: 'agent-1', content: 'Done',
+            thinking: null, toolCalls: [], timestamp: TIME,
+        }]);
+    });
+
+    it('passes provider reports through intact at every agent depth', () => {
+        const usage = { prompt_tokens: 100, completion_tokens: 20, cache_read_tokens: 60, cache_creation_tokens: 10, reported_cost_usd: 0 };
+        for (const depth of [0, 1, 2]) {
+            const action = getAgentEventActions(event('iteration', { depth, iteration_index: 0, usage, tool_calls: [] })).immediate[0];
+            expect(action.usage).toEqual(usage);
+            expect(action.totalTokens).toBeNull();
+        }
+    });
+    it('records reported usage for primary and sub-agent calls, retaining unknown historical usage', () => {
+        for (const depth of [0, 1]) {
+            const base = { depth, iteration_index: 3, tool_calls: [] };
+            expect(getAgentEventActions(event('iteration', { ...base, total_tokens: 321 })).immediate).toEqual([
+                { type: 'RECORD_AGENT_USAGE', agentId: 'agent-1', iterationIndex: 3, totalTokens: 321 },
+            ]);
+            expect(getAgentEventActions(event('iteration', base)).immediate[0].totalTokens).toBeNull();
+        }
+    });
     it('builds immediate lifecycle and context actions', () => {
         expect(getAgentEventActions(event('agent_started', {
             agent_name: 'Researcher',

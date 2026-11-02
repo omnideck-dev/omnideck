@@ -123,7 +123,7 @@ def test_activity_view_entry_order(page: Page, coder_profile):
     chat.wait_streaming()
     page.wait_for_timeout(200)
 
-    network = NetworkView(page)
+    network = NetworkView(page).show_details()
     expect(network.indicator).to_be_visible(timeout=5000)
     network.open()
     expect(network.agent_cards.first).to_be_visible(timeout=5000)

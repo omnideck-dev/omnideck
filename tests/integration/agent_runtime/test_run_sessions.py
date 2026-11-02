@@ -58,14 +58,18 @@ async def test_cancelling_a_waiter_does_not_cancel_the_runtime_owned_execution(h
     assert history._observers == []
 
 
-async def test_result_aggregates_child_usage_and_file_artifacts_once(harness, monkeypatch):
+@pytest.mark.parametrize("child_cost", [0.02, 0, None])
+async def test_result_aggregates_child_usage_and_file_artifacts_once(harness, monkeypatch, child_cost):
     h = harness
 
     class MeteredFake(FakeProvider):
         async def chat_stream(self, **kwargs):
             async for chunk in super().chat_stream(**kwargs):
                 if isinstance(chunk, ChatResponse):
-                    chunk = chunk.model_copy(update={"usage": TokenUsage(prompt_tokens=10, completion_tokens=2)})
+                    cost = child_cost if get_execution_context().parent_execution_id else 0.01
+                    chunk = chunk.model_copy(update={"usage": TokenUsage(
+                        prompt_tokens=10, completion_tokens=2, cache_read_tokens=0, reported_cost_usd=cost,
+                    )})
                 yield chunk
 
     use_fake(monkeypatch, MeteredFake())
@@ -91,6 +95,12 @@ async def test_result_aggregates_child_usage_and_file_artifacts_once(harness, mo
     result = await handle.wait()
     assert result.output == "root output"
     assert result.usage.prompt_tokens == 40 and result.usage.completion_tokens == 8
+    assert result.usage.cache_read_tokens == 0
+    assert result.usage.cache_creation_tokens is None
+    if child_cost is None:
+        assert result.usage.reported_cost_usd is None
+    else:
+        assert result.usage.reported_cost_usd == pytest.approx(0.02 + 2 * child_cost)
     assert len(result.executions) == 2
     assert sorted(r.usage.prompt_tokens for _, r in result.executions) == [20, 20]
     assert [a.path for a in result.artifacts] == [str(path)]

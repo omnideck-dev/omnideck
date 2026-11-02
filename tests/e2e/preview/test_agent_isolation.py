@@ -37,8 +37,10 @@ def isolation_page(browser, browser_context_args):
         + spawn(agent_two, profile="research_agent", name="BRAVO")
     ).wait_streaming(timeout=40_000)
 
-    network = NetworkView(page)
-    assert network.indicator.is_visible(), "Network indicator not visible — sub-agents may not have been spawned"
+    network = NetworkView(page).show_details()
+    assert network.indicator.is_visible(), (
+        "Network indicator not visible — sub-agents may not have been spawned"
+    )
 
     yield page
 

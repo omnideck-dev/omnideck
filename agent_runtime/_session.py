@@ -14,7 +14,6 @@ from conversations import BrowserTabsWriter, ConversationScope, ConversationStor
 from agent_core.context import ConversationHistory
 from agent_core.control import ExecutionControl
 from agent_core.events import AgentEvent, FileOutputPayload, TurnEndPayload
-from agent_core.providers import TokenUsage
 from agent_core.turn import ExecutionContext, ExecutionResult, get_execution_context
 
 from ._models import AgentRunRequest, RunResult, RunSnapshot, SequencedEvent
@@ -170,15 +169,17 @@ class RunSession:
         self.end_events()
         self.executions.clear()
         self._results.setdefault(self.root_context.execution_id, root)
-        totals = {
-            name: sum(getattr(result.usage, name) for result in self._results.values())
-            for name in TokenUsage.model_fields
-        }
+        # Keep missing provider counters unknown instead of treating them as zero.
+        # The root is always present, even when setup failed before execution.
+        usages = iter(result.usage for result in self._results.values())
+        usage = next(usages).model_copy(deep=True)
+        for execution_usage in usages:
+            usage = usage.combined_with(execution_usage)
         self.result = RunResult(
             self.run_id,
             self.conversation_id,
             root,
-            TokenUsage(**totals),
+            usage,
             tuple(self._artifacts),
             tuple(self._results.items()),
         )

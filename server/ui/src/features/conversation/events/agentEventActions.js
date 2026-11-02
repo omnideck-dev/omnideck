@@ -87,12 +87,20 @@ export function getAgentEventActions(event) {
             break;
         }
         case EVENT.ITERATION:
+            immediate.push({
+                type: 'RECORD_AGENT_USAGE',
+                agentId,
+                iterationIndex: event.iteration_index,
+                totalTokens: event.total_tokens ?? null,
+                ...(event.usage ? { usage: event.usage } : {}),
+            });
             if (retainActivity) batched.push({
                 type: 'FINALIZE_AGENT_ITERATION',
                 agentId,
                 content: event.content || null,
                 thinking: event.thinking || null,
-                toolCalls: event.tool_calls.map((toolCall) => ({
+                // Live streams omit the empty list for plain-text responses.
+                toolCalls: (event.tool_calls ?? []).map((toolCall) => ({
                     name: toolCall.name,
                     arguments: toolCall.arguments || null,
                 })),

@@ -8,6 +8,7 @@ from typing import Any
 
 import httpx
 from ollama import AsyncClient
+from ollama import ChatResponse as OllamaChatResponse
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
@@ -23,6 +24,24 @@ _console = Console(stderr=True)
 _DEFAULT_TIMEOUT = httpx.Timeout(connect=10, read=None, write=10, pool=10)
 _FIRST_TOKEN_TIMEOUT = 120.0
 _MODEL_CACHE_TTL = 300.0  # 5 minutes
+
+
+class _UsageChatResponse(OllamaChatResponse):
+    """Preserve the documented cache counter missing from ollama-python 0.6.1."""
+
+    prompt_eval_cached_count: int | None = None
+
+
+class _UsageAsyncClient(AsyncClient):
+    """Keep SDK request conversion and errors; only extend its chat decoder.
+
+    This local override can be removed when the SDK's ChatResponse declares
+    prompt_eval_cached_count. It does not mutate SDK classes or other clients.
+    """
+
+    async def _request(self, cls: type, *args: Any, **kwargs: Any) -> Any:
+        response_type = _UsageChatResponse if cls is OllamaChatResponse else cls
+        return await super()._request(response_type, *args, **kwargs)
 
 
 def _build_ollama_kwargs(
@@ -66,7 +85,7 @@ class OllamaProvider:
     """LLM provider backed by an Ollama server."""
 
     def __init__(self, host: str | None = None) -> None:
-        self._client = AsyncClient(host=host, timeout=_DEFAULT_TIMEOUT)
+        self._client = _UsageAsyncClient(host=host, timeout=_DEFAULT_TIMEOUT)
         self._model_cache: list[ModelInfo] | None = None
         self._model_cache_at: float = 0.0
 
@@ -393,8 +412,9 @@ def _normalize_response(raw: Any) -> ChatResponse:
             tool_calls=_normalize_tool_calls(getattr(msg, "tool_calls", None)),
         ),
         usage=TokenUsage(
-            prompt_tokens=getattr(raw, "prompt_eval_count", 0) or 0,
-            completion_tokens=getattr(raw, "eval_count", 0) or 0,
+            prompt_tokens=getattr(raw, "prompt_eval_count", None),
+            completion_tokens=getattr(raw, "eval_count", None),
+            cache_read_tokens=getattr(raw, "prompt_eval_cached_count", None),
         ),
         done_reason=getattr(raw, "done_reason", None),
         raw=raw,

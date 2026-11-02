@@ -67,7 +67,7 @@ def test_running_agent_shows_running_dot(page: Page):
     chat.send(spawn(bash("sleep 8"), name="working_agent"))
 
     # Don't wait_streaming yet — observe the running state mid-sleep.
-    network = NetworkView(page)
+    network = NetworkView(page).show_details()
     expect(network.indicator).to_be_visible(timeout=30_000)
     network.open()
     expect(network.agent_cards.first).to_be_visible(timeout=5000)
