@@ -40,7 +40,7 @@ from server._desktop_routes import register_desktop_routes
 from server._feature_routes import register_feature_routes
 from server._goal_routes import register_goal_routes
 from server._goals import GOAL_SCHEDULER_KEY, GOAL_STORE_KEY
-from server._integrations_oauth_routes import register_oauth_routes
+from server.oauth_setup.routes import register_oauth_routes
 from server._integrations_routes import register_integrations_routes
 from server._memory_routes import register_memory_routes
 from server._model_routes import register_model_routes
@@ -119,6 +119,7 @@ def create_app(
     from integrations.connection_cache import IntegrationConnectionCache
     from integrations.service import integration_service
     from server._integration_cache import INTEGRATION_CACHE_KEY
+    from server._integration_selections import SELECTION_MUTATION_LOCK
 
     browser_runtime = BrowserRuntime()
     app = web.Application(client_max_size=client_max_size, middlewares=[cors_and_error_middleware])
@@ -127,6 +128,7 @@ def create_app(
     app[INTEGRATION_CACHE_KEY] = integration_cache
     goal_store = GoalStore(Path(load_config().settings.home_dir) / GOALS_SUBDIR)
     app[GOAL_STORE_KEY] = goal_store
+    app[SELECTION_MUTATION_LOCK] = asyncio.Lock()
     app[AGENT_RUNTIME_KEY] = AgentRuntime(
         conversations=ConversationStore(), browser_runtime=browser_runtime,
         integration_cache=integration_cache,
@@ -197,9 +199,7 @@ def create_app(
     # UI routes
     register_ui_routes(app)
 
-    # Phase 1: Data migrations — synchronous, must complete before anything
-    # else reads state.  No user interaction needed.
-    app.on_startup.append(_run_data_migrations)
+    # Phase 1: Configure services. Data migrations already completed in bootstrap.
     app.on_startup.append(_configure_routines)
 
     # Phase 2: Readiness signals — each contributor hook calls
@@ -231,15 +231,6 @@ def create_app(
 async def _stop_active_run_manager(app: web.Application) -> None:
     """Gracefully stop process-owned agent runs during server shutdown."""
     await app[AGENT_RUNTIME_KEY].close()
-
-
-async def _run_data_migrations(_app: web.Application) -> None:
-    """Run pending data migrations against the state directory."""
-    from migrations import run_migrations
-
-    config = load_config()
-    state_dir = Path(config.settings.home_dir)
-    run_migrations(state_dir)
 
 
 def register_ready_contributor(app: web.Application, name: str) -> asyncio.Event:

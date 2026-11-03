@@ -90,7 +90,10 @@ async def test_route_passes_current_app_snapshot_without_discovery_io(monkeypatc
 
     monkeypatch.setattr("server._tool_category_routes.tool_categories", categories)
     body = json.loads((await handle_list_tool_categories(request)).body)
-    email = next(category for category in body if category["id"] == "email")
-    assert email["tools"] == ["search_email"]
+    email = next(category for category in body if category["id"] == "integration:work")
+    assert len(email["tools"]) == 1
+    assert email["tools"][0].startswith("search_email_")
+    assert email["connection_id"] == "work"
+    assert email["operations"][0]["id"] == "email.messages.search"
     cache.snapshot.assert_called_once_with()
     cache.refresh.assert_not_called()

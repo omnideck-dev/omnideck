@@ -13,3 +13,4 @@ htmlcov
 logs
 playwright-report
 test-results
+.mcp-manual-state.*

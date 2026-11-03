@@ -5,9 +5,8 @@ function metaText(skill, categories) {
     const granted = skill.tool_categories || [];
     const byId = new Map(categories.map((c) => [c.id, c]));
     const toolCount = granted.reduce((n, id) => n + (byId.get(id)?.tool_count || 0), 0);
-    const catWord = granted.length === 1 ? 'category' : 'categories';
     const toolWord = toolCount === 1 ? 'tool' : 'tools';
-    return `${granted.length} ${catWord} · ${toolCount} ${toolWord}`;
+    return `${toolCount} ${toolWord}`;
 }
 
 function SkillItem({ skill, categories, selected, onSelect, onExport }) {

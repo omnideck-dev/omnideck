@@ -30,6 +30,8 @@ async def handle_list_tool_categories(request: web.Request) -> web.Response:
                 "tools": [t.__name__ for t in c.tools],
                 "tool_count": len(c.tools),
                 "connected": c.connected,
+                "connection_id": c.connection_id,
+                "operations": list(c.operations),
             }
             for c in categories.values()
             if not is_restricted_tool_category(c.id)

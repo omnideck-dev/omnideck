@@ -1,6 +1,6 @@
 import json
 
-from migrations._016_experimental_goals import migrate
+from migrations._017_experimental_goals import migrate
 
 
 def test_seeds_goals_off_without_changing_existing_settings(tmp_path):

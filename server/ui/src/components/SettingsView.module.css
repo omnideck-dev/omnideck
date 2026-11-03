@@ -12,3 +12,5 @@
     overflow: hidden;
     display: flex;
 }
+
+.hidden { display: none; }

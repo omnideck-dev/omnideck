@@ -41,13 +41,23 @@
 
 .ghost {
     background: transparent;
-    color: var(--text-tertiary);
+    color: var(--text-secondary);
     border: none;
 }
 .ghost:hover:not(:disabled) {
     background: var(--surface);
     color: var(--text-primary);
 }
+
+.menuItem {
+    width: 100%;
+    justify-content: flex-start;
+    gap: var(--sp-2);
+    padding: 0 var(--sp-3);
+    background: transparent;
+    color: var(--text-primary);
+}
+.menuItem:hover:not(:disabled) { background: var(--surface); }
 
 .danger {
     background: var(--danger-muted);

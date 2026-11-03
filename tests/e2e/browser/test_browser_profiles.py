@@ -170,7 +170,7 @@ def test_agent_browser_access_and_profile_are_saved(page: Page, api_client: ApiC
     try:
         agents = AgentsPage(page).goto()
         agents.profiles.select(profile_id)
-        browser_access = page.get_by_role("switch", name="Allow Browser access")
+        browser_access = page.get_by_role("switch", name="Let this agent open websites")
         expect(browser_access).not_to_be_checked()
         browser_access.locator("xpath=ancestor::label[1]").click()
         profile_select = page.get_by_test_id("agent-browser-profile-select")
@@ -181,8 +181,9 @@ def test_agent_browser_access_and_profile_are_saved(page: Page, api_client: ApiC
         assert profile_select.bounding_box()["width"] >= 240
         assert menu.bounding_box()["width"] >= 240
         page.keyboard.press("Escape")
-        expect(page.get_by_test_id("profile-skill-browser")).to_have_count(0)
+        expect(agents.builder.tools.row("skill", "browser")).to_have_count(0)
         agents.builder.save()
+        expect(page.get_by_test_id("agent-detail").get_by_role("status")).to_have_text("Changes saved")
 
         saved = api_client.get(f"/api/profiles/{profile_id}")
         assert saved.status == 200

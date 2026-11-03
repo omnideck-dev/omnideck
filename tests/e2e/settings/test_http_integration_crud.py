@@ -95,9 +95,9 @@ def test_http_integration_crud(page: Page) -> None:
     expect(tab.row(_ID)).to_be_visible()
 
     # ── DELETE ───────────────────────────────────────────────────────
-    # ConfirmButton arms on the first click and fires on the second.
+    # Deletion requires confirming the assignment-cleanup warning.
     tab.remove_button(_ID).click()
-    tab.remove_button(_ID).click()
+    page.get_by_role("button", name="Delete integration", exact=True).click()
     expect(tab.row(_ID)).to_be_hidden()
     expect(tab.empty_state_heading).to_be_visible()
 

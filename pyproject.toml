@@ -24,6 +24,9 @@ dependencies = [
     "google-auth-oauthlib>=1.2",
     "google-api-python-client>=2.130",
     "curl-cffi>=0.7",
+    "mcp==2.2.0",
+    "jsonschema>=4.26,<5",
+    "referencing>=0.37,<1",
 ]
 
 [project.optional-dependencies]
@@ -41,7 +44,8 @@ dev = [
     "types-cachetools",
     "types-croniter",
     "types-oauthlib",
-    "types-PyYAML"
+    "types-PyYAML",
+    "types-jsonschema>=4.26.0.20261006",
 ]
 
 [tool.uv]
@@ -91,7 +95,8 @@ namespace_packages = true
 explicit_package_bases = true
 show_error_codes = true
 pretty = true
-exclude = "^(tests|repls|container|migrations|desktop/tests)/"
+# Generated review/proof scripts are not application modules. Keep artifacts/*.py checked.
+exclude = "^(tests|repls|container|migrations|desktop/tests)/|^artifacts/(broker-failure-gallery|startup-error-reporting)/"
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
@@ -152,6 +157,7 @@ include = [
     "tasks*",
     "goals*",
     "tools*",
+    "tool_schemas*",
     "utils*",
 ]
 exclude = [

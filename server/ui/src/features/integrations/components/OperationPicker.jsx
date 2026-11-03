@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 
 import Button from '../../../components/primitives/Button.jsx';
 import SearchInput from '../../../components/primitives/SearchInput.jsx';
+import { operationDescription, operationTitle } from './operationDisplay.js';
 import styles from './OperationPicker.module.css';
 
 function operationGroups(operations, groups) {
@@ -49,9 +50,13 @@ export default function OperationPicker({
         () => operations.filter(operation => operation && typeof operation.id === 'string'),
         [operations],
     );
-    const operationIds = useMemo(
-        () => new Set(validOperations.map(operation => operation.id)),
+    const selectableOperations = useMemo(
+        () => validOperations.filter(operation => !operation.unavailable_reason),
         [validOperations],
+    );
+    const operationIds = useMemo(
+        () => new Set(selectableOperations.map(operation => operation.id)),
+        [selectableOperations],
     );
     const selected = useMemo(
         () => new Set((selectedIds || []).filter(operationId => operationIds.has(operationId))),
@@ -65,8 +70,8 @@ export default function OperationPicker({
     const visibleGroups = useMemo(() => grouped.map(group => ({
         ...group,
         operations: group.operations.filter(operation => !normalizedQuery
-            || String(operation.title || operation.id).toLowerCase().includes(normalizedQuery)
-            || String(operation.description || '').toLowerCase().includes(normalizedQuery)),
+            || operationTitle(operation).toLowerCase().includes(normalizedQuery)
+            || operationDescription(operation).toLowerCase().includes(normalizedQuery)),
     })).filter(group => group.operations.length > 0), [grouped, normalizedQuery]);
 
     const emit = (next) => onChange?.([...next].sort());
@@ -79,6 +84,7 @@ export default function OperationPicker({
     const setGroup = (groupOperations, enabled) => {
         const next = new Set(selected);
         for (const operation of groupOperations) {
+            if (!operationIds.has(operation.id)) continue;
             if (enabled) next.add(operation.id);
             else next.delete(operation.id);
         }
@@ -108,8 +114,8 @@ export default function OperationPicker({
                 <Button
                     type="button"
                     variant="ghost"
-                    onClick={() => emit(new Set(validOperations.map(operation => operation.id)))}
-                    disabled={disabled || validOperations.length === 0}
+                    onClick={() => emit(new Set(operationIds))}
+                    disabled={disabled || selectableOperations.length === 0}
                     data-testid="integration-tools-enable-all"
                 >
                     Select all
@@ -124,16 +130,17 @@ export default function OperationPicker({
                     Deselect all
                 </Button>
                 <span className={styles.total}>
-                    {selected.size} of {validOperations.length} selected
+                    {selected.size} of {selectableOperations.length} selected
                 </span>
             </div>
 
             <div className={styles.groups}>
                 {visibleGroups.map(group => {
+                    const selectableCount = group.operations.filter(operation => operationIds.has(operation.id)).length;
                     const selectedCount = group.operations.filter(
                         operation => selected.has(operation.id),
                     ).length;
-                    const allSelected = selectedCount === group.operations.length;
+                    const allSelected = selectableCount > 0 && selectedCount === selectableCount;
                     const expanded = !collapsible || !(normalizedQuery ? searchCollapsed : collapsed).has(group.id);
                     return (
                         <section className={styles.group} key={group.id}>
@@ -145,7 +152,7 @@ export default function OperationPicker({
                                 className={`${styles.groupHeader} ${collapsible ? styles.groupSelection : ''}`}
                                 aria-label={collapsible ? `Select all in ${group.title}` : undefined}
                                 onClick={() => setGroup(group.operations, !allSelected)}
-                                disabled={disabled}
+                                disabled={disabled || selectableCount === 0}
                                 data-testid={`integration-tool-group-${group.id}`}
                             >
                                 <span className={`${styles.groupCheck} ${selectedCount > 0 ? styles.groupCheckSelected : ''}`}>
@@ -154,7 +161,7 @@ export default function OperationPicker({
                                 </span>
                                 {!collapsible && <>
                                     <span className={styles.groupTitle}>{group.title}</span>
-                                    <span className={styles.groupCount}>{selectedCount} of {group.operations.length}</span>
+                                    <span className={styles.groupCount}>{selectedCount} of {selectableCount}</span>
                                 </>}
                             </button>
                             {collapsible && (
@@ -166,25 +173,31 @@ export default function OperationPicker({
                                         return next;
                                     })}>
                                     <span className={styles.groupTitle}>{group.title}</span>
-                                    <span className={styles.groupCount}>{selectedCount} of {group.operations.length}</span>
+                                    <span className={styles.groupCount}>{selectedCount} of {selectableCount}</span>
                                     <i className={`bi bi-chevron-${expanded ? 'up' : 'down'}`} aria-hidden="true" />
                                 </button>
                             )}
                             </div>
                             <div hidden={!expanded}>
                             {group.operations.map(operation => (
-                                <label className={styles.operation} key={operation.id}>
+                                <label className={`${styles.operation} ${operation.unavailable_reason ? styles.unavailable : ''}`} key={operation.id}>
                                     <input
                                         type="checkbox"
                                         checked={selected.has(operation.id)}
                                         onChange={event => setOperation(operation.id, event.target.checked)}
-                                        disabled={disabled}
+                                        disabled={disabled || !!operation.unavailable_reason}
                                         data-testid={`integration-tool-${operation.id}`}
                                     />
                                     <span>
-                                        <span className={styles.operationTitle}>{operation.title || operation.id}</span>
-                                        {operation.description && (
-                                            <span className={styles.operationDescription}>{operation.description}</span>
+                                        <span className={styles.operationTitle}>{operationTitle(operation)}</span>
+                                        {operation.unavailable_reason && (
+                                            <span className={styles.unavailableReason}>
+                                                <i className="bi bi-exclamation-triangle" aria-hidden="true" />
+                                                {operation.unavailable_reason}
+                                            </span>
+                                        )}
+                                        {operationDescription(operation) && (
+                                            <span className={styles.operationDescription}>{operationDescription(operation)}</span>
                                         )}
                                     </span>
                                 </label>

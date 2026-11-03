@@ -55,6 +55,7 @@ desktop/build/runtime/
 
 # Environment variables
 .env
+.mcp-manual-state.*/
 
 # Developer config override
 config.dev.yaml

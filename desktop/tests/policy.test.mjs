@@ -53,7 +53,7 @@ test('bundles exactly one target-qualified logical sidecar', () => {
   assert.equal(config.identifier, 'dev.omnideck.desktop');
   assert.equal(config.productName, 'omnideck');
   assert.equal(config.mainBinaryName, 'omnideck-desktop');
-  assert.equal(config.version, '0.1.0-beta.14');
+  assert.equal(config.version, '0.1.0-beta.15');
   assert.equal(config.bundle.targets, 'all');
   assert.deepEqual(config.bundle.icon, [
     'icons/32x32.png',
@@ -69,9 +69,9 @@ test('bundles exactly one target-qualified logical sidecar', () => {
 
 test('desktop version mirrors stay locked to the release version', () => {
   assert.equal(packageJson.version, config.version);
-  assert.match(cargoToml, /^version = "0\.1\.0-beta\.14"$/m);
-  assert.match(cargoLock, /name = "omnideck-desktop"\r?\nversion = "0\.1\.0-beta\.14"/);
-  assert.match(stateRust, /APP_VERSION: &str = "0\.1\.0-beta\.14"/);
+  assert.match(cargoToml, /^version = "0\.1\.0-beta\.15"$/m);
+  assert.match(cargoLock, /name = "omnideck-desktop"\r?\nversion = "0\.1\.0-beta\.15"/);
+  assert.match(stateRust, /APP_VERSION: &str = "0\.1\.0-beta\.15"/);
   assert.equal(imageManifest.appVersion, config.version);
 });
 
@@ -169,7 +169,8 @@ test('Rust owns all CLI arguments and guards navigation plus command origin', ()
   assert.match(cliRust, /Self::Version => &\["--version"\]/);
   assert.match(cliRust, /Self::RuntimeStatus => &\["--json", "runtime", "status"\]/);
   assert.match(cliRust, /Self::InstanceStatus =>/);
-  assert.match(cliRust, /Self::StartInstance =>/);
+  assert.match(cliRust, /Self::StartInstance \| Self::WaitInstance =>/);
+  assert.match(cliRust, /self == Self::WaitInstance/);
   assert.match(cliRust, /platform::resource_name\(CONTAINER_NAME\)/);
   assert.match(rust, /"environment"\.into\(\),\s+"ensure"\.into\(\)/);
   assert.match(rust, /WebviewWindowBuilder::new\(app, "main"/);
@@ -250,12 +251,12 @@ test('the AppImage isolates bundled GLib from incompatible host GIO modules', as
 
 test('the promoted CLI beta is pinned with six target binaries and SBOMs', () => {
   assert.equal(vendor.repository, 'omnideck-dev/cli');
-  assert.equal(vendor.tag, 'v0.11.0-beta.6');
-  assert.equal(vendor.version, 'v0.11.0-beta.6');
-  assert.equal(vendor.commit, '4e2b4e4b23c2');
+  assert.equal(vendor.tag, 'v0.11.0-beta.9');
+  assert.equal(vendor.version, 'v0.11.0-beta.9');
+  assert.equal(vendor.commit, 'c34747d7ac74');
   assert.equal(
     vendor.downloadBaseUrl,
-    'https://github.com/omnideck-dev/cli/releases/download/v0.11.0-beta.6',
+    'https://github.com/omnideck-dev/cli/releases/download/v0.11.0-beta.9',
   );
   assert.deepEqual(vendor.targets.map(({ targetTriple }) => targetTriple).sort(), [
     'aarch64-apple-darwin',
@@ -265,8 +266,8 @@ test('the promoted CLI beta is pinned with six target binaries and SBOMs', () =>
     'x86_64-pc-windows-msvc',
     'x86_64-unknown-linux-gnu',
   ]);
-  assert.match(cliRust, /EXPECTED_CLI_VERSION: &str = "v0\.11\.0-beta\.6"/);
-  assert.match(cliRust, /EXPECTED_CLI_COMMIT: &str = "4e2b4e4b23c2"/);
+  assert.match(cliRust, /EXPECTED_CLI_VERSION: &str = "v0\.11\.0-beta\.9"/);
+  assert.match(cliRust, /EXPECTED_CLI_COMMIT: &str = "c34747d7ac74"/);
   assert.equal(packageJson.scripts['fetch:sidecars'], 'node scripts/fetch-sidecars.mjs');
   for (const command of Object.entries(packageJson.scripts)
     .filter(([name]) => name.startsWith('build:'))

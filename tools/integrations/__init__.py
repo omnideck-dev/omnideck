@@ -2,13 +2,11 @@
 
 Each tool is included only when a running integration connection grants its
 canonical operation in the supplied application-owned connection snapshot.
-The model-facing ``integration_id`` argument retains its existing name but
-identifies a connection, not a catalog preset.
+Tools are bound to that connection; native tools expose no routing argument.
 """
 
-from tools.integrations._tool_resolution import OperationTools, integration_tools_by_category
+from tools.integrations._tool_resolution import connection_tools
 
 __all__ = [
-    "OperationTools",
-    "integration_tools_by_category",
+    "connection_tools",
 ]

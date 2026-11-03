@@ -5,12 +5,26 @@ from datetime import UTC, datetime
 
 import pytest
 
-from brokering.migrations import run_vault_migrations
+from migrations._runner import run_migrations
 from brokering.migrations import _001_operation_grants as migration
 from brokering.supervisor._crypto import load_or_init_master_key
 from brokering.supervisor._store import (
     enc_path, meta_backup_path, meta_path, write_secrets,
 )
+
+
+@pytest.fixture(autouse=True)
+def vault_only_plan(monkeypatch):
+    monkeypatch.setattr("migrations._runner._migration_plan", lambda vault: [
+        ("broker:001_operation_grants", lambda _state: migration.migrate(vault)),
+    ])
+
+
+def run_vault_migrations(vault):
+    # Exercise the sole startup runner with a separate app-owned history store.
+    state = vault.with_name(vault.name + "-app-history")
+    state.mkdir(exist_ok=True)
+    run_migrations(state, vault)
 
 
 def _stage(vault, iid="gmail_example", **overrides):
@@ -43,9 +57,9 @@ def test_migration_preserves_ciphertext_and_writes_no_secrets(tmp_path, monkeypa
     assert enc_path(vault, "gmail_example").read_bytes() == encrypted
     assert (vault / ".master-key").read_bytes() == key
     assert meta_backup_path(vault, "gmail_example").read_bytes() == original
-    ledger = vault / ".migrations.json"
-    assert json.loads(ledger.read_text()) == ["001_operation_grants"]
-    assert not (tmp_path / ".migrations.json").exists()
+    ledger = vault.with_name(vault.name + "-app-history") / ".migrations.json"
+    assert json.loads(ledger.read_text()) == ["broker:001_operation_grants"]
+    assert not (vault / ".migrations.json").exists()
     for file in vault.rglob("*"):
         if file.is_file():
             assert secret.encode() not in file.read_bytes()

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import Popover from '../Popover.jsx';
 
-function Harness({ anchorRect, flipThreshold, onOption = vi.fn() }) {
+function Harness({ anchorRect, flipThreshold, onOption = vi.fn(), onOpen }) {
     const [open, setOpen] = useState(false);
     const triggerRef = useRef(null);
 
@@ -26,6 +26,7 @@ function Harness({ anchorRect, flipThreshold, onOption = vi.fn() }) {
                 <Popover
                     anchorRef={triggerRef}
                     onClose={() => setOpen(false)}
+                    onOpen={onOpen}
                     align="end"
                     width={380}
                     maxHeight={340}
@@ -50,6 +51,18 @@ afterEach(() => {
 });
 
 describe('Popover', () => {
+    it('calls onOpen once after positioning makes the content visible', async () => {
+        const user = userEvent.setup();
+        const onOpen = vi.fn(() => {
+            expect(screen.getByTestId('popover')).not.toHaveStyle({ visibility: 'hidden' });
+            screen.getByRole('button', { name: 'Option' }).focus();
+        });
+        render(<Harness anchorRect={{ left: 20, right: 120, top: 20, bottom: 50, width: 100, height: 30 }} onOpen={onOpen} />);
+        await user.click(screen.getByTestId('trigger'));
+        expect(screen.getByRole('button', { name: 'Option' })).toHaveFocus();
+        fireEvent(window, new Event('resize'));
+        expect(onOpen).toHaveBeenCalledTimes(1);
+    });
     it('portals outside a clipping pane and flips above a low trigger', async () => {
         const user = userEvent.setup();
         Object.defineProperty(window, 'innerWidth', { configurable: true, value: 880 });

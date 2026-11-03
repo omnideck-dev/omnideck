@@ -1,38 +1,28 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { useAppData } from '../../contexts/AppData.jsx';
+import useToolCategories from '../../hooks/useToolCategories.js';
 import { downloadSkillPack, importPackFile, importSummaryText } from '../../utils/packs.js';
 import { useToast } from '../ToastProvider.jsx';
 import Button from '../primitives/Button.jsx';
-import CategoryCatalog from './CategoryCatalog.jsx';
 import LibraryHeader from '../primitives/LibraryHeader.jsx';
 import SkillBuilder from './SkillBuilder.jsx';
 import SkillList from './SkillList.jsx';
 import styles from './SkillsTab.module.css';
 
 /**
- * Settings → Skills. A SIGNAL Library Header switches between My Skills (a
- * master-detail list + editor over /api/skills) and Tool Categories (a
- * read-only catalog from /api/tool-categories). Search re-scopes to the
- * active view.
+ * Settings → Skills: library and editor with inline tool disclosures.
  */
-export default function SkillsTab() {
+export default function SkillsTab({ initialSkillId, onOpenIntegration, selectionRequest }) {
     const { skillsHook } = useAppData();
     const { skills, addSkills, createSkill, updateSkill, deleteSkill } = skillsHook;
     const { addToast } = useToast();
-    const [categories, setCategories] = useState([]);
-    const [view, setView] = useState('skills');
+    const categories = useToolCategories();
     const [search, setSearch] = useState('');
-    const [selectedId, setSelectedId] = useState(null);
+    const [selectedId, setSelectedId] = useState(initialSkillId || null);
+    useEffect(() => { if (initialSkillId) { setDraft(null); setSelectedId(initialSkillId); } }, [initialSkillId, selectionRequest]);
     const [draft, setDraft] = useState(null);
     const importInputRef = useRef(null);
-
-    useEffect(() => {
-        fetch('/api/tool-categories')
-            .then((r) => r.json())
-            .then((data) => setCategories(Array.isArray(data) ? data : []))
-            .catch(() => {});
-    }, []);
 
     // Import a pack picked from disk. The response carries the freshly created
     // records, so merge them into the list instead of refetching. Reset the
@@ -56,14 +46,7 @@ export default function SkillsTab() {
     const filteredSkills = useMemo(() => (
         q ? skills.filter((s) => s.name.toLowerCase().includes(q) || (s.description || '').toLowerCase().includes(q)) : skills
     ), [skills, q]);
-    const filteredCategories = useMemo(() => (
-        q ? categories.filter((c) => c.label.toLowerCase().includes(q) || (c.description || '').toLowerCase().includes(q)) : categories
-    ), [categories, q]);
-
-    const views = [
-        { id: 'skills', label: 'My Skills', count: skills.length },
-        { id: 'categories', label: 'Tool Categories', count: categories.length },
-    ];
+    const views = [{ id: 'skills', label: 'My Skills', count: skills.length }];
 
     const handleNew = () => {
         setSelectedId(null);
@@ -74,12 +57,12 @@ export default function SkillsTab() {
         <div className={styles.tab} data-testid="skills-tab">
             <LibraryHeader
                 views={views}
-                activeView={view}
-                onViewChange={setView}
+                activeView="skills"
+                onViewChange={() => {}}
                 searchValue={search}
                 onSearchChange={setSearch}
-                searchPlaceholder={view === 'skills' ? 'Search skills…' : 'Search tool categories…'}
-                actions={view === 'skills' ? (
+                searchPlaceholder="Search skills…"
+                actions={(
                     <>
                         <input
                             ref={importInputRef}
@@ -97,9 +80,9 @@ export default function SkillsTab() {
                             <i className="bi bi-upload" /> Import
                         </Button>
                     </>
-                ) : null}
+                )}
             />
-            {view === 'skills' ? (
+            {(
                 <div className={styles.master}>
                     <SkillList
                         skills={filteredSkills}
@@ -112,6 +95,7 @@ export default function SkillsTab() {
                     <SkillBuilder
                         skill={selectedSkill}
                         categories={categories}
+                        onOpenIntegration={onOpenIntegration}
                         onSave={async (updated) => {
                             if (updated._unsaved) {
                                 const { _unsaved, id, ...payload } = updated;
@@ -129,8 +113,6 @@ export default function SkillsTab() {
                         onExport={(id) => downloadSkillPack(id)}
                     />
                 </div>
-            ) : (
-                <CategoryCatalog categories={filteredCategories} />
             )}
         </div>
     );

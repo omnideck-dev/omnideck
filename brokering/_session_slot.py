@@ -1,7 +1,8 @@
-"""Active broker session ownership and cleanup; no draining or automatic retries."""
+"""Active broker sessions with leases for calls that outlive credential renewal."""
 
-from collections.abc import Callable
-from contextlib import AbstractAsyncContextManager, AsyncExitStack
+from collections.abc import AsyncIterator, Callable
+from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
+from dataclasses import dataclass
 from typing import Generic, TypeVar
 
 from brokering._control import PreparedBrokerSession
@@ -9,55 +10,75 @@ from brokering._control import PreparedBrokerSession
 T = TypeVar("T")
 
 
+@dataclass(eq=False)
+class _Session(Generic[T]):
+    value: T
+    cleanup: AsyncExitStack
+    users: int = 0
+    retired: bool = False
+
+
 class BrokerSessionSlot(Generic[T]):
-    """Own the active broker session and prepare replacements without touching it.
+    """Publish replacements immediately; retain old transports until calls finish.
 
-    A session is provider-specific runtime state, not a saved connection record
-    or necessarily a network connection. Integration factories yield dispatchers
-    with clients; the LLM proxy yields credentials/configuration. There is no
-    common session base class: this slot only manages their shared lifetime.
-
-    ``create_session`` returns an async context manager. Entering it prepares
-    the session; exiting it releases that session's resources. The yielded
-    object needs no close method. ``PreparedBrokerSession`` retains the cleanup
-    callbacks until the caller activates or discards it exactly once.
-
-    Factories must clean up partially constructed candidates on failure. On
-    activation, new calls see the replacement immediately; closing the old
-    session may interrupt existing calls. Nothing retries those calls.
+    Factories own provider cleanup. Pending candidates belong to BrokerControl;
+    the slot owns activated sessions. Integration calls must borrow a lease.
+    ``current`` is for synchronous control operations and immutable LLM config.
     """
 
     def __init__(self, create_session: Callable[[dict[str, str]], AbstractAsyncContextManager[T]]) -> None:
         self._create_session = create_session
-        self._active_session: T | None = None
-        self._active_cleanup = AsyncExitStack()
+        self._active: _Session[T] | None = None
+        self._sessions: set[_Session[T]] = set()
 
     @property
     def current(self) -> T:
-        """Return the active provider-specific object, never a pending candidate."""
-        if self._active_session is None:
+        if self._active is None:
             raise RuntimeError("broker session not initialized")
-        return self._active_session
+        return self._active.value
+
+    @asynccontextmanager
+    async def borrow(self) -> AsyncIterator[T]:
+        session = self._active
+        if session is None:
+            raise RuntimeError("broker session not initialized")
+        session.users += 1
+        try:
+            yield session.value
+        finally:
+            session.users -= 1
+            if session.retired and session.users == 0:
+                await self._release(session)
+
+    async def _release(self, session: _Session[T]) -> None:
+        try:
+            await session.cleanup.aclose()
+        finally:
+            self._sessions.discard(session)
 
     async def prepare(self, connection_fields: dict[str, str]) -> PreparedBrokerSession:
-        """Create a candidate from credentials/configuration, leaving current unchanged."""
         candidate_cleanup = AsyncExitStack()
         try:
             candidate = await candidate_cleanup.enter_async_context(self._create_session(connection_fields))
         except BaseException:
             await candidate_cleanup.aclose()
             raise
+        session = _Session(candidate, candidate_cleanup)
 
         async def activate() -> None:
-            previous_cleanup = self._active_cleanup
-            # Publish before retiring the previous session. If cleanup fails,
-            # activation is ambiguous; the supervisor must stop this broker.
-            self._active_session, self._active_cleanup = candidate, candidate_cleanup
-            await previous_cleanup.aclose()
+            previous = self._active
+            self._sessions.add(session)
+            self._active = session
+            if previous is not None:
+                previous.retired = True
+                if previous.users == 0:
+                    await self._release(previous)
 
         return PreparedBrokerSession(activate=activate, discard=candidate_cleanup.aclose)
 
     async def close(self) -> None:
-        """Release the active session; pending candidates belong to BrokerControl."""
-        await self._active_cleanup.aclose()
-        self._active_session = None
+        """Shutdown/removal closes all transports, including unfinished calls."""
+        self._active = None
+        async with AsyncExitStack() as cleanup:
+            for session in tuple(self._sessions):
+                cleanup.push_async_callback(self._release, session)

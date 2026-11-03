@@ -10,9 +10,11 @@ from pathlib import Path
 from typing import Any
 
 from google.oauth2.credentials import Credentials
+from google.auth.exceptions import RefreshError
 from googleapiclient.errors import HttpError
 
 from brokering._rpc import RpcError
+from brokering._operation_errors import UNKNOWN_OUTCOME
 from brokering.brokers._common._dispatch import (
     OperationHandler,
     dispatch_granted_operation,
@@ -110,12 +112,18 @@ class VerbDispatcher:
 
     async def dispatch(self, operation_id: str, args: dict[str, Any]) -> dict[str, Any]:
         """Entry point called by the RPC layer for every incoming frame."""
-        return await dispatch_granted_operation(
-            operation_id,
-            args,
-            operation_grants=self._operation_grants,
-            handlers=self._handlers,
-        )
+        try:
+            return await dispatch_granted_operation(
+                operation_id, args, operation_grants=self._operation_grants, handlers=self._handlers,
+            )
+        except RefreshError as exc:
+            # Access-only credentials cannot refresh in this process. Google
+            # auth raises here when its HTTP transport encounters a 401.
+            raise RpcError("AUTH", "Google rejected the access token.") from exc
+        except RpcError:
+            raise
+        except Exception as exc:
+            raise RpcError("UPSTREAM", f"Google did not return a confirmed result. {UNKNOWN_OUTCOME}") from exc
 
     # --- Drive handlers ------------------------------------------------------
 
@@ -547,10 +555,12 @@ def _require_int(args: dict[str, Any], key: str, *, default: int) -> int:
 def _wrap_http_error(exc: HttpError) -> RpcError:
     status = exc.resp.status if exc.resp else 500
     if status == 404:
-        return RpcError("NOT_FOUND", str(exc))
-    if status in (401, 403):
-        return RpcError("AUTH", str(exc))
-    return RpcError("UPSTREAM", str(exc))
+        return RpcError("NOT_FOUND", f"Google could not find the requested resource. {UNKNOWN_OUTCOME}")
+    if status == 401:
+        return RpcError("AUTH", "Google rejected the access token.")
+    if status == 403:
+        return RpcError("UPSTREAM", f"Google denied the request. Check provider permissions and limits. {UNKNOWN_OUTCOME}")
+    return RpcError("UPSTREAM", f"Google returned HTTP {status}. {UNKNOWN_OUTCOME}")
 
 
 def _write_download(dir_path: Path, payload: bytes, filename: str) -> Path:

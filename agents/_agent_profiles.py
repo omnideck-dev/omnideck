@@ -29,11 +29,13 @@ class AgentProfile(BaseModel):
     id: str
     name: str
     description: str = ""
+    icon: str = "bi-robot"
     enabled: bool = True
     system_prompt: str = ""
     provider: str = ""
     model: str = ""
     skills: list[str] = Field(default_factory=list)
+    tool_categories: list[str] = Field(default_factory=list)
     browser_profile_id: str | None = None
     allow_spawn: bool = True
     allow_load_skills: bool = True

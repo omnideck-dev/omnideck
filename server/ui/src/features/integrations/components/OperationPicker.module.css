@@ -154,8 +154,18 @@
     cursor: pointer;
 }
 
-.operation:hover {
+.operation:hover:not(.unavailable) {
     background: var(--accent-muted);
+}
+
+.unavailable { cursor: default; }
+.unavailableReason {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-1);
+    margin-top: var(--sp-1);
+    color: var(--warning);
+    font-size: var(--font-size-small);
 }
 
 .operation input {

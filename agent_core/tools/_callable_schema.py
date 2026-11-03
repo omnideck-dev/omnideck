@@ -14,6 +14,8 @@ from typing import Any, Union, cast, get_args, get_origin
 
 from pydantic import BaseModel
 
+from ._schema_tool import SchemaTool
+
 # Match the context estimator.
 _CHARS_PER_TOKEN = 4
 
@@ -166,6 +168,8 @@ def callable_to_json_schema(func: Callable[..., Any]) -> dict[str, Any]:
     Returns:
         A dict matching the OpenAI tool schema format.
     """
+    if isinstance(func, SchemaTool):
+        return func.definition()
     # eval_str resolves string annotations from ``from __future__ import
     # annotations`` modules to real types; without it every such tool's
     # params collapse to the default schema type.

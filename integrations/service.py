@@ -9,6 +9,7 @@ from config import load_config
 from brokering import broker_client, supervisor_client
 from brokering.broker_client import IntegrationError
 from integrations.operations import operation_for_id
+from integrations.discovery import mcp_operation_id
 from brokering.supervisor_client import SupervisorError
 
 
@@ -49,7 +50,13 @@ class IntegrationService:
         app_sock_path: Path | str | None = None,
     ) -> Any:
         """Invoke one canonical operation and return its structured result."""
-        if operation_for_id(operation_id) is None:
+        remote = False
+        if operation_id.startswith("mcp."):
+            try:
+                remote = mcp_operation_id(operation_id[4:]) == operation_id
+            except ValueError:
+                pass
+        if operation_for_id(operation_id) is None and not remote:
             raise IntegrationError(f"unknown integration operation: {operation_id}")
         if not isinstance(arguments, dict):
             raise IntegrationError("integration operation arguments must be an object")

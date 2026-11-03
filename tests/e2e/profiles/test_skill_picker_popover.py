@@ -24,19 +24,19 @@ def test_skill_picker_stays_inside_minimum_viewport(page: Page):
     try:
         agents = AgentsPage(page).goto()
         agents.profiles.select(profile_id)
-        agents.builder.open_skill_picker()
+        selection = agents.builder.tools.open()
 
-        trigger_box = page.get_by_test_id("profile-add-skill").bounding_box()
-        popover = page.get_by_test_id("profile-skill-picker")
+        trigger_box = selection.trigger.bounding_box()
+        popover = selection.picker
         box = popover.bounding_box()
         assert trigger_box is not None
         assert box is not None
         assert box["y"] >= 8
         assert box["y"] + box["height"] <= 612
-        assert box["y"] >= trigger_box["y"] + trigger_box["height"]
-        assert box["x"] >= trigger_box["x"] - 1
+        # The shared popover may flip above the trigger to keep all options reachable.
+        assert (box["y"] >= trigger_box["y"] + trigger_box["height"]
+                or box["y"] + box["height"] <= trigger_box["y"])
         assert box["x"] + box["width"] <= 872
-        assert popover.get_attribute("data-placement") == "bottom"
         assert popover.evaluate("(node) => node.parentElement === document.body")
     finally:
         page.request.delete(f"/api/profiles/{profile_id}")
