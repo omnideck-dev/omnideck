@@ -8,7 +8,7 @@ import { getWorkspaceEventActions } from './workspaceEventActions.js';
  * effects. Live delivery and restoration can share the same interpretation;
  * restoration simply ignores the one-time effects.
  *
- * @param {import('./conversationEvents.generated').ConversationEvent|null|undefined} event
+ * @param {import('./frontendTypes').DisplayEvent|null|undefined} event
  * @returns {import('./frontendTypes').ConversationEventActions}
  */
 export function mapConversationEventToActions(event) {
