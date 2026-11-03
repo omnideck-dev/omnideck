@@ -60,6 +60,10 @@ class Browser:
         await browser.close()
     """
 
+    # How long an aborted navigation waits for the download it may have
+    # turned into (PDFs with the viewer disabled abort, then download).
+    _ABORTED_NAV_DOWNLOAD_WAIT_S: float = 5.0
+
     def __init__(
         self,
         context: BrowserContext,
@@ -367,7 +371,9 @@ class Browser:
 
         Raises ``BrowserToolError`` if *tab* is already navigating —
         concurrent goto on the same tab is the loud-error case that
-        teaches the agent to use ``new_tab`` for parallelism.
+        teaches the agent to use ``new_tab`` for parallelism. Also raises
+        ``BrowserToolError`` when the navigation is aborted without producing
+        a download, rather than returning the page the tab was already on.
         """
         page = tab._page_for_browser()
         if self._tabs_by_id.get(tab.id) is not tab or tab.is_closed():
@@ -383,6 +389,15 @@ class Browser:
         tab._invalidate_document()
         self._pending_downloads.clear()
         initial_url = getattr(page, "url", "")
+        # Watch this page only: the browser-wide download lists are shared
+        # with other tabs, which may be downloading or clearing them
+        # concurrently. Registered before goto so an early event isn't missed.
+        page_downloaded = asyncio.Event()
+
+        def _on_page_download(_download: Any) -> None:
+            page_downloaded.set()
+
+        page.on("download", _on_page_download)
         try:
             try:
                 response = await page.goto(url, wait_until="domcontentloaded")
@@ -396,15 +411,26 @@ class Browser:
                 logger.debug("Navigation aborted (likely download): %s", url)
                 response = None
                 try:
-                    await page.wait_for_event("download", timeout=5_000)
-                except (PlaywrightTimeoutError, PlaywrightError):
+                    await asyncio.wait_for(page_downloaded.wait(), timeout=self._ABORTED_NAV_DOWNLOAD_WAIT_S)
+                except asyncio.TimeoutError:
                     pass
+                # With no download and no other navigation committed, the tab
+                # still shows the old page — returning it would pass stale
+                # content off as the requested URL.
+                if not page_downloaded.is_set() and getattr(page, "url", "") == initial_url:
+                    reason = str(exc).splitlines()[0] if str(exc) else "net::ERR_ABORTED"
+                    raise BrowserToolError(
+                        f"Navigation to {url} was aborted ({reason}). "
+                        f"The tab still shows {initial_url or 'its previous page'}.",
+                        tool="goto",
+                    ) from exc
             return await self._finalize_action(
                 page,
                 response=response,
                 initial_url=initial_url,
             )
         finally:
+            page.remove_listener("download", _on_page_download)
             tab._finish_navigation()
 
     async def navigate_back(
