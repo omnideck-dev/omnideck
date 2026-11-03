@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -69,6 +70,8 @@ class _StubBrowser:
         self._tabs: list[_StubTab] = []
         self._next_id = 0
         self._tabs_in_navigation: set[_StubTab] = set()
+        # Raised by navigate when set, to exercise new_tab's failure path.
+        self.navigate_error: Exception | None = None
 
     # ── Tab tracking ──────────────────────────────────────────────────
     def open_pages(self) -> list[_StubPage]:
@@ -101,6 +104,8 @@ class _StubBrowser:
                 f"Navigation already in flight on tab={tab.id}. Use new_tab(url).",
                 tool="goto",
             )
+        if self.navigate_error is not None:
+            raise self.navigate_error
         self._tabs_in_navigation.add(tab)
         try:
             tab._page.url = url
@@ -233,3 +238,104 @@ async def test_parallel_goto_on_different_tabs_both_succeed(
     assert "tab=2" in b_out
     assert "navigated-a.com" in a_out
     assert "navigated-b.com" in b_out
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_new_tab_closes_its_tab_when_navigation_fails(stub_browser: _StubBrowser) -> None:
+    """A failed new_tab leaves no orphaned tab behind and re-raises the original error."""
+    await new_tab("https://a.com")
+    error = BrowserToolError("Navigation to https://b.com was aborted", tool="goto")
+    stub_browser.navigate_error = error
+
+    with pytest.raises(BrowserToolError) as excinfo:
+        await new_tab("https://b.com")
+
+    assert excinfo.value is error
+    assert [tab.id for tab in stub_browser.tabs()] == [1]
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_new_tab_closes_its_tab_on_unexpected_error(stub_browser: _StubBrowser) -> None:
+    """Unexpected failures are wrapped as before, and the new tab is still closed."""
+    stub_browser.navigate_error = RuntimeError("renderer crashed")
+
+    with pytest.raises(BrowserToolError, match="renderer crashed"):
+        await new_tab("https://b.com")
+
+    assert stub_browser.tabs() == []
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_new_tab_reports_navigation_error_when_closing_the_tab_fails(
+    stub_browser: _StubBrowser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failure while closing the orphaned tab doesn't replace the navigation error."""
+
+    async def broken_close(self: _StubTab) -> None:
+        raise RuntimeError("close failed")
+
+    monkeypatch.setattr(_StubTab, "close", broken_close)
+    stub_browser.navigate_error = BrowserToolError("navigation failed", tool="goto")
+
+    with pytest.raises(BrowserToolError, match="navigation failed"):
+        await new_tab("https://b.com")
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_new_tab_does_not_hang_when_closing_the_tab_hangs(
+    stub_browser: _StubBrowser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Closing a wedged page is bounded, so the navigation error still comes back."""
+
+    async def hung_close(self: _StubTab) -> None:
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(_StubTab, "close", hung_close)
+    monkeypatch.setattr("tools.browser.navigation._DISCARD_TAB_TIMEOUT_S", 0.05)
+    stub_browser.navigate_error = BrowserToolError("navigation failed", tool="goto")
+
+    with pytest.raises(BrowserToolError, match="navigation failed"):
+        await asyncio.wait_for(new_tab("https://b.com"), timeout=2)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_new_tab_failure_publishes_the_reduced_tab_set(
+    stub_browser: _StubBrowser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The UI is told the discarded tab is gone, as it is after close_tab."""
+    emit = AsyncMock()
+    monkeypatch.setattr("tools.browser.navigation.emit_tab_state", emit)
+    stub_browser.navigate_error = BrowserToolError("navigation failed", tool="goto")
+
+    with pytest.raises(BrowserToolError):
+        await new_tab("https://b.com")
+
+    emit.assert_awaited_once()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_new_tab_closes_its_tab_when_cancelled_mid_navigation(
+    stub_browser: _StubBrowser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Cancelling the run while new_tab navigates still closes the new tab."""
+    navigating = asyncio.Event()
+
+    async def hung_navigate(url: str, *, tab: _StubTab) -> ActionResult:
+        navigating.set()
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+    monkeypatch.setattr(stub_browser, "navigate", hung_navigate)
+    task = asyncio.create_task(new_tab("https://b.com"))
+    await navigating.wait()
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert stub_browser.tabs() == []
