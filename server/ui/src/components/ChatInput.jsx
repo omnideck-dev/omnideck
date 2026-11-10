@@ -42,7 +42,7 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
     // re-detecting that same span until the text actually changes.
     const dismissedRef = useRef(null);
 
-    const { skillsHook, profilesHook } = useAppData();
+    const { skillsHook } = useAppData();
 
     // Re-derive the open trigger (if any) from the textarea's own current
     // value/caret — covers typing, arrow-key caret moves, and clicks alike.
@@ -65,14 +65,9 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
         setComposerTrigger(detected);
     }, []);
 
-    const enabledProfiles = useMemo(
-        () => (profilesHook?.profiles || []).filter((p) => p.enabled !== false),
-        [profilesHook?.profiles],
-    );
-
-    // Skills/profiles are otherwise only fetched once, at mount — so without
-    // this, commitComposerToken's slug-collision check (below) could stay
-    // stale for a whole session and miss a same-slug skill/profile created
+    // Skills are otherwise only fetched once, at mount — so without this,
+    // commitComposerToken's slug-collision check (below) could stay stale
+    // for a whole session and miss a same-slug skill created
     // elsewhere after this tab loaded. Refreshing once per overlay-open
     // narrows that window to "since the dropdown was last opened" instead.
     const triggerRefreshedRef = useRef(false);
@@ -83,10 +78,10 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
         }
         if (triggerRefreshedRef.current) return;
         triggerRefreshedRef.current = true;
-        (composerTrigger.kind === 'agent' ? profilesHook : skillsHook)?.refresh?.();
-    }, [composerTrigger, profilesHook, skillsHook]);
+        skillsHook?.refresh?.();
+    }, [composerTrigger, skillsHook]);
 
-    // Depend on the trigger's own fields, not the object itself: the keyup
+    // Depend on the trigger's query, not the object itself: the keyup
     // that follows every keydown (including an arrow key the overlay already
     // handled) re-derives the trigger via detectComposerTrigger, which always
     // returns a new object even when the caret hasn't moved. Depending on the
@@ -96,16 +91,14 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
     const composerItems = useMemo(() => {
         if (!composerTrigger) return [];
         const query = composerTrigger.query.toLowerCase();
-        const pool = composerTrigger.kind === 'agent' ? enabledProfiles : (skillsHook?.skills || []);
-        return pool.filter((item) => item.name.toLowerCase().startsWith(query));
-    }, [composerTrigger?.kind, composerTrigger?.query, enabledProfiles, skillsHook?.skills]);
+        return (skillsHook?.skills || []).filter((item) => item.name.toLowerCase().startsWith(query));
+    }, [composerTrigger?.query, skillsHook?.skills]);
 
-    // While the relevant list is still loading, an open trigger has no items
+    // While the skill list is still loading, an open trigger has no items
     // yet through no fault of the user's typing — don't let Enter fall
     // through to a plain send of the raw "/xxx" text just because the
     // overlay hasn't had a chance to populate.
-    const composerDataLoading = !!composerTrigger
-        && (composerTrigger.kind === 'agent' ? profilesHook?.loading : skillsHook?.loading);
+    const composerDataLoading = !!composerTrigger && !!skillsHook?.loading;
 
     // The active row resets whenever the filtered list changes shape (new
     // query, items added/removed) so it never points past the new end.
@@ -115,7 +108,6 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
 
     const commitComposerToken = useCallback((item) => {
         if (!composerTrigger) return;
-        const prefix = composerTrigger.kind === 'agent' ? '@' : '/';
         // Names may contain spaces, which the backend's whitespace-delimited
         // token grammar can't parse — slugify then, so the token stays
         // readable instead of falling back to the item's opaque id. Only
@@ -123,16 +115,15 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
         // to the id, since the backend refuses to resolve an ambiguous slug.
         let token = item.name;
         if (/\s/.test(item.name)) {
-            const pool = composerTrigger.kind === 'agent' ? enabledProfiles : (skillsHook?.skills || []);
             const slug = slugify(item.name);
-            const collides = pool.some((other) => other.id !== item.id && slugify(other.name) === slug);
+            const collides = (skillsHook?.skills || []).some((other) => other.id !== item.id && slugify(other.name) === slug);
             token = slug && !collides ? slug : item.id;
         }
-        const { text, cursorIndex } = applyComposerToken(message, composerTrigger, `${prefix}${token}`);
+        const { text, cursorIndex } = applyComposerToken(message, composerTrigger, `/${token}`);
         pendingCursorRef.current = cursorIndex;
         setMessage(text);
         setComposerTrigger(null);
-    }, [composerTrigger, message, enabledProfiles, skillsHook?.skills]);
+    }, [composerTrigger, message, skillsHook?.skills]);
 
     // Restore the caret to right after the inserted token once the
     // controlled value has actually re-rendered into the textarea.
@@ -148,10 +139,7 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
 
     const composerHint = useMemo(() => {
         if (!composerTrigger || !selectedProfile) return null;
-        if (composerTrigger.kind === 'agent' && selectedProfile.allow_spawn === false) {
-            return `${selectedProfile.name} can't spawn subagents — this may not work as expected.`;
-        }
-        if (composerTrigger.kind === 'skill' && selectedProfile.allow_load_skills === false) {
+        if (selectedProfile.allow_load_skills === false) {
             return `${selectedProfile.name} can't load skills — this may not work as expected.`;
         }
         return null;
@@ -395,7 +383,6 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
                             items={composerItems}
                             activeIndex={composerActiveIndex}
                             onHover={setComposerActiveIndex}
-                            kind={composerTrigger.kind}
                             onCommit={commitComposerToken}
                             onClose={() => setComposerTrigger(null)}
                         />

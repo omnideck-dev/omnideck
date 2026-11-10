@@ -1,6 +1,6 @@
 """Tests for server._agent_run_routes.chat_handler's request translation.
 
-Composer-token enrichment (`/skill`, `@agent /skill`) is NOT applied here —
+Composer-token enrichment (`/skill`) is NOT applied here —
 it runs downstream as a model-facing-only view transform, so the raw text
 the user typed reaches AgentRunRequest.message unchanged and is what gets
 stored/displayed.

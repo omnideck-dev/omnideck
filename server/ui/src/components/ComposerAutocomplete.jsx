@@ -3,8 +3,7 @@ import Tooltip from './primitives/Tooltip.jsx';
 import styles from './ComposerAutocomplete.module.css';
 
 /**
- * Filtered listbox overlay for the composer's `/` (skills) and `@` (agent
- * profiles) triggers. Anchored to the textarea itself rather than
+ * Filtered listbox overlay for the composer's `/` (skills) trigger. Anchored to the textarea itself rather than
  * caret-pixel coordinates — no caret-mirroring needed for v1.
  *
  * Purely presentational: keyboard handling (arrow-key cycling, Enter/Tab
@@ -19,7 +18,7 @@ import styles from './ComposerAutocomplete.module.css';
  * `onCommit(item)`: called on click of a row.
  * `onClose()`: called on outside-click (via Popover).
  */
-export default function ComposerAutocomplete({ anchorRef, items, activeIndex, onHover, onCommit, onClose, kind }) {
+export default function ComposerAutocomplete({ anchorRef, items, activeIndex, onHover, onCommit, onClose }) {
     if (!items.length) return null;
 
     return (
@@ -35,7 +34,7 @@ export default function ComposerAutocomplete({ anchorRef, items, activeIndex, on
             <div
                 className={styles.listbox}
                 role="listbox"
-                aria-label={kind === 'agent' ? 'Agent profiles' : 'Skills'}
+                aria-label="Skills"
             >
                 {items.map((item, index) => (
                     <Tooltip key={item.id} text={item.description} placement="top">

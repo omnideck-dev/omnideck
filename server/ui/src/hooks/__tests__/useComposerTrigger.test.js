@@ -3,19 +3,15 @@ import { detectComposerTrigger, applyComposerToken } from '../useComposerTrigger
 
 describe('detectComposerTrigger', () => {
     it('detects a / trigger at the start of the message', () => {
-        expect(detectComposerTrigger('/rev', 4)).toEqual({ kind: 'skill', triggerIndex: 0, query: 'rev' });
+        expect(detectComposerTrigger('/rev', 4)).toEqual({ triggerIndex: 0, query: 'rev' });
     });
 
-    it('detects an @ trigger immediately after whitespace', () => {
-        expect(detectComposerTrigger('hi @co', 6)).toEqual({ kind: 'agent', triggerIndex: 3, query: 'co' });
+    it('does not trigger on @', () => {
+        expect(detectComposerTrigger('hi @co', 6)).toBeNull();
     });
 
     it('does not trigger on a mid-word slash', () => {
         expect(detectComposerTrigger('a/b', 3)).toBeNull();
-    });
-
-    it('does not trigger on a mid-word @', () => {
-        expect(detectComposerTrigger('user@host', 9)).toBeNull();
     });
 
     it('closes once whitespace is typed after the query', () => {
@@ -28,16 +24,12 @@ describe('detectComposerTrigger', () => {
     });
 
     it('returns an empty query right after the bare trigger character', () => {
-        expect(detectComposerTrigger('/', 1)).toEqual({ kind: 'skill', triggerIndex: 0, query: '' });
+        expect(detectComposerTrigger('/', 1)).toEqual({ triggerIndex: 0, query: '' });
     });
 
     it('detects a trigger mid-message when preceded by whitespace', () => {
-        const text = 'do this @agent-y';
-        expect(detectComposerTrigger(text, text.length)).toEqual({
-            kind: 'agent',
-            triggerIndex: 8,
-            query: 'agent-y',
-        });
+        const text = 'do this /sum';
+        expect(detectComposerTrigger(text, text.length)).toEqual({ triggerIndex: 8, query: 'sum' });
     });
 });
 
@@ -49,9 +41,9 @@ describe('applyComposerToken', () => {
     });
 
     it('preserves surrounding text on either side of the token', () => {
-        const result = applyComposerToken('hi @co do it', { triggerIndex: 3 }, '@coder');
-        expect(result.text).toBe('hi @coder  do it');
-        expect(result.cursorIndex).toBe('hi @coder '.length);
+        const result = applyComposerToken('hi /rev do it', { triggerIndex: 3 }, '/review-code');
+        expect(result.text).toBe('hi /review-code  do it');
+        expect(result.cursorIndex).toBe('hi /review-code '.length);
     });
 
     it('replaces the whole query run even if the cursor was mid-token', () => {

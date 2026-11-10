@@ -274,7 +274,7 @@ class LLMCompactionStrategy:
         # Raw event content, not `non_system` (the LLM-facing view): that view
         # applies the composer-token transform to whichever message is
         # currently latest, which is model-facing only — summarizing it here
-        # would bake a rendered tool instruction ("Spawn a subagent...") into
+        # would bake a rendered tool instruction ("Load skill ...") into
         # the persisted user_intent_summary as if it were the user's own
         # words, and that fabrication gets re-injected on every later turn.
         all_user_contents = [

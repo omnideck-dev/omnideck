@@ -9,10 +9,10 @@ vi.mock('../ChatMessages.jsx', () => ({ default: () => <div data-testid="chat-me
 // ChatPanel reads the root agent from the agent-state context; the title bar is
 // irrelevant to these draft tests, so a no-root stub suffices.
 vi.mock('../../features/agent/AgentState.jsx', () => ({ useAgentState: () => ({ rootId: null, agents: {} }) }));
-// ChatInput reads skills/agent-profiles from the app-data context for its
-// composer autocomplete; irrelevant to draft persistence, so stub it empty.
+// ChatInput reads skills from the app-data context for its composer
+// autocomplete; irrelevant to draft persistence, so stub it empty.
 vi.mock('../../contexts/AppData.jsx', () => ({
-    useAppData: () => ({ skillsHook: { skills: [] }, profilesHook: { profiles: [] } }),
+    useAppData: () => ({ skillsHook: { skills: [] } }),
 }));
 
 function renderPanel(props = {}) {

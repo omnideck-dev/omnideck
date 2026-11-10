@@ -14,17 +14,9 @@ const skillsHook = {
     loading: false,
     refresh: vi.fn(),
 };
-const profilesHook = {
-    profiles: [
-        { id: 'code_expert', name: 'coder', description: 'Coding specialist.', enabled: true, allow_spawn: true, allow_load_skills: true },
-        { id: 'retired_profile', name: 'retired', description: 'Old profile.', enabled: false, allow_spawn: true, allow_load_skills: true },
-    ],
-    loading: false,
-    refresh: vi.fn(),
-};
 
 vi.mock('../../contexts/AppData.jsx', () => ({
-    useAppData: () => ({ skillsHook, profilesHook }),
+    useAppData: () => ({ skillsHook }),
 }));
 
 describe('ChatInput', () => {
@@ -434,7 +426,7 @@ describe('ChatInput', () => {
         });
     });
 
-    describe('composer / and @ triggers', () => {
+    describe('composer / trigger', () => {
         it('opens the skill list on / and inserts the token on selection', async () => {
             const user = userEvent.setup();
             render(<ChatInput onSend={vi.fn()} isStreaming={false} />);
@@ -462,16 +454,14 @@ describe('ChatInput', () => {
             expect(screen.queryByRole('listbox', { name: 'Skills' })).not.toBeInTheDocument();
         });
 
-        it('opens the agent list on @ and excludes disabled profiles', async () => {
+        it('does not open an overlay on @', async () => {
             const user = userEvent.setup();
             render(<ChatInput onSend={vi.fn()} isStreaming={false} />);
 
             const textarea = screen.getByPlaceholderText('Message Omnideck…');
             await user.type(textarea, '@');
 
-            expect(await screen.findByRole('listbox', { name: 'Agent profiles' })).toBeInTheDocument();
-            expect(screen.getByText('coder')).toBeInTheDocument();
-            expect(screen.queryByText('retired')).not.toBeInTheDocument();
+            expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
         });
 
         it('does not open the overlay for a mid-word slash', async () => {
@@ -622,18 +612,6 @@ describe('ChatInput', () => {
             await user.keyboard('{Escape}');
             await user.type(textarea, ' /sum');
             expect(skillsHook.refresh).toHaveBeenCalledTimes(2);
-        });
-
-        it('refreshes the agent profile list, not the skill list, for an @ trigger', async () => {
-            const user = userEvent.setup();
-            skillsHook.refresh.mockClear();
-            profilesHook.refresh.mockClear();
-            render(<ChatInput onSend={vi.fn()} isStreaming={false} />);
-            const textarea = screen.getByPlaceholderText('Message Omnideck…');
-
-            await user.type(textarea, '@');
-            expect(profilesHook.refresh).toHaveBeenCalledTimes(1);
-            expect(skillsHook.refresh).not.toHaveBeenCalled();
         });
     });
 });

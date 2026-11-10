@@ -139,12 +139,10 @@ async def test_compaction_does_not_mutate_history_directly():
 @pytest.mark.asyncio
 async def test_intent_extraction_uses_raw_text_not_the_composer_token_rewrite():
     """`ConversationHistory.set_user_content_transform` (the composer /skill
-    and @agent rewrite) is model-facing only. Building the intent-extraction
-    input from the transformed view would bake the rendered tool instruction
-    into the persisted user_intent_summary as if it were the user's own
-    words, corrupting it on every later turn — see agent_runtime/
-    _composer_tokens.py's module docstring for why the rewrite must never
-    reach anything but the live provider call."""
+    rewrite) is model-facing only. Building the intent-extraction input from
+    the transformed view would bake the rendered tool instruction into the
+    persisted user_intent_summary as if it were the user's own words,
+    corrupting it on every later turn."""
     messages = [
         {"role": "system", "content": "system"},
         {"role": "user", "content": "first question"},
