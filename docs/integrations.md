@@ -2,14 +2,182 @@
 
 ## What an integration is
 
-An *integration* is a credentialed connection to an external service the agent can read from and (optionally) write to. v1 supports two:
+An *integration* defines a supported external service and its operations. A
+*connection* is one configured account or endpoint for that integration. For
+example, Google Workspace is an integration; "Work Google account" is a
+connection. Multiple connections can use the same integration.
 
-| Provider | Capabilities | Auth |
+| Term | Meaning | Code |
+|---|---|---|
+| Integration | A supported service preset and its operations | `IntegrationCatalogEntry` |
+| Connection | One configured account or endpoint, with its own ID and state | `BrokeredConnectionMeta`, `BrokeredConnectionRecord` |
+| Integration connection | A connection with explicit agent operation grants | `IntegrationConnectionMeta` |
+| Model-provider connection | A brokered LLM provider, without integration operation grants | `ModelProviderConnectionMeta` |
+| Broker | The implementation executing authenticated upstream requests | `brokering.brokers` |
+| Operation | A stable application action, independent of its LLM-facing wrapper | `IntegrationOperation` |
+| Grant | Permission to invoke a specific operation through a connection | `OperationGrants` |
+
+Use `connection_id` for internal references to a configured connection and
+`slug` for its catalog entry. Do not use "instance" as another name for a
+connection. The UI feature remains **Integrations**, with **Add integration**
+as the setup action and **Connection** for account/authentication details.
+
+| Provider | Operations | Auth |
 |---|---|---|
 | iCloud | Email (IMAP + SMTP) + Calendar (CalDAV) | App-specific password |
 | Gmail | Email (IMAP + SMTP) | App-specific password |
+| Google Workspace | Gmail, Calendar, Drive, Contacts | Desktop OAuth |
+| Custom HTTP API | One authenticated HTTP request operation | Static token |
+| Slack (MCP preview) | Tools discovered from Slack's remote server | Preregistered public OAuth client + PKCE |
+| MCP server (preview) | Tools discovered per connection | OAuth discovery + DCR or preregistration; unauthenticated servers also supported |
 
-Each integration becomes one or more agent tools — `list_email_messages`, `move_email`, `send_email`, `list_calendars`, `list_events`, etc. The tools take an explicit `integration_id` argument (e.g. `"icloud_personal"` or `"gmail_work"`), so the agent picks which account to operate on per call.
+The MCP preview is only offered when the runtime supplies
+`OMNIDECK_EXTERNAL_URL` to **both** the app and supervisor. Set it to the HTTP or
+HTTPS origin reachable from the user's browser, for example
+`http://localhost:9094`, `http://llm1:9094`, or `https://llm1.example.ts.net`.
+Use an origin without a path, credentials, query, or fragment. The MCP callback
+is that origin followed by `/api/integrations/mcp/oauth/callback`; register that
+exact address with the provider when required. Providers may impose their own
+HTTPS or redirect-address requirements. A reverse proxy must route this path
+to the app and preserve the public Host header. The address is never inferred
+from inbound Host or forwarded headers. When signing in from another device,
+use the server's reachable address rather than localhost, which refers to the
+device running the browser. The
+companion CLI supplies a localhost callback address from its published host port
+and reconciles older container layouts without deleting volumes. Desktop
+v0.1.0-beta.15 bundles CLI v0.11.0-beta.9 with this support. For a browser on
+another device, configure a reachable public origin on both services instead
+of using the default localhost address.
+The first shipping Slack path uses an **organization-owned internal Slack app**.
+Its public Client ID is entered in the connection form, not an environment
+variable; the old `OMNIDECK_SLACK_CLIENT_ID` preview setting is no longer used.
+No shared development registration is bundled. A future Marketplace-approved
+registration will provide the simpler one-click path; Marketplace approval is
+not required for an organization's own internal app.
+
+### Slack setup and access
+
+Choose **Slack** and expand **Set up your Slack app**. An owner/app manager creates
+an internal app from the supplied JSON manifest, which configures MCP, PKCE,
+token rotation, user scopes and this installation's redirect URL. Verify the
+Slack MCP toggle under **Agents** and any workspace administrator approvals.
+Copy **Basic Information → App Credentials → Client ID** into omnideck, connect,
+approve the Slack consent screen, then select tools. Do not enter a Client Secret
+or copy tokens. PKCE makes the app a public OAuth client; reversing that setting
+requires Slack support, so use a dedicated app rather than converting a bot.
+Teammates can reuse the internal app's public Client ID but authorize separately.
+Add each installation's configured redirect URL if its public address differs.
+
+The endpoint, issuer and scope policy remain pinned by the backend. Reconnect
+loads the saved Client ID from the existing encrypted OAuth registration; it
+does not require re-entering it or expose stored tokens to the browser.
+The preset requests the reviewed user-token scopes for Slack's full MCP catalog:
+search (including public/private conversations, DMs, files and people), history,
+messaging, channel creation, reactions, profiles, files, canvases and lists.
+The explicit policy lives in `integrations/catalog/slack.py`, based on
+[Slack's MCP documentation](https://docs.slack.dev/ai/slack-mcp-server/).
+It does not automatically adopt future scopes from provider discovery, request
+bot/admin access, or use the legacy `search:read` scope.
+
+OAuth permission and omnideck tool grants are separate. The server discovers
+the tools Slack makes available to the consenting user; none are selected on
+creation. Slack workspace policy and user consent can further restrict access.
+Private/DM search can also require consent inside Slack. There is no hardcoded
+Slack tool list or inferred scope-to-tool grant mapping in the generic broker.
+
+Connections made with the initial two-scope prototype keep their old token and
+grants until explicitly reconnected. In **Connection settings → Sign in again**,
+approve the expanded access. Reconnection refreshes discovery, preserves the
+connection ID and selected tools, and leaves newly discovered tools disabled.
+Use **Change tools** to select them. Enable channel search along with message
+reading so agents can resolve names such as `planning` to actual channel IDs.
+Use a new chat for verification; an in-progress run retains its tool snapshot.
+
+Remote tool errors (including `missing_scope`) remain provider results. We do
+not silently reopen consent or retry potentially mutating requests. A successful
+sign-in/discovery is not proof that every Slack operation is authorized.
+Slack file upload is a multi-step provider workflow: obtaining an upload URL
+and completing the upload are MCP calls; transmitting the bytes to the supplied
+URL requires a separate HTTP/file-capable consumer. This preset does not add a
+local file-upload bridge or claim that a metadata-only tool call uploads bytes.
+
+Granted operations on running connections become agent tools —
+`list_email_messages`, `move_email`, `send_email`, `list_calendars`, `list_events`,
+etc. Their existing model-facing argument remains `integration_id` (e.g.
+`"icloud_personal"` or `"gmail_work"`); it identifies a **connection**, not a
+catalog entry. Keeping that argument stable avoids changing saved or replayed
+tool-call payloads as part of an internal naming cleanup.
+LLM-facing descriptions and valid-ID lists consistently call these
+**integration IDs**, matching `integration_id`; "connection" remains an internal
+and setup-UI term, not an alternative name in tool parameter documentation.
+
+### Application service and package boundaries
+
+`integrations.service.IntegrationService` exposes two methods:
+
+- `list_connections()` returns non-secret connection records, including
+  status, available operation descriptors, and granted operation IDs.
+- `invoke(connection_id, operation_id, arguments)` returns the
+  operation's structured result. Broker dispatch enforces the grant.
+
+`IntegrationConnectionCache` polls this service for immutable discovery snapshots;
+agent adapters select tools from those snapshots and use the service for invocation.
+The adapters own LLM-facing formatting; the service uses clients in `brokering`
+to reach the supervisor and brokers. Custom-app access is not implemented.
+A future SDK will need authenticated app identity, per-app grants, and enforcement
+at a trusted boundary; the current service uses connection-level grants only.
+
+The supervisor's `list` RPC and `GET /api/integrations` return
+`{"connections": [...]}`. They no longer emit the duplicate `integrations`
+field. In contrast, `GET /api/integrations/catalog` returns
+`{"integrations": [...]}` because it lists integration definitions.
+
+Internal Python names and the connection-list response changed together.
+Existing ID values, metadata JSON fields, operation IDs, vault/socket paths,
+HTTP endpoint URLs, and `config.integrations` keys remain unchanged. The
+broker launch variable `INTEGRATION_ID` and OAuth status field `integration_id`
+also retain their existing wire names; both carry connection IDs. No saved-data
+migration is needed for these terminology changes.
+
+### Discovery lifecycle and run snapshots
+
+The server constructs one `IntegrationConnectionCache` from
+`integrations/connection_cache.py`, stores it under the typed
+`INTEGRATION_CACHE_KEY`, and injects it into `AgentRuntime`. It runs on the
+existing application event loop, not in another process or one poller per
+connection. Lower-level packages do not import the server or look up a global
+cache.
+
+- **Startup:** after migrations, start polling before the aggregate readiness
+  gate. The first successful fetch (including zero connections) releases the
+  integration gate. After 30 seconds the gate releases even if discovery is
+  unavailable; polling continues so the app can recover later.
+- **Polling:** fetch a complete connection list, then wait five seconds or
+  until an explicit refresh request. Each request has a five-second deadline
+  that cancels the actual fetch, not just its caller's wait.
+- **Connection edits:** successful add, update, reconnect, remove, and OAuth
+  completion await a post-mutation refresh before responding. Requests arriving
+  during an older fetch trigger a subsequent fetch; they cannot be satisfied
+  by the pre-edit response. Concurrent refresh requests can share that fetch.
+- **Failure:** discovery becomes unavailable and publishes an empty snapshot
+  for new runs. Polling retries automatically. A successful mutation remains
+  successful even if its follow-up discovery fails.
+- **Shutdown:** after stopping routine execution and agent runs, cancel and
+  await the polling task, outstanding request, and startup waiters.
+
+Snapshots are tuples of frozen `IntegrationConnection` records with frozen
+operation grants. At run admission, `AgentRuntime` captures one snapshot in
+`RunSession`. Root and child agents use that snapshot, and each agent resolves
+its tool categories once. Its initial, restored, and dynamically loaded skills
+all resolve against the same categories. Reading a snapshot or resolving a
+skill never queries the supervisor. UI tool-category requests use the current
+application snapshot instead of a run snapshot.
+
+Already-running agents keep their advertised integration tools even when the
+shared cache changes. New runs pick up the latest snapshot. This does not
+freeze authorization: broker checks remain live, so revoked grants, removed
+connections, or upstream failures can still make an advertised tool call fail.
+There is no subscription protocol, revision counter, or persisted cache.
 
 ### Calendar tool contract
 
@@ -34,23 +202,23 @@ Three OS users at runtime:
 
 | User | UID | Owns |
 |---|---|---|
-| `computron` | 1000 | The aiohttp app, the agent, the browser tools, all user-uploaded files |
+| `omnideck` | 1000 | The aiohttp app, the agent, the browser tools, all user-uploaded files |
 | `broker` | 1001 | The supervisor, every broker subprocess, the encrypted vault, runtime sockets |
 | `root` | 0 | Container init only — drops to the two above via `gosu` in `entrypoint.sh` |
 
-`computron` is in the `broker` group, so it can `connect()` to the broker sockets at `/run/cvault/`. It can't read the vault directory (`/var/lib/computron/vault`, mode `0700` `broker:broker`).
+`omnideck` is in the `broker` group, so it can `connect()` to the broker sockets at `/run/cvault/`. It can't read the vault directory (`/var/lib/omnideck/vault`, mode `0700` `broker:broker`).
 
 The supervisor runs as a long-lived process that owns:
 
-- The encrypted credential store under `/var/lib/computron/vault/`.
-- One **broker subprocess per integration**. Brokers are independent processes that hold the decrypted credential in their own memory and connect directly to the upstream provider (Gmail's IMAP, iCloud's CalDAV, etc.).
+- The encrypted credential store under `/var/lib/omnideck/vault/`.
+- One **broker subprocess per connection**, including brokered model providers. Brokers are independent processes that hold the decrypted credential in their own memory and connect directly to the upstream provider (Gmail's IMAP, iCloud's CalDAV, etc.).
 - The `app.sock` UDS at `/run/cvault/app.sock`. The aiohttp app talks to this when the user adds, edits, or removes an integration.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │ container                                                   │
 │                                                             │
-│  computron (UID 1000)              broker (UID 1001)        │
+│  omnideck (UID 1000)               broker (UID 1001)        │
 │  ────────────────────              ──────────────────       │
 │  aiohttp app                       supervisor               │
 │   │ (HTTP routes,                   │ (vault, spawn,        │
@@ -66,70 +234,296 @@ The supervisor runs as a long-lived process that owns:
 │   │   /run/cvault/<id>.sock         │      ↓                │
 │   │                                 │   imap.gmail.com      │
 │                                                             │
-│  /var/lib/computron/vault/ (mode 0700 broker:broker)        │
+│  /var/lib/omnideck/vault/ (mode 0700 broker:broker)         │
 │  /run/cvault/                       (mode 0750 broker:broker)
 └─────────────────────────────────────────────────────────────┘
 ```
 
-The agent never has read access to a credential — its UID can't open the vault, and brokers wipe the credential out of `os.environ` after reading it into the IMAP/SMTP/CalDAV client objects.
+The agent UID cannot open the vault. Brokers remove captured startup fields
+from `os.environ` after reading them into runtime state. This is best-effort
+cleanup, not erasure of the original exec-time environment exposed through
+`/proc`; credential isolation depends on the OS-user boundary.
 
 ---
 
-## Permissions model
+## Operation grants
 
-Every integration has a `write_allowed` flag. Default: **off**. Writes mean anything that mutates upstream state — `send_email`, `move_email`, and calendar create/update/delete operations.
+Every callable integration action has a stable canonical operation ID, such
+as `email.messages.search`, `calendar.events.create`, or `http.request`. A
+connection stores the exact operation IDs granted to the agent; new
+connections created by the setup UI have no grants until the user finishes
+Review. Selecting tools alone does not persist those grants.
 
-**Two layers** enforce this:
+Two layers apply the same policy:
 
-1. **Broker-side gate (the real security boundary).** The supervisor passes `WRITE_ALLOWED=true|false` in the broker's env at spawn. The broker refuses write-tagged verbs locally with `WRITE_DENIED` when the flag is false — the request never reaches upstream. An agent that bypasses `broker_client` and connects directly to the broker's UDS still gets refused.
+1. **Broker-side gate (the security boundary).** The supervisor passes the
+   exact operation grants to the broker at spawn. The shared broker dispatcher
+   accepts canonical operation IDs directly in the RPC `verb` field and returns
+   `PERMISSION_DENIED` unless that ID is granted. This applies even to a caller
+   that reaches a broker socket directly.
+2. **App-server projection (tool discovery).** Agent tool adapters are built
+   only for granted operations on running connections. This keeps ungranted
+   operations out of the model's tool list; it does not replace the broker gate.
 
-2. **App-server-side gate (UX).** Write tools are hidden from the agent's tool registry when `write_allowed=false`; `broker_client.call()` short-circuits denied writes with `IntegrationWriteDenied` before a wire round-trip.
+Grant edits are persisted and sent over private inherited stdin/stdout pipes;
+the broker acknowledges replacing its in-memory allowlist without restarting
+or reconnecting upstream. The public operation socket has no grant-update verb.
+Subsequent authorization checks use the new grants; already-authorized calls
+may finish. Edits serialize with reconnect, removal, and crash respawn. If the
+control handoff fails or is cancelled, the supervisor stops the broker and keeps
+the saved requested policy for recovery instead of restoring revoked access.
+If persistence itself fails, the edit is not saved and the broker is stopped.
+Healthy brokers also accept credential replacements over this control channel:
+prepare a candidate, persist the accepted fields, then activate it. Preparation
+rejection leaves the running connection and vault unchanged. Email authenticates
+the configured IMAP/SMTP/CalDAV clients; Google accepts access-only credentials
+issued by the supervisor.
+HTTP and model proxies validate local configuration only, not upstream access.
+No credentials are echoed in acknowledgments or control errors.
 
-Toggling `write_allowed` requires respawning the broker (the env-var is read at startup). The supervisor handles this transparently: the integration goes `running → respawning → running` for ~1–3 seconds. The user's credential is reused; no reconnect prompt.
+Activation switches subsequent calls to the new connection. In-flight integration
+calls retain a lease on the old session until they finish, then its transport is
+closed. The update protocol never replays those operations. Shutdown/removal still
+closes unfinished sessions. A failed or
+cancelled control handoff stops the uncertain child. Recovery uses the credentials
+saved on disk (old before persistence, new after persistence). A storage error
+attempts to restore the old vault data and discard the candidate; failure of that
+recovery leaves the broker stopped. Vault secrets and metadata are not a single
+crash-atomic transaction. A degraded/brokerless connection starts one broker with
+the replacement credentials and saves them only after READY. Startup failure or
+cancellation leaves the saved credentials unchanged, with no retry using old
+credentials. A save failure stops the candidate. Metadata (only its timestamp
+changes) is written before the atomic credential write, so a failed save cannot
+replace the old credentials; restoring the timestamp is best-effort.
+
+Legacy capability/read-write fields are understood only by the
+versioned vault migration. Live API requests must use operation grants; stale
+clients receive a refresh-required error instead of permission translation.
+
+Known first-party OAuth scopes limit the operations offered and accepted during configuration.
+MCP discovery supplies availability; omnideck does not guess a generic mapping
+between remote scopes and tool names. The provider authorizes each call.
+Startup, crash recovery, and credential reconnect pass the saved grants to the
+broker unchanged; they do not intersect them with scope availability. Narrower
+remote authorization can therefore cause an enabled operation to fail upstream
+until the user reconnects with suitable consent or changes the tool selection.
 
 ---
+
+## Broker sessions and shared lifecycle
+
+A **broker session** is the provider-specific runtime state used to serve
+requests. It is not the persisted integration connection record, an agent/chat
+session, or necessarily a network connection. There is no universal session
+base class; brokers share a lifecycle, not identical contents.
+
+| Broker | Session object and resources |
+|---|---|
+| Email | `VerbDispatcher` with configured, authenticated IMAP/SMTP/CalDAV clients |
+| Google Workspace | `VerbDispatcher` backed by supervisor-issued access-only credentials; API services are built per request |
+| HTTP | `VerbDispatcher` with request/auth settings and an owned `aiohttp.ClientSession` |
+| LLM proxy | Immutable `ProxyCredentials`; its process-wide HTTP client survives session replacement |
+| Development test broker | Reused `VerbDispatcher` preserving simulated upstream state across credential updates |
+| Remote MCP | `MCPDispatcher` with an official SDK client/session and discovered tool IDs |
+
+Each broker supplies a `create_session(connection_fields, ...)` async context
+manager. Entering it prepares the provider-specific object; exiting it performs
+cleanup. `connection_fields` contains broker configuration and credentials.
+Factories must also clean up partially created resources if preparation fails.
+
+- **`brokering._session_slot.BrokerSessionSlot`** owns the active session.
+  `prepare()` builds a candidate without changing `session_slot.current` and
+  returns `PreparedBrokerSession` callbacks. Activation publishes the new session
+  while existing calls retain their borrowed session until completion; discard
+  closes only the candidate. There is no automatic operation retry.
+- **`brokering._control.BrokerControl`** owns the pending update ID and decides
+  which candidate to activate or discard in response to supervisor commands.
+  It does not interpret the provider-specific object or write the vault. The
+  wire commands remain `prepare_credentials`, `activate_credentials`, and
+  `discard_credentials`; session terminology changes only internal Python names.
+- **`brokering.brokers._common._runtime.run_integration_broker`** wraps the
+  factory to apply current operation grants and routes
+  each operation through the active dispatcher. This `Dispatcher` protocol is
+  specific to integrations. The LLM proxy reuses the session slot and control
+  protocol directly, without integration operation grants or a dispatcher.
+
+Startup and credential replacement use the same factory. Prepared callbacks
+must be activated or discarded once: control enforces this with its pending
+update ID, while startup activates directly. The supervisor remains responsible
+for persistence and for stopping the broker after an ambiguous control failure.
 
 ## How credentials are stored
 
-Per-integration files in the vault directory:
+Per-connection files in the vault directory:
 
 ```
-/var/lib/computron/vault/
-├── master.key                        # 32-byte AES-256 key, mode 0600
-├── icloud_personal.meta              # plaintext JSON: id, slug, label, write_allowed, timestamps
-├── icloud_personal.enc               # AES-256-GCM(plaintext_blob, key=master, aad=integration_id)
-├── gmail_work.meta
-└── gmail_work.enc
+/var/lib/omnideck/vault/
+├── .master-key                      # 32-byte AES-256 key, mode 0600
+├── .migrations.json                 # vault migration completion ledger
+└── creds/
+    ├── icloud_personal.meta          # non-secret version-3 metadata
+    ├── icloud_personal.enc           # encrypted credential bundle
+    ├── icloud_personal.meta.pre-v3.bak # original legacy metadata, if migrated
+    ├── gmail_work.meta
+    └── gmail_work.enc
 ```
 
-The plaintext blob is a JSON object the auth plugin defines — for `app_password`, it's `{"email": "...", "password": "..."}`. The supervisor decrypts it at broker spawn time and passes the relevant fields as env vars (`IMAP_USER`, `IMAP_PASS`, etc.); the broker reads them into client objects on its first IMAP/CalDAV connect, then `os.environ.pop()`s the password.
+The plaintext blob is a JSON object represented by `BrokerConnectionData` —
+for app-password integrations, it contains `{"email": "...", "password": "..."}`.
+At spawn, the supervisor decrypts it and uses the catalog driver's bindings to
+pass fields such as `EMAIL_USER` and `EMAIL_PASS` through the environment.
+Healthy credential replacements instead use the private control pipes. Neither
+path sends credentials to the LLM tool adapter.
+
+### Remote MCP preview
+
+`server.oauth_setup.coordinator.OAuthSetupCoordinator` owns bounded, expiring OAuth setup attempts for Google, generic MCP, and the Slack MCP preset. Provider adapters prepare credentials; the coordinator alone saves them through the supervisor. Google uses its existing OAuth library in a worker thread with a network timeout; MCP uses the pinned MCP SDK. Cancellation stops consent or exchange, but an in-flight save finishes before setup can close. A saved connection stays successful even if the discovery-cache refresh fails. Application shutdown cancels pending attempts and drains saves. Registered callback URLs and stored credential formats are unchanged; this refactor needs no data migration.
+The official SDK handles discovery, registration, PKCE, issuer verification and
+code exchange; omnideck accepts one state-matched callback on the configured
+loopback origin. Setup holds tokens in memory until the supervisor encrypts the
+connection. Browser status responses never include credentials. OAuth access
+logs omit callback queries and SDK protocol logs are suppressed because they
+can contain sensitive responses. Normal sanitized lifecycle logs remain enabled.
+
+`brokering.mcp_protocol` owns the shared SDK OAuth state adapter, protected HTTP
+transport (including bounded decompression), transport lifetime, tool discovery,
+and safe protocol errors. Setup, supervisor refresh, and the MCP broker consume
+its public package API. It does not import the server, supervisor, or broker
+implementations and does not own browser UI, credential persistence, or grants.
+The supervisor owns refresh tokens for both Google and MCP. MCP brokers receive
+only endpoint/access credentials; Google brokers receive only access token and
+scopes. Client secrets, refresh tokens, and token endpoints stay in the encrypted
+vault and supervisor. Existing Google vault records remain usable without a data
+migration; the broker environment projection changes.
+
+`brokering.brokers.mcp_broker` is the single Streamable HTTP broker implementation
+used by both Slack and custom MCP presets. Each connection gets its own process.
+Its public socket only invokes selected `mcp.<remote-tool-name>` operations;
+there is no MCP method passthrough, stdio execution, automatic resource fetching,
+sampling, elicitation, or automatic retry of a tool call. Input schemas are
+preserved. There is no output-schema contract in omnideck.
+
+The connection's owner-only `.meta` file stores the discovered tool catalog in
+`discovered_operations`: IDs, titles, descriptions and input schemas. Approvals
+remain a separate `agent_operation_grants` field. The encrypted `.enc` bundle
+stores endpoint, access token and SDK OAuth state (registration, issuer-bound
+metadata, refresh token and absolute expiry). It also stores a catalog checksum,
+not a second copy of the tool definitions. Reconciliation checks this checksum
+before starting the broker; an interrupted reconnect that leaves mismatched
+files remains broken and can be repaired by reconnecting. Only endpoint and
+access token are injected into the broker.
+Before resolving either OAuth broker, the supervisor refreshes an expiring token under
+the connection mutation lock. Rotated tokens are persisted immediately, before
+attempting the normal prepare/persist/activate credential handoff. They are
+never replaced by the old refresh token during recovery. Boot and crash recovery
+also refresh expired credentials before starting a broker. Refresh failure
+stops resolution and requires reconnect; it never opens consent automatically.
+
+When expiry is unknown, no lifetime is guessed. An explicit token rejection can
+request renewal through the supervisor using the credential generation returned
+at resolution. Concurrent failures of that generation share one renewal; a later
+failure from an old generation uses the already-replaced authorization. Google
+401s and MCP authenticated resource POST 401 Bearer challenges qualify; permission
+failures, arbitrary tool error text, timeouts and separate event-stream failures
+do not. Neither provider replays the tool operation: an operation may contain
+multiple remote requests and may have partially completed. The agent receives
+renewal status and instructions to check the service before repeating the action.
+The response only says renewal succeeded after persistence and broker activation.
+
+Google refresh responses preserve an existing refresh token when none is returned,
+and save a rotated token before activation. MCP uses the shared SDK storage
+adapter for the same guarantee. Cancellation waits for bounded in-flight renewal
+and persistence before releasing the connection lock, preventing removal from
+racing a late credential write. Renewal never changes the saved tool grants.
+
+
+Discovered descriptors travel through the existing `operations` list and immutable
+connection cache. `tools.integrations._mcp_tools` builds connection-bound
+`SchemaTool` adapters: provider-compatible names disambiguate duplicate remote
+tool names, the remote input schema stays intact, and no routing parameter is
+inserted into the upstream schema. The **Connected tools** skill category exposes
+only granted operations. New default assistant skills include it; existing
+customized skills can enable that category explicitly.
+
+Connecting starts with no grants. Reconnecting refreshes discovery while preserving
+the exact saved grants; new tools remain unselected, and removed tools cannot
+be invoked even if an older saved grant remains. No live catalog subscription
+is implemented. MCP cancellation waits for an in-progress connection commit;
+the existing add wizard then removes its newly created connection. Reconnect
+cancellation never deletes the existing account.
+
+Network policy is public HTTPS only: DNS answers are checked and pinned for each
+request, private/link-local addresses are rejected, TLS SNI/Host retain the
+original hostname, and environment proxies and HTTP redirects are not followed.
+Catalogs, responses and tool results are bounded. Gzip and deflate responses
+are decoded incrementally, with separate 4 MiB limits on transferred and expanded
+response bytes. Other encodings are not advertised or accepted.
+`OMNIDECK_ENABLE_TEST_INTEGRATIONS=1` additionally permits loopback
+HTTP fixtures; it does not permit arbitrary private-network endpoints.
+
+Slack's preset requests the reviewed scope policy described above. The internal
+app manifest comes from `integrations.catalog.slack`; its redirect is
+`<callback-origin>/api/integrations/mcp/oauth/callback`. Organizations provide
+their own registration; distributing a shared app to other organizations needs
+Marketplace approval. `mcp_setup_settings` is an app-socket supervisor RPC that
+returns only endpoint, issuer and public Client ID from the saved bundle, never
+tokens or the complete OAuth state. Live development sign-in and two-tool
+discovery succeeded; the full scope policy still requires fresh user consent
+and live read verification. Fixture results do not establish every live Slack
+permission or operation.
 
 **Encryption details:**
 
 - AES-256-GCM. Random 12-byte nonce per blob, prepended to the ciphertext.
-- AAD = the integration ID, so re-using a stale blob under a different name would fail to decrypt.
+- AAD = the connection ID, so re-using a stale blob under a different name would fail to decrypt.
 - A version byte at the start (`0x01`) reserves room for future format changes.
-- The master key is a 32-byte CSPRNG output, written once to `master.key` on first supervisor boot. **It does not rotate** in v1 — see [follow-ups](../plans/integrations-followups.md) for the planned rotation command.
+- The master key is a 32-byte CSPRNG output, written once to `.master-key` on
+  first supervisor boot. Automatic key rotation is not implemented.
 
-The master key is on local disk at mode `0600 broker:broker`. If an attacker can read that file *and* the `.enc` blobs, they have your credentials. Treat the `/var/lib/computron/vault/` volume the same way you'd treat a password-manager backup.
+The master key is on local disk at mode `0600 broker:broker`. If an attacker can read that file *and* the `.enc` blobs, they have your credentials. Treat the `/var/lib/omnideck/vault/` volume the same way you'd treat a password-manager backup.
+
+### Metadata migration and startup recovery
+
+`brokering.migrations` owns the vault migration plan and uses the shared
+`migrations._engine` runner with a vault-local completion ledger. Before any
+broker starts or `app.sock` accepts requests, legacy version-1/2 metadata is
+converted to version 3. Historical read/write mappings are frozen: future
+operations cannot silently expand old selections. Model-provider records have
+no operation grants. Legacy read-only HTTP access becomes no grant because
+`http.request` cannot enforce a read-only subset; the user must explicitly
+enable that tool again.
+
+Migration backs up each original `.meta` file once, preserves IDs and encrypted
+`.enc` files, and can resume after a partial failure. A migration error prevents
+supervisor startup rather than serving partially upgraded state. See
+[migrations](migrations.md) for the migration runner and ledger contract.
+
+After migration, startup loads connections with both metadata and credentials.
+Broker startup failures retain an `auth_failed` or `broken` record for recovery.
+Missing catalog entries, invalid current metadata, or unreadable credentials
+are logged and skipped; their files remain, but they are not visible in the
+runtime registry. Saved grants are not reduced to current OAuth scopes.
 
 ---
 
 ## State machine
 
-Each integration has a state visible in the UI. Transitions are driven by broker process events (the supervisor watches `proc.wait()` exit codes) and user actions.
+Each connection has a state visible in the UI. Transitions are driven by broker process events (the supervisor watches `proc.wait()` exit codes) and user actions.
 
 | State | Meaning | UI affordance |
 |---|---|---|
-| `pending` | Just added; broker is starting; verify in flight | Spinner |
-| `running` | Broker up, upstream auth ok | Green dot, label `connected` |
-| `auth_failed` | Broker exited with code 77 — upstream rejected the credential | Red dot, "Credentials were rejected. Delete and re-add to refresh." |
-| `broken` | Broker exited non-77 three times in a row before READY | Red dot, "Couldn't reach this integration. Delete and re-add." |
+| `running` | Broker reached READY; HTTP/model proxies validate local configuration, not upstream credentials | Quiet checkmark and Connected in the detail header |
+| `auth_failed` | Broker exited with code 77 — upstream rejected the credential | Red status and reconnect action |
+| `broken` | Broker unavailable after startup, reconnect, control/persistence failure, or exhausted crash recovery | Red status and reconnect action |
 
 Auto-restart policy:
 
-- **`auth_failed`** is sticky. The supervisor stops respawning. Recovery is delete-and-re-add (you generate a fresh app password and reconnect).
-- **Generic crashes** (anything except exit 77) trigger exponential backoff respawn: 1s → 2s → 4s → 8s → 16s, capped at 30s. After three consecutive failures the integration flips to `broken` and respawn stops.
+- **`auth_failed`** is sticky. The supervisor stops respawning. Recovery uses
+  reconnect, which replaces credentials while retaining
+  the user's exact grants, even if the new authorization has narrower scopes.
+- **Generic crashes** (anything except exit 77) trigger backoff respawn. The
+  watcher stops at three consecutive failures, giving retries after 1s and 2s
+  with the current threshold. A successful READY resets the failure count.
 - **Idle drops** (the IMAP/CalDAV connection getting closed by the server after ~10–30 minutes of inactivity) are handled inside the broker — the next verb call catches `imaplib.IMAP4.abort` / `requests.exceptions.ConnectionError`, re-LOGINs, and retries once. The state stays `running` throughout.
 
 ---
@@ -138,13 +532,48 @@ Auto-restart policy:
 
 All UI actions live under **Settings → Integrations** in the app.
 
-**Add** opens a wizard: pick provider → see the explainer + deep-link to the provider's app-passwords page → paste email + password → submit. The supervisor encrypts the blob to `<id>.enc.tmp`, spawns the broker, and renames to `<id>.enc` only after the broker prints `READY\n`. If the credential is bad, the temp file is deleted and the UI gets back an `AUTH` Callout ("iCloud rejected the password — generate a fresh one and paste it again").
+**Add** opens a modal flow: choose an integration → connect and verify it →
+select individual tools → review. The connection is created with zero operation
+grants before tool selection; cancelling the unfinished flow removes that
+setup-owned connection. OAuth connections use the same post-connection tool
+selection and review steps as app-password and token integrations.
 
-**Edit** uses a master-detail layout: list on the left, detail pane on the right. You can change the **label** (cosmetic — meta-only update, no broker respawn) and the **Allow writes** toggle (env change → broker respawn). Save is disabled until something differs from the server state.
+Selections stay in local UI state until Review is finished. Explicit
+cancellation deletes the setup-owned record; failed cleanup keeps the modal
+open for retry. Closing the app or losing the page is not a server-side abort
+and can leave a persisted zero-grant integration. Finishing Review with no
+tools selected intentionally keeps that integration.
 
-**Delete** is one-click + browser confirm. Removes both `.meta` and `.enc`, SIGTERMs the broker, and deletes the per-broker socket file.
+Forms are explicit frontend adapters, not fields rendered from backend catalog
+schemas. Setup and reconnect reuse `ConnectionStep` and submission helpers;
+setup and editing reuse `OperationPicker`. Reconnect replaces credentials on
+the same ID, preserves grants, and never deletes the existing integration when
+cancelled. OAuth cancellation is rejected while a supervisor commit is in
+progress; completed new setup returns its ID for cleanup if cancellation wins
+the UI race. Granted OAuth scopes limit offered operations, not automatically
+enabled tools.
 
-The wizard does **not** support renaming the integration ID after the fact — only the label.
+**Edit** uses a master-detail layout: list on the left, a read-only overview on
+the right. The overview summarizes selected tools by group. **Change tools**
+opens a focused dialog with the shared searchable tool picker; **Rename** opens
+a separate name editor. Each dialog saves only its own fields, and Cancel
+discards its draft. Label changes are metadata-only; grant changes apply to the
+running broker after acknowledgement. Save is disabled until something differs
+from the server state.
+
+**Connection settings** starts collapsed and contains Rename and a service-specific
+credential action: **Sign in again** for Google, **Update app password** for
+iCloud/Gmail, or **Update token** for HTTP APIs. These reuse the existing
+connection forms and preserve the integration ID and tool grants. HTTP updates
+also require confirming the API connection details; credentials are not
+prefilled from the vault.
+
+**Remove integration** requires a second confirmation click. It stops the broker and its watcher,
+removes the registry record, and deletes `.meta`, `.enc`, and any legacy metadata
+backup. A stale socket pathname can remain after process exit; binding a new
+broker removes the stale pathname before listening.
+
+The wizard does **not** support renaming the connection ID after the fact — only the label.
 
 ---
 
@@ -152,26 +581,37 @@ The wizard does **not** support renaming the integration ID after the fact — o
 
 | Path | Owner | Mode | Purpose |
 |---|---|---|---|
-| `/var/lib/computron/vault/` | `broker:broker` | `0700` | Encrypted credential store + master key |
-| `/var/lib/computron/vault/master.key` | `broker:broker` | `0600` | AES-256 master key |
-| `/var/lib/computron/vault/<id>.meta` | `broker:broker` | `0640` | Plaintext metadata (label, write_allowed, slug) |
-| `/var/lib/computron/vault/<id>.enc` | `broker:broker` | `0640` | Encrypted credential blob |
-| `/run/cvault/` | `broker:broker` | `0750` | tmpfs — runtime sockets |
-| `/run/cvault/app.sock` | `broker:broker` | `0660` | Supervisor RPC; computron group can connect |
+| `/var/lib/omnideck/vault/` | `broker:broker` | `0700` | Encrypted credential store + master key |
+| `/var/lib/omnideck/vault/.master-key` | `broker:broker` | `0600` | AES-256 master key |
+| `/var/lib/omnideck/vault/.migrations.json` | `broker:broker` | `0600` | Vault migration ledger |
+| `/var/lib/omnideck/vault/creds/` | `broker:broker` | `0700` | Credential and metadata files |
+| `/var/lib/omnideck/vault/creds/<id>.meta` | `broker:broker` | `0600` | Plaintext metadata (label, operation grants, slug, discovered MCP tools) |
+| `/var/lib/omnideck/vault/creds/<id>.enc` | `broker:broker` | `0600` | Encrypted credential blob |
+| `/var/lib/omnideck/vault/creds/<id>.meta.pre-v3.bak` | `broker:broker` | `0600` | Original legacy metadata, if migrated |
+| `/run/cvault/` | `broker:broker` | `0750` | Runtime sockets; not part of the persistent state volume |
+| `/run/cvault/app.sock` | `broker:broker` | `0660` | Supervisor RPC; omnideck group can connect |
 | `/run/cvault/<id>.sock` | `broker:broker` | `0660` | Per-broker verb dispatch socket |
-| `/run/cvault/attachments/` | `broker:broker` | `2770` | Side channel for fetched email attachments |
+| `/home/omnideck/downloads/` | `omnideck:broker` | `3770` | Shared browser downloads and broker-retrieved files |
 
-The `attachments/` directory uses setgid + sticky bits so both `broker` (writer) and `computron` (reader, downloads dir owner) can play nice without either being able to delete the other's files.
+The downloads directory uses setgid so new files inherit the broker group, and
+the sticky bit prevents the broker from deleting files owned by omnideck.
+omnideck, as directory owner, can remove either user's files. Broker attachment
+files use mode `0640`, allowing the agent to read them.
 
 ---
 
 ## Troubleshooting
 
 **Integration shows `auth failed` shortly after add.**
-The credential was wrong, expired, or revoked. Generate a fresh app password (the wizard includes a deep-link to your provider's app-passwords page) and re-add the integration. Existing app passwords are not editable in place — delete and re-add.
+The credential was wrong, expired, or revoked. Use Reconnect from the
+connection tab. App-password providers ask for a replacement password; OAuth
+providers run authorization again.
 
 **Integration shows `not running` (`broken` state).**
-The broker crashed three times in a row before completing its initial handshake. Check `docker logs <container>` for `[email_broker[<id>]]` entries — common causes are network egress blocked (firewall, DNS), the upstream provider being down, or a TLS handshake failure. Delete and re-add once the underlying issue is resolved.
+The broker could not start, exhausted crash recovery, or was stopped after an
+uncertain control update or persistence failure. Check container logs for its ID;
+common causes are blocked network egress, provider downtime, or TLS failure.
+Reconnect after the underlying issue is resolved.
 
 **Integrations tab shows "Integrations unavailable" with a Try again button.**
 The aiohttp app can't reach the supervisor. The supervisor process probably crashed or isn't running. In dev mode (`DEV_MODE=true`), the entrypoint respawns it automatically; in prod mode the container will exit and Docker's restart policy takes over. If it persists, check `docker logs` for `[supervisor]` errors.
@@ -185,20 +625,34 @@ The broker reconnects automatically when the upstream server drops an idle conne
 
 **What it defends against:**
 
-- **Agent prompt-injection or runaway tool calls reading credentials.** The agent (UID 1000) cannot open the vault directory (mode `0700`, owned by UID 1001). Even an agent with `bash-run` cannot read `master.key` or any `.enc` blob. The credential only exists in plaintext in the broker process's memory.
-- **An agent bypassing `broker_client` to connect directly to a broker's UDS.** The broker enforces `WRITE_ALLOWED` at verb dispatch — the request is rejected before reaching upstream regardless of which client called it.
-- **Credentials leaking into argv.** Credentials are passed via env, never argv. The broker `os.environ.pop("EMAIL_PASS", None)`s the password into client-object state immediately after reading it, so a `cat /proc/<pid>/environ` from another UID won't find it.
-- **Default-private new files.** The supervisor and brokers install `umask 0077` at startup (per `integrations/_perms.py`), so any file or directory they create without an explicit mode lands at owner-only by default. Sockets that genuinely need group access get an explicit `chmod 0660` after bind.
+- **Direct credential-file reads from the agent UID.** The agent (UID 1000)
+  cannot open the vault directory (mode `0700`, owned by UID 1001), including
+  `.master-key` and `.enc` files. The supervisor and broker processes hold
+  decrypted credentials while preparing or serving connections.
+- **An agent bypassing `broker_client` to connect directly to a broker's UDS.** The broker enforces exact operation grants at verb dispatch, before reaching upstream, regardless of which client called it.
+- **Credentials leaking into argv.** Startup credentials use environment fields,
+  never command-line arguments; live updates use inherited private pipes.
+  Removing fields from `os.environ` does not erase the original `/proc`
+  environment. Cross-UID process inspection restrictions remain essential.
+- **Default-private new files.** The supervisor and brokers install `umask 0077` at startup (per `brokering/_perms.py`), so any file or directory they create without an explicit mode lands at owner-only by default. Sockets that genuinely need group access get an explicit `chmod 0660` after bind.
 - **Credentials leaking via core dumps.** The supervisor and brokers call `setrlimit(RLIMIT_CORE, (0, 0))` at startup, so a crash can't write the process's memory to a core file where another UID might read it.
-- **A malicious app server respawn somehow setting `WRITE_ALLOWED=true`.** The supervisor is the only thing that spawns brokers; the app server has no broker-spawn surface.
+- **A malicious caller trying an ungranted broker verb.** The supervisor is the
+  only process that spawns brokers, and the broker independently enforces the
+  exact grants it received at spawn or through private control updates.
 
 **What it does NOT defend against (explicit non-goals for v1):**
 
+- **Agent access to management RPC.** The app server and agent share the
+  omnideck UID and broker-group access to `app.sock`. There is no trusted-UI
+  caller identity preventing agent-executed code from requesting grant changes.
+  Per-broker dispatch enforces the current grants, but this management-plane
+  authorization gap is explicitly deferred, not solved by private child pipes.
 - **Container breakout.** If an attacker escapes the container as root or breaks the UID 1000/1001 boundary, all bets are off.
 - **Backup theft.** The state volume contains both the master key and the encrypted blobs. Treat backups like a password-manager export.
 - **`ptrace`-based memory inspection.** v1 doesn't assert `kernel.yama.ptrace_scope >= 1` at startup or refuse to run with `CAP_SYS_PTRACE`. The kernel default already blocks the realistic cross-UID attack (agent UID can't ptrace broker UID without `CAP_SYS_PTRACE`), but if the container is launched with that capability granted, an in-container same-UID-as-broker attacker could attach a debugger and read the credential. Asserting these flags at startup is a follow-up item.
-- **An MCP server (when MCP lands) abusing creds it was given.** Mitigation is "user consented by installing it." Per-integration egress allowlists are a future hardening item.
-- **Disk-level forensic recovery.** We don't shred old `.enc.tmp` files, just `unlink()` them.
+- **A remote MCP server abusing credentials or data it legitimately receives.** Public-network endpoint validation does not make a server trustworthy. Users must trust the service they connect; per-integration domain allowlists remain future hardening.
+- **Disk-level forensic recovery.** Deleted credentials are unlinked, not
+  securely erased; interrupted atomic writes may leave temporary files.
 
 ---
 
@@ -206,17 +660,88 @@ The broker reconnects automatically when the upstream server drops an idle conne
 
 | Component | Path |
 |---|---|
-| Supervisor (vault, lifecycle, RPC) | `integrations/supervisor/` |
-| Email broker (IMAP + SMTP + CalDAV) | `integrations/brokers/email_broker/` |
-| Wire framing + ready signal + exit codes | `integrations/_rpc.py`, `integrations/brokers/_common/` |
-| Provider catalog | `integrations/supervisor/_catalog.py` (currently inline; moves to `config/integrations_catalog/*.json` per [follow-ups](../plans/integrations-followups.md)) |
-| App-server HTTP routes | `server/_integrations_routes.py` |
-| Agent-side broker client | `integrations/broker_client/` |
+| Supervisor (vault, lifecycle, RPC) | `brokering/supervisor/` |
+| Email broker (IMAP + SMTP + CalDAV) | `brokering/brokers/email_broker/` |
+| Shared MCP protocol, network policy and SDK OAuth adapter | `brokering/mcp_protocol/` |
+| Remote MCP broker and tool-grant enforcement | `brokering/brokers/mcp_broker/` |
+| MCP setup coordinator and browser callback routes | `server/oauth_setup/` |
+| Supervisor-owned OAuth refresh | `brokering/supervisor/_manager.py`, `_mcp_refresh.py`, `_google_refresh.py` |
+| Wire framing + ready signal + exit codes | `brokering/_rpc.py`, `brokering/_ready.py`, `brokering/_exit_codes.py` |
+| Tool-integration catalog | `integrations/catalog/` |
+| Model-provider presets and HTTP proxy | `brokering/brokers/llm_proxy/` |
+| Combined process catalog and validation | `brokering/catalog.py` |
+| Broker launch contracts | `brokering/drivers.py` |
+| Canonical operation registry | `integrations/operations.py` |
+| Application/SDK boundary | `integrations/service.py` |
+| Application discovery cache | `integrations/connection_cache.py` |
+| Vault migration plan | `brokering/migrations/` |
+| Broker session ownership and private control | `brokering/_session_slot.py`, `brokering/_control.py` |
+| Shared integration broker runtime | `brokering/brokers/_common/_runtime.py` |
+| App-server HTTP/OAuth routes | `server/_integrations_routes.py`, `server/oauth_setup/routes.py` |
+| Agent-side broker client | `brokering/broker_client/` |
 | Agent tool wrappers | `tools/integrations/` |
-| React UI | `server/ui/src/components/integrations/` |
+| React UI | `server/ui/src/features/integrations/` |
 
-Tests live in `tests/integrations/`, `tests/tools/integrations/`, and `e2e/settings/test_integrations.py`.
+`integrations` owns tool presets, operations, grants, the application service,
+and the connection discovery cache.
+`brokering` owns credential storage, process lifecycle, transport clients, and
+all concrete brokers under `brokering.brokers`, including the separate LLM HTTP
+proxy. Model adapters remain in `agent_core.providers`,
+with configured provider selection in `providers`; LLM requests do not use
+integration operations or the HTTP API broker.
+
+`brokering.catalog` is the composition boundary that combines the two preset
+catalogs and validates them before startup. The supervisor still applies the
+existing integration/model-provider connection policies; it is not a generic
+plugin framework. Transport primitives and the LLM proxy do not import tool
+integrations. Server route families share `server/_brokering.py` for connection
+management. Persisted metadata, connection IDs, vault/socket paths, and config
+keys are unchanged by the package split; legacy permission metadata is upgraded
+by the vault migration described above. Connection listings use the single `connections` field;
+internal Python import paths and connection type names have changed.
+
+Isolated tests live under `tests/unit/brokering/`, `tests/unit/integrations/`,
+`tests/unit/tools/integrations/`, and `tests/unit/server/`. Tests exercising
+real HTTP/Unix sockets, broker subprocesses, OAuth token exchange, and vault
+lifecycle live under `tests/integration/brokering/` and
+`tests/integration/integrations/`; run both with `just integration`.
+Browser setup/edit/recovery tests live under `tests/e2e/settings/` and run
+through `just e2e`. See the [integration test guide](../tests/integration/integrations/README.md)
+for the boundaries and local fake services.
+
+For credential-free manual testing, set `OMNIDECK_ENABLE_TEST_INTEGRATIONS=1`
+in the container environment before starting the app and supervisor. This adds
+the development-only Test integration; use `omnideck-test-token` for successful
+authentication (any other token is rejected). Its two operations, `test.value.get`
+and `test.value.set`, exercise independent grants and broker state without an
+external service. It is absent from the default catalog and has no LLM tool
+adapter; operation invocation is covered through broker RPC in integration/E2E
+tests. Do not enable it in a production deployment.
 
 ---
 
 See [`plans/integrations-followups.md`](../plans/integrations-followups.md) for what's next.
+
+### Local and tailnet MCP servers
+
+Custom MCP connections support Streamable HTTP servers on loopback, LAN, and
+Tailscale addresses without a test-mode switch. HTTP is supported for those
+local address ranges; public servers require HTTPS. Link-local, multicast,
+unspecified and reserved destinations remain blocked. Every DNS answer is checked
+and the selected address is pinned for the request. Redirects remain disabled
+and bearer credentials remain scoped to the connected origin.
+
+OAuth is optional: a server that accepts the initial protocol requests without
+a challenge connects directly. Tailscale Serve can supply HTTPS and tailnet
+identity enforcement without OAuth. The omnideck runtime/container must itself
+be able to resolve and route to that tailnet hostname. `localhost` refers to the
+runtime container, not the desktop host; use a reachable host or tailnet address.
+
+A tailnet-only HTTP endpoint using a literal Tailscale IP can be entered directly
+without special container launch settings, provided the container host is on the
+tailnet. For example, a companion may expose `http://<tailnet-ip>:8767/mcp` through
+a proxy that enforces Tailscale identity. WireGuard encrypts the traffic between
+hosts; the HTTP endpoint does not add its own TLS layer. The server must support
+the IP Host header. HTTPS hostname endpoints still require working DNS inside
+the container; avoid changing global DNS when the companion supports direct-IP
+access instead.

@@ -228,11 +228,20 @@ export default function ScreencastViewport({
             if (t) sendInput({ type: 'paste', text: t });
         };
         const onKeyDown = (e) => {
-            stop(e);
             // Clipboard chords are bridged to/from the host, not forwarded as keys.
             const mod = e.ctrlKey || e.metaKey;
             const k = e.key.toLowerCase();
-            if (mod && k === 'v') return;                         // host paste arrives via the paste event
+            const paste = !e.altKey && (
+                (mod && k === 'v') || (!mod && e.shiftKey && k === 'insert')
+            );
+            if (paste) {
+                // Cancelling the shortcut also cancels the native paste event.
+                // Let the host produce it; onPaste prevents local insertion and
+                // forwards its clipboard text to the remote page exactly once.
+                e.stopPropagation();
+                return;
+            }
+            stop(e);
             if (mod && k === 'c') { sendInput({ type: 'copy' }); return; }
             if (mod && k === 'x') { sendInput({ type: 'copy' }); } // copy to host, then forward the cut
             // Browser history (chrome action, not a page key): Alt+Arrow on

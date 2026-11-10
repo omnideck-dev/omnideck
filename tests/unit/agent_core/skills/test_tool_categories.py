@@ -8,19 +8,19 @@ integration categories resolving (or staying empty) by connection state.
 """
 
 import inspect
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
 
 from config import FeaturesConfig
-from integrations.permissions import Access, Capability
 from agent_runtime._factory import _base_tools
 from agent_runtime._spawn import make_spawn_tool
 from skills._tool_categories import _custom_tools_category
 from skills._tool_categories import _static_tool_categories, tool_categories
 from agent_core.tools._callable_schema import callable_to_json_schema
 from tools.integrations._tool_resolution import _BUILDERS
-from tools.integrations.types import RegisteredIntegration
+from integrations.connection_cache import IntegrationConnection
 
 _STATIC_IDS = {
     "coding",
@@ -33,7 +33,7 @@ _STATIC_IDS = {
     "desktop",
     "custom_tools",
 }
-_INTEGRATION_IDS = {"email", "calendar", "drive", "contacts", "http"}
+
 
 
 def _features(**overrides) -> FeaturesConfig:
@@ -53,10 +53,6 @@ def _isolate(monkeypatch):
     _set_flags(monkeypatch)
     monkeypatch.setattr("settings.custom_tools_enabled", lambda: True)
 
-    async def _none():
-        return {}
-
-    monkeypatch.setattr("tools.integrations._tool_resolution.registered_integrations", _none)
     yield
     _static_tool_categories.cache_clear()
 
@@ -66,11 +62,10 @@ def _set_flags(monkeypatch, **overrides):
     _static_tool_categories.cache_clear()
 
 
-def _connect(monkeypatch, cap, access=Access.READ):
-    async def _get():
-        return {"acct-1": RegisteredIntegration(id="acct-1", slug="acct", permissions={cap: access})}
-
-    monkeypatch.setattr("tools.integrations._tool_resolution.registered_integrations", _get)
+def _connections(*operation_ids):
+    return (IntegrationConnection(
+        id="acct-1", slug="acct", operation_grants=frozenset(operation_ids),
+    ),)
 
 
 def _names(tools):
@@ -81,7 +76,8 @@ def _names(tools):
 async def test_lists_static_and_integration_categories():
     cats = await tool_categories()
     assert _STATIC_IDS <= set(cats)
-    assert _INTEGRATION_IDS <= set(cats)
+    assert not any(cid.startswith("integration:") for cid in cats)
+    assert "integration:acct-1" in await tool_categories(_connections("email.messages.search"))
 
 
 @pytest.mark.unit
@@ -101,9 +97,7 @@ async def test_agent_tools_have_schema_ready_google_docstrings():
     for category in (await tool_categories()).values():
         exposed_tools.extend(category.tools)
     exposed_tools.extend(_custom_tools_category().tools)
-    for tiers in _BUILDERS.values():
-        for builders in tiers.values():
-            exposed_tools.extend(build(["example"]) for build in builders)
+    exposed_tools.extend(build(["example"]) for build in _BUILDERS.values())
 
     errors: list[str] = []
     for tool in {tool.__name__: tool for tool in exposed_tools}.values():
@@ -167,26 +161,27 @@ async def test_grounding_tool_follows_visual_grounding(monkeypatch):
 
 @pytest.mark.unit
 async def test_integration_category_empty_when_disconnected():
-    email = (await tool_categories())["email"]
+    connection = replace(_connections("email.messages.search")[0], state="stopped")
+    email = (await tool_categories((connection,)))["integration:acct-1"]
     assert email.tools == []
 
 
 @pytest.mark.unit
-async def test_integration_category_resolves_when_connected(monkeypatch):
-    _connect(monkeypatch, Capability.EMAIL, Access.READ)
-    email = (await tool_categories())["email"]
+async def test_integration_category_resolves_when_connected():
+    email = (await tool_categories(_connections("email.messages.search")))["integration:acct-1"]
     names = _names(email.tools)
-    assert "search_email" in names
+    assert len(names) == 1
+    assert next(iter(names)).startswith("search_email_")
     assert "send_email" not in names  # read tier only
 
 
 @pytest.mark.unit
-async def test_connected_flag_tracks_integration_state(monkeypatch):
+async def test_connected_flag_tracks_integration_state():
     cats = await tool_categories()
     assert cats["coding"].connected is None  # static: no connection concept
-    assert cats["email"].connected is False  # integration, nothing connected
-    _connect(monkeypatch, Capability.EMAIL, Access.READ)
-    assert (await tool_categories())["email"].connected is True
+    connection = replace(_connections("email.messages.search")[0], state="stopped")
+    assert (await tool_categories((connection,)))["integration:acct-1"].connected is False
+    assert (await tool_categories(_connections("email.messages.search")))["integration:acct-1"].connected is True
 
 
 @pytest.mark.unit

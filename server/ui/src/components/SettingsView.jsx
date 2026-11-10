@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { useAppData } from '../contexts/AppData.jsx';
+import IntegrationsTab from '../features/integrations/IntegrationsTab.jsx';
+import BrandTabs from './primitives/BrandTabs.jsx';
 import CustomToolsTab from './CustomToolsTab.jsx';
-import IntegrationsTab from './integrations/IntegrationsTab.jsx';
 import MemoryTab from './MemoryTab.jsx';
 import ProvidersTab from './providers/ProvidersTab.jsx';
 import SkillsTab from './skills/SkillsTab.jsx';
@@ -25,6 +26,9 @@ const ALL_TABS = [
 
 export default function SettingsView({
     initialTab = 'skills',
+    initialConnectionId,
+    initialSkillId,
+    selectionRequest,
 }) {
     const { features } = useAppData();
     const tabs = useMemo(
@@ -32,26 +36,40 @@ export default function SettingsView({
         [features],
     );
     const [activeTab, setActiveTab] = useState(initialTab);
-    useEffect(() => setActiveTab(initialTab), [initialTab]);
+    useEffect(() => setActiveTab(initialTab), [initialTab, selectionRequest]);
+    const [connectionId, setConnectionId] = useState(initialConnectionId);
+    useEffect(() => setConnectionId(initialConnectionId), [initialConnectionId, selectionRequest]);
     const active = tabs.find((t) => t.id === activeTab) ?? tabs[0];
     const Active = active.Component;
+    const [skillsVisited, setSkillsVisited] = useState(initialTab === 'skills');
+    useEffect(() => { if (active.id === 'skills') setSkillsVisited(true); }, [active.id]);
     return (
         <div className={styles.page} data-testid="settings-page">
-            <nav className={styles.tabBar}>
-                {tabs.map((tab) => (
-                    <button
-                        key={tab.id}
-                        className={`${styles.tab} ${active.id === tab.id ? styles.tabActive : ''}`}
-                        onClick={() => setActiveTab(tab.id)}
-                        data-testid={`settings-tab-${tab.id}`}
-                    >
-                        {tab.label}
-                    </button>
-                ))}
-            </nav>
-            <div className={styles.content}>
-                <Active />
-            </div>
+            <BrandTabs
+                tabs={tabs}
+                activeTab={active.id}
+                onTabChange={setActiveTab}
+                ariaLabel="Settings"
+                testIdPrefix="settings-tab"
+                idBase="settings"
+            />
+            {(skillsVisited || active.id === 'skills') && <div
+                className={active.id === 'skills' ? styles.content : styles.hidden}
+                hidden={active.id !== 'skills'}
+                id="settings-panel-skills" role="tabpanel" aria-labelledby="settings-tab-skills"
+            >
+                <SkillsTab initialSkillId={initialSkillId} selectionRequest={selectionRequest}
+                    onOpenIntegration={id => { setConnectionId(id); setActiveTab('integrations'); }} />
+            </div>}
+            {active.id !== 'skills' && <div
+                className={styles.content}
+                id={`settings-panel-${active.id}`}
+                role="tabpanel"
+                aria-labelledby={`settings-tab-${active.id}`}
+            >
+                <Active initialConnectionId={connectionId} initialSkillId={initialSkillId} selectionRequest={selectionRequest}
+                    onOpenIntegration={id => { setConnectionId(id); setActiveTab('integrations'); }} />
+            </div>}
         </div>
     );
 }

@@ -34,6 +34,82 @@ describe('conversation session stop handling', () => {
         vi.restoreAllMocks();
     });
 
+    it.each(['network', 'HTTP'])('allows retrying Stop after a %s failure', async (failure) => {
+        const chat = deferred();
+        let stopCalls = 0;
+        vi.spyOn(global, 'fetch').mockImplementation((url) => {
+            if (url === '/api/chat') return chat.promise;
+            stopCalls += 1;
+            if (stopCalls === 1) {
+                return failure === 'network'
+                    ? Promise.reject(new TypeError('Failed to fetch'))
+                    : Promise.resolve({ ok: false, status: 503 });
+            }
+            return Promise.resolve({ ok: true });
+        });
+        const { result } = renderHook(() => useConversationSessionController());
+        let sendPromise;
+
+        await act(async () => {
+            sendPromise = result.current.sendMessage('hello', null, 'omnideck');
+        });
+        try {
+            await act(async () => {
+                result.current.stopGeneration();
+                result.current.stopGeneration();
+            });
+            expect(stopCalls).toBe(1);
+            expect(result.current.isStreaming).toBe(true);
+            expect(result.current.stopRequested).toBe(false);
+
+            await act(async () => {
+                result.current.stopGeneration();
+            });
+            expect(stopCalls).toBe(2);
+            expect(result.current.stopRequested).toBe(true);
+        } finally {
+            await act(async () => {
+                chat.resolve(turnEndResponse());
+                await sendPromise;
+            });
+        }
+    });
+
+    it('does not let a late failed Stop clear the next turn stop request', async () => {
+        const chats = [deferred(), deferred()];
+        const firstStop = deferred();
+        let chatCalls = 0;
+        let stopCalls = 0;
+        vi.spyOn(global, 'fetch').mockImplementation((url) => {
+            if (url === '/api/chat') return chats[chatCalls++].promise;
+            stopCalls += 1;
+            return stopCalls === 1 ? firstStop.promise : Promise.resolve({ ok: true });
+        });
+        const { result } = renderHook(() => useConversationSessionController());
+        let sendPromise;
+        await act(async () => {
+            sendPromise = result.current.sendMessage('first', null, 'omnideck');
+            result.current.stopGeneration();
+        });
+        await act(async () => {
+            chats[0].resolve(turnEndResponse());
+            await sendPromise;
+        });
+        await act(async () => {
+            sendPromise = result.current.sendMessage('second', null, 'omnideck');
+            result.current.stopGeneration();
+        });
+        await act(async () => {
+            firstStop.resolve({ ok: false, status: 503 });
+        });
+        expect(result.current.isStreaming).toBe(true);
+        expect(result.current.stopRequested).toBe(true);
+        await act(async () => {
+            chats[1].resolve(turnEndResponse());
+            await sendPromise;
+        });
+    });
+
     it('keeps the UI streaming while marking stop requested', async () => {
         const chat = deferred();
         const fetchSpy = vi.spyOn(global, 'fetch').mockImplementation((url) => {

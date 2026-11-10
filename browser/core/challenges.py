@@ -13,7 +13,7 @@ returns a ``ChallengeInfo`` when it recognizes its interstitial, else None.
 ``detect_challenge`` tries each in turn and returns the first match. Adding a
 vendor (DataDome, Akamai, PerimeterX, …) is a localized change here: write a
 detector and append it. The browser wiring that consumes ``ChallengeInfo`` stays
-vendor-agnostic. Cloudflare is the only vendor implemented today.
+vendor-agnostic.
 """
 
 from __future__ import annotations
@@ -24,6 +24,8 @@ from typing import NamedTuple
 
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import Page, Response
+
+from browser.core.evaluation import evaluate_frame
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +122,7 @@ async def _detect_cloudflare(page: Page, response: Response | None) -> Challenge
     if _CF_URL_TOKEN in (page.url or "") or is_cloudflare_challenge_response(response):
         return _CF_INFO
     try:
-        if await page.main_frame.evaluate(_CF_DETECT_JS):
+        if await evaluate_frame(page.main_frame, _CF_DETECT_JS):
             return _CF_INFO
     except PlaywrightError:
         logger.debug("Cloudflare challenge probe failed", exc_info=True)
@@ -133,7 +135,52 @@ async def _detect_cloudflare(page: Page, response: Response | None) -> Challenge
 
 # Every anti-bot vendor is one detector. Add a vendor by writing one that returns
 # a ChallengeInfo on a hit and appending it here; nothing downstream changes.
-_DETECTORS: tuple[_Detector, ...] = (_detect_cloudflare,)
+_VENDOR_CHALLENGE_JS = """() => {
+  function visible(element) {
+    if (!element || !element.getClientRects().length) return false;
+    for (let node = element; node; node = node.parentElement) {
+      const style = getComputedStyle(node);
+      if (style.display === 'none' || style.visibility === 'hidden'
+          || style.visibility === 'collapse' || Number(style.opacity) === 0) return false;
+    }
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  }
+  function dataDomeUrl(value) {
+    try {
+      const url = new URL(value, location.href);
+      return (url.hostname === 'captcha-delivery.com'
+          || url.hostname.endsWith('.captcha-delivery.com'))
+        && /^\\/(captcha|interstitial)(\\/|$)/.test(url.pathname);
+    } catch (_) { return false; }
+  }
+  if (Array.from(document.querySelectorAll('#px-captcha, .px-captcha-container')).some(visible))
+    return 'perimeterx';
+  if (dataDomeUrl(location.href)
+      || Array.from(document.querySelectorAll('[data-dd-captcha-container]')).some(visible)
+      || Array.from(document.querySelectorAll('iframe[src]')).some((frame) => {
+        return visible(frame) && dataDomeUrl(frame.src);
+      })) return 'datadome';
+  return null;
+}"""
+
+_VENDOR_INFOS = {
+    vendor: ChallengeInfo(
+        vendor=vendor,
+        banner=f"[{name} challenge detected] This page is blocked by a {name} challenge. "
+        "Try fetch_url(url) to read its content, or ask the user to complete the challenge.",
+    )
+    for vendor, name in (("perimeterx", "PerimeterX"), ("datadome", "DataDome"))
+}
+
+
+async def _detect_vendor_challenge(page: Page, response: Response | None) -> ChallengeInfo | None:
+    """Recognize visible vendor challenges without treating ordinary protection as a block."""
+    vendor = await evaluate_frame(page.main_frame, _VENDOR_CHALLENGE_JS)
+    return _VENDOR_INFOS.get(vendor) if isinstance(vendor, str) else None
+
+
+_DETECTORS: tuple[_Detector, ...] = (_detect_cloudflare, _detect_vendor_challenge)
 
 
 async def detect_challenge(

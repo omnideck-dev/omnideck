@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from multidict import CIMultiDict
 
 import conversations._store as _store
 from agent_runtime import RunSnapshot
@@ -58,6 +59,7 @@ def _make_request(
     """Build a minimal aiohttp.web.Request-ish double."""
     req = MagicMock()
     req.match_info = {"conversation_id": conversation_id}
+    req.headers = CIMultiDict()
     req.json = AsyncMock(return_value=json_body)
     manager = active_run_manager or MagicMock()
     if active_run_manager is None:
@@ -100,7 +102,6 @@ async def test_resume_route_returns_workspace_sidecars(monkeypatch) -> None:
     """The HTTP payload includes the explicit browser and terminal restores."""
     resume = AsyncMock(
         return_value=ConversationResumeState(
-            messages=[],
             events=[{"id": "event-1", "type": "agent_started"}],
             browser_tabs=[{"tab_id": 1, "agent_id": "root-1"}],
             terminal={"root-1": [{"cmd_id": "command-1"}]},
@@ -117,6 +118,8 @@ async def test_resume_route_returns_workspace_sidecars(monkeypatch) -> None:
     response = await resume_conversation_handler(_make_request("conversation-1", None))
     body = json.loads(response.body)
 
+    assert "messages" not in body
+    assert body["events"] == [{"id": "event-1", "type": "agent_started"}]
     assert body["browser_tabs"] == [{"tab_id": 1, "agent_id": "root-1"}]
     assert body["terminal"] == {"root-1": [{"cmd_id": "command-1"}]}
     assert body["active_run"] is None
@@ -146,7 +149,6 @@ async def test_resume_route_returns_active_run_at_persisted_cursor(
     """The cursor identifies the newest snapshot event from the active run."""
     resume = AsyncMock(
         return_value=ConversationResumeState(
-            messages=[],
             events=[
                 {"id": "old-event", "type": "iteration"},
                 {"id": "run-started", "type": "agent_started"},
@@ -202,7 +204,6 @@ async def test_resume_route_returns_active_run_before_first_persisted_event(
     """A just-reserved run is discoverable with a cursor of zero."""
     resume = AsyncMock(
         return_value=ConversationResumeState(
-            messages=[],
             events=[],
             browser_tabs=[],
             terminal={},

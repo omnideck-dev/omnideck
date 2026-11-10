@@ -65,6 +65,7 @@
 
 /* Individual tab */
 .tab {
+    position: relative;
     display: flex;
     align-items: center;
     flex: 0 0 auto;
@@ -101,6 +102,20 @@
     color: var(--text-primary);
 }
 
+/* Wraps the "⋯" + "×" buttons. Always part of the normal flex flow (never
+   an absolutely positioned overlay), so every tab's width already accounts
+   for them — no layout shift on hover, no dead click zone past a short
+   label, and nothing to overlap a long one. Visibility of the buttons
+   inside is opacity-only (below), the same hover/focus-within reveal used
+   elsewhere in this codebase for quiet row actions. */
+.tabActions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+    padding-right: 6px;
+}
+
 .tabMenuButton {
     display: flex;
     align-items: center;
@@ -114,6 +129,8 @@
     box-shadow: none;
     background: transparent;
     color: var(--text-tertiary);
+    opacity: 0;
+    transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
 
 .tabMenuButton:hover,
@@ -141,12 +158,12 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 16px;
-    height: 16px;
-    font-size: 11px;
+    width: 22px;
+    height: 22px;
+    font-size: 16px;
     color: var(--text-tertiary);
     border-radius: 3px;
-    margin: 0 6px 0 2px;
+    margin: 0 0 0 2px;
     padding: 0;
     border: none;
     box-shadow: none;
@@ -155,8 +172,18 @@
     transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
 
+/* Reveal both buttons together: on hover, on keyboard focus anywhere in the
+   tab, while it's the active tab, or while its own menu popup is open (so
+   moving the pointer onto the popup doesn't un-hover the trigger that opened
+   it while aria-expanded is still true on it). */
+.tab:hover .tabMenuButton,
 .tab:hover .tabClose,
-.tabActive .tabClose {
+.tab:focus-within .tabMenuButton,
+.tab:focus-within .tabClose,
+.tabActive .tabMenuButton,
+.tabActive .tabClose,
+.tabMenuOpen .tabMenuButton,
+.tabMenuOpen .tabClose {
     opacity: 1;
 }
 

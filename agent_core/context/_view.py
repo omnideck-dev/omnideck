@@ -1,20 +1,4 @@
-"""Derive an agent's message list from an events.jsonl-shaped event sequence.
-
-Two pure views over the same flat event dicts (the shape persisted to
-events.jsonl), no I/O:
-
-- ``build_llm_view`` — the model-facing list: collapsed at the latest
-  compaction (first user message + summary marker + kept tail), with user
-  messages augmented with the [Attached files…] block the model needs to
-  locate uploads. This is what the provider is prompted with.
-- ``build_transcript_view`` — the user-facing list: the conversation as it
-  happened — no compaction collapse, user text verbatim. This is what the
-  frontend renders (it interleaves compaction chips itself).
-
-Both filter to one agent's thread via ``events_for_agent`` and emit message
-dicts in the same shape as today's history.json. The caller passes a single
-conversation's events.
-"""
+"""Derive model-facing messages from a conversation's recorded events."""
 
 from __future__ import annotations
 
@@ -79,8 +63,7 @@ def build_llm_view(
     change between turns, and a message that resolved (or didn't) when it
     was submitted must keep reading that way on every later re-derivation,
     not flip based on what exists now. It only ever touches this model-facing
-    view: the stored event and the transcript view the frontend renders
-    (``build_transcript_view``) keep the user's text verbatim, so what's
+    view: the stored event keeps the user's text verbatim, so what's
     persisted and displayed always matches what the user actually typed.
     Skipped for a compaction's intent-summary override, since that text is
     already a compacted abstraction, not a literal typed message.
@@ -131,32 +114,9 @@ def build_llm_view(
             return messages
 
     messages.extend(_walk(
-        evs[start_idx:], agent_names, augment=True,
+        evs[start_idx:], agent_names,
         user_content_transform=user_content_transform, latest_user_id=latest_user_id,
     ))
-    return messages
-
-
-def build_transcript_view(
-    events: list[dict[str, Any]],
-    agent_filter: str | None = None,
-) -> list[dict[str, Any]]:
-    """The user-facing message list for one agent.
-
-    The conversation as it actually happened — no compaction collapse, and
-    the user's messages verbatim (no [Attached files…] augmentation). The
-    frontend renders this and draws compaction chips at their points.
-    """
-    evs = events_for_agent(events, agent_filter)
-    first_user = next((e for e in evs if e["type"] == "user_message"), None)
-    if first_user is None:
-        return []
-    agent_names = _agent_names(events)
-    messages: list[dict[str, Any]] = [
-        {"role": "user", "content": first_user["content"]},
-    ]
-    tail = evs[evs.index(first_user) + 1:]
-    messages.extend(_walk(tail, agent_names, augment=False))
     return messages
 
 
@@ -172,17 +132,12 @@ def _walk(
     evs: list[dict[str, Any]],
     agent_names: dict[str, str | None],
     *,
-    augment: bool,
     user_content_transform: Callable[[str], str] | None = None,
     latest_user_id: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Emit user/assistant/tool messages for a slice of events.
+    """Emit model-facing user, assistant, and tool messages.
 
-    ``augment``: apply ``user_content_transform`` (if given, and only to the
-    ``latest_user_id`` event) and append the [Attached files…] block to user
-    messages — LLM-facing transformations that tell the model where uploads
-    landed and resolve composer tokens. The transcript view passes False to
-    show what the user actually typed.
+    ``user_content_transform`` applies only to the ``latest_user_id`` event.
     """
     out: list[dict[str, Any]] = []
     for e in evs:
@@ -191,11 +146,10 @@ def _walk(
             continue
         if t == "user_message":
             content = e["content"]
-            if augment:
-                if user_content_transform is not None and e.get("id") == latest_user_id:
-                    content = user_content_transform(content)
-                if e.get("attachments"):
-                    content = _augment_with_attachments(content, e["attachments"])
+            if user_content_transform is not None and e.get("id") == latest_user_id:
+                content = user_content_transform(content)
+            if e.get("attachments"):
+                content = _augment_with_attachments(content, e["attachments"])
             out.append({"role": "user", "content": content})
         elif t == "iteration":
             # An assistant message with neither content nor tool calls (e.g.
@@ -242,4 +196,4 @@ def _augment_with_attachments(content: str, attachments: list[dict[str, Any]]) -
     return f"{content}\n\n[Attached files written to virtual computer]\n" + "\n".join(lines)
 
 
-__all__ = ["build_llm_view", "build_transcript_view", "events_for_agent"]
+__all__ = ["build_llm_view", "events_for_agent"]

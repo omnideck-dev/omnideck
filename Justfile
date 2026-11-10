@@ -39,7 +39,6 @@ setup home_dir=`echo "$HOME/.omnideck"`:
     [ -d .venv ] && echo "📦 .venv exists — skipping" || uv venv .venv
     echo "📚 Installing Python deps..."
     uv sync --all-extras
-    uv pip install -e .
 
     if command -v node >/dev/null && command -v npm >/dev/null; then
         echo "🎨 Installing UI deps..."
@@ -341,6 +340,8 @@ e2e *args:
         -e DISPLAY=:$port \
         -e ENABLE_DESKTOP=false \
         -e MOCK_LLM=1 \
+        -e OMNIDECK_ENABLE_TEST_INTEGRATIONS=1 \
+        -e OMNIDECK_EXTERNAL_URL="http://localhost:$port" \
         "${env_args[@]}" \
         -v "$state/home:/home/omnideck:rw,z" \
         -v "$state/state:/var/lib/omnideck:rw,z" \
@@ -365,7 +366,9 @@ e2e *args:
         -d '{"custom_tools_enabled":true}' >/dev/null
 
     targets="{{args}}"
-    OMNIDECK_URL="http://localhost:$port" OMNIDECK_CONTAINER="$name" PYTHONPATH=. uv run pytest ${targets:-tests/e2e/}
+    OMNIDECK_URL="http://localhost:$port" OMNIDECK_CONTAINER="$name" \
+        OMNIDECK_CONTAINER_ENGINE="$engine" PYTHONPATH=. \
+        uv run pytest ${targets:-tests/e2e/}
 
 
 # =============================================================================
@@ -492,7 +495,8 @@ _sync-src ctr:
 # Refresh the editable install after source sync so newly added top-level
 # packages and pyproject changes are immediately importable in isolated Python.
 _install-python ctr:
-    @bash scripts/container-engine.sh exec {{ctr}} uv pip install --system --no-cache -e /opt/omnideck
+    @bash scripts/container-engine.sh exec {{ctr}} bash /opt/omnideck/scripts/install-python-dependencies.sh
+    @bash scripts/container-engine.sh exec {{ctr}} uv pip install --system --no-cache --no-deps -e /opt/omnideck
     @echo "🐍 Python package refreshed in {{ctr}}"
 
 # Build the UI on the host, then copy dist/ into the container. The container
@@ -515,12 +519,13 @@ _ui-build ctr:
     echo "📦 Copying dist/ into {{ctr}}..."
     tar -cf - dist | "$engine" exec -i {{ctr}} tar -xf - -C /opt/omnideck/{{UI_DIR}}
 
-# Bounce supervisor + app inside the dev container. The DEV_MODE entrypoint
-# runs each in a respawn loop, so killing the inner Python lets the loop
-# pick it back up with the freshly synced source.
+# Restart through the single migration barrier with both services stopped.
+# Refresh the fixed entrypoint too, including for containers from older images.
 _bounce-services ctr:
-    @bash scripts/container-engine.sh exec {{ctr}} pkill -f "python3.12 -m integrations.supervisor" 2>/dev/null || true
-    @bash scripts/container-engine.sh exec {{ctr}} pkill -f "python3.12 main.py" 2>/dev/null || true
+    @bash scripts/container-engine.sh cp container/entrypoint.sh {{ctr}}:/opt/entrypoint.sh.next
+    @bash scripts/container-engine.sh exec {{ctr}} chmod +x /opt/entrypoint.sh.next
+    @bash scripts/container-engine.sh exec {{ctr}} mv /opt/entrypoint.sh.next /opt/entrypoint.sh
+    @bash scripts/container-engine.sh restart {{ctr}}
 
 # Poll until the app responds on the given port (up to ~60s)
 _wait-ready port:

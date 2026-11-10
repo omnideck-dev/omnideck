@@ -12,6 +12,10 @@ To avoid collisions with another local run, set `E2E_CONTAINER` and `E2E_PORT`.
 `E2E_IMAGE` selects an image; use `E2E_SKIP_BUILD=1` only when that image already
 contains the source being tested.
 
+Playwright artifacts go in `test-results/playwright/`, which pytest deletes at
+session start. Never put manual-container state or persistent fixtures in that
+directory. Keep manual state outside test output trees entirely.
+
 ## Fixture boundary
 
 - Drive model behavior with `tests.e2e._protocol`: `say`, `bash`, `write_file`,
@@ -45,3 +49,32 @@ chat.send(model_script(
 
 The fake controls model output; the runtime owns everything after that boundary.
 These tests verify execution and UI behavior, not live model answer quality.
+
+## Agent and skill editors
+
+`pages/tool_selection.py` models the shared Add picker and selected rows used by
+both editors. Use visible roles and labels for actions, and the selected-row ID
+for saved identity. Do not restore the removed category tab or pill selectors.
+
+Coverage includes:
+
+- `profiles/test_simple_editor.py`: save/discard, reload, model settings,
+  browser/autonomy controls, and phone/desktop layouts.
+- `profiles/test_expandable_selection_rows.py`: shared row alignment, keyboard
+  disclosure, independent removal, and tool-label overflow.
+- `settings/test_selection_navigation.py`: direct and skill selections,
+  searchable picker, exact-account navigation, approval refresh, and draft
+  preservation when leaving the skill editor.
+- `settings/test_selection_recovery.py`: failed-save retry, catalog outage
+  without selection loss, exports excluding local connection authority, and
+  integration deletion cleaning saved assignments without stale drafts restoring them.
+
+Selection tests use real application APIs and the local test integration broker.
+Failure tests intercept only the request being failed; retries and persistence
+still use the real server. The MCP sign-in tests in `settings/test_mcp_integration.py`
+use a local OAuth/MCP service in place of the external provider.
+
+Run the entire app suite with `just e2e`; a focused editor pass is not a substitute
+for it. Run `just check` after the disposable container has been cleaned up if
+its temporary vault is inside the checkout: that vault is deliberately not
+readable by the host type checker.

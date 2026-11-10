@@ -61,22 +61,16 @@ class FilePreview:
     def open_fullscreen(self) -> "FullscreenPreview":
         from .fullscreen_preview import FullscreenPreview
 
-        view_id = self.content.get_attribute("data-view-id")
-        assert view_id
-        host = self.page.locator(f'[data-view-id="{view_id}"]')
+        host = self.content
+        host_testid = host.get_attribute("data-testid")
+        assert host_testid
+        view_key = host_testid.removeprefix("desktop-view-")
         tab_group_id = host.get_attribute("data-tab-group-id")
         if tab_group_id == "floating":
-            host.locator("[data-testid^='maximize-view-']").click()
+            host.get_by_test_id(f"maximize-view-{view_key}").click()
         else:
-            tab_bar = self.page.get_by_test_id(
-                f"desktop-tab-group-{tab_group_id}-tab-bar"
-            )
-            tab_bar.locator(
-                "[data-testid^='view-tab-actions-']"
-            ).click()
-            self.page.locator(
-                "[data-testid^='maximize-view-']"
-            ).click()
+            self.page.get_by_test_id(f"view-tab-actions-{view_key}").click()
+            self.page.get_by_test_id(f"maximize-view-{view_key}").click()
         self.page.wait_for_timeout(300)
         return FullscreenPreview(self.page)
 

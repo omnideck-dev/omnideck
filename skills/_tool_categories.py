@@ -14,9 +14,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from functools import cache
 from typing import Any
-
-from integrations.permissions import Capability
-
+from integrations.connection_cache import ConnectionSnapshot
 
 @dataclass(frozen=True)
 class ToolCategory:
@@ -37,19 +35,22 @@ class ToolCategory:
     description: str
     tools: list[Callable[..., Any]]
     connected: bool | None = None
+    connection_id: str | None = None
+    operations: tuple[dict[str, Any], ...] = ()
 
 
-async def tool_categories() -> dict[str, ToolCategory]:
+async def tool_categories(connections: ConnectionSnapshot = ()) -> dict[str, ToolCategory]:
     """Every tool category keyed by id, each with the tools it currently grants.
 
     Config-gated static categories are built once and held. Settings-backed
-    categories and integration-backed categories resolve their current state
-    on every call, so runtime changes take effect without restarting.
+    categories resolve current settings; integration categories use only the
+    supplied snapshot. This function never performs discovery I/O.
     """
     # Imported here, not at module top: reaching into the tools package runs its
     # __init__, which pulls tools.browser -> agent_core.events -> this package — a
     # load-time cycle. By call time agent_core.events is fully initialized.
-    from tools.integrations import CapabilityTools, integration_tools_by_capability
+    from tools.integrations._tool_resolution import connection_tools
+    from integrations.operations import operation_for_id
 
     categories = dict(_static_tool_categories())
     from settings import custom_tools_enabled
@@ -57,16 +58,28 @@ async def tool_categories() -> dict[str, ToolCategory]:
     if custom_tools_enabled():
         categories["custom_tools"] = _custom_tools_category()
 
-    by_capability = await integration_tools_by_capability()
-    for cid, integration in _INTEGRATION_TOOL_CATEGORIES.items():
-        backed = by_capability.get(integration.capability, CapabilityTools([], available=False))
-        # The category is "connected" when a connected integration makes its capability available.
+    for connection in connections:
+        if connection.kind != "integration":
+            continue
+        cid = f"integration:{connection.id}"
+        operations = []
+        for operation_id in sorted(connection.operation_grants):
+            operation = operation_for_id(operation_id)
+            if operation is not None:
+                operations.append(operation.public_dict())
+        operations.extend(
+            {"id": op.id, "title": op.title, "description": op.description}
+            for op in connection.discovered_operations
+            if op.id in connection.operation_grants and op.unavailable_reason is None
+        )
         categories[cid] = ToolCategory(
             cid,
-            integration.label,
-            integration.description,
-            backed.tools,
-            connected=backed.available,
+            connection.label or connection.slug,
+            f"Tools from {connection.label or connection.slug}.",
+            connection_tools(connection),
+            connected=connection.state == "running",
+            connection_id=connection.id,
+            operations=tuple(operations),
         )
     return categories
 
@@ -243,25 +256,6 @@ def _custom_tools_category() -> ToolCategory:
         "The agent can create, look up, and run reusable tools.",
         [create_custom_tool, lookup_custom_tools, run_custom_tool],
     )
-
-
-# ── Integration categories: a capability per id, tools resolved per turn ──────
-
-
-@dataclass(frozen=True)
-class _IntegrationToolCategory:
-    label: str
-    description: str
-    capability: Capability
-
-
-_INTEGRATION_TOOL_CATEGORIES: dict[str, _IntegrationToolCategory] = {
-    "email": _IntegrationToolCategory("Email", "Read, search, and send mail.", Capability.EMAIL),
-    "calendar": _IntegrationToolCategory("Calendar", "Manage calendar events.", Capability.CALENDAR),
-    "drive": _IntegrationToolCategory("Drive", "Manage cloud drive files.", Capability.DRIVE),
-    "contacts": _IntegrationToolCategory("Contacts", "Look up contacts.", Capability.CONTACTS),
-    "http": _IntegrationToolCategory("HTTP / API", "Call external HTTP APIs.", Capability.HTTP),
-}
 
 
 __all__ = ["ToolCategory", "tool_categories"]

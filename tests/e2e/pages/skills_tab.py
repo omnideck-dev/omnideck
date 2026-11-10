@@ -1,34 +1,15 @@
-"""POM for the Settings → Skills tab.
-
-Covers the two views the Library Header switches between: My Skills (a
-master-detail list + editor) and Tool Categories (the read-only catalog).
-"""
+"""POM for the Settings → Skills library and shared tool selection editor."""
 
 from __future__ import annotations
 
 from playwright.sync_api import Locator, Page
+from tests.e2e.pages.tool_selection import ToolSelection
 
 
 class SkillsTab:
     def __init__(self, page: Page):
         self.page = page
-
-    # ── Library Header: view switch + scoped search ───────────────
-    @property
-    def my_skills_tab(self) -> Locator:
-        return self.page.get_by_role("tab", name="My Skills")
-
-    @property
-    def categories_tab(self) -> Locator:
-        return self.page.get_by_role("tab", name="Tool Categories")
-
-    def view_my_skills(self) -> "SkillsTab":
-        self.my_skills_tab.click()
-        return self
-
-    def view_categories(self) -> "SkillsTab":
-        self.categories_tab.click()
-        return self
+        self.tools = ToolSelection(page)
 
     def search(self, text: str) -> "SkillsTab":
         self.page.get_by_role("searchbox").fill(text)
@@ -74,9 +55,6 @@ class SkillsTab:
     def prompt(self) -> Locator:
         return self.page.get_by_test_id("skill-prompt")
 
-    def category_chip(self, category_id: str) -> Locator:
-        return self.page.get_by_test_id(f"cat-chip-{category_id}")
-
     def save(self) -> "SkillsTab":
         self.page.get_by_role("button", name="Save", exact=True).click()
         return self
@@ -94,10 +72,3 @@ class SkillsTab:
     @property
     def save_error(self) -> Locator:
         return self.page.get_by_test_id("skill-save-error")
-
-    # ── Tool Categories catalog ───────────────────────────────────
-    def category_row(self, category_id: str) -> Locator:
-        return self.page.get_by_test_id(f"cat-row-{category_id}")
-
-    def category_tools(self, category_id: str) -> Locator:
-        return self.page.get_by_test_id(f"cat-tools-{category_id}")

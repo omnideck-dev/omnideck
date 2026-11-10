@@ -5,6 +5,7 @@ import {
   BUILD_TARGETS,
   classifyDesktopBuilds,
   githubOutput,
+  requiresMacosSigning,
 } from '../../.github/scripts/desktop-build-matrix.mjs';
 
 const names = (result) => result.targets.map(({ name }) => name);
@@ -108,4 +109,23 @@ test('a skipped build emits a parseable fallback matrix without requesting runne
   assert.match(output, /^native_tests_required=false$/m);
   const matrix = JSON.parse(output.match(/^matrix=(.+)$/m)[1]);
   assert.equal(matrix.include.length, BUILD_TARGETS.length);
+});
+
+
+test('only release pushes and explicitly signed manual runs route macOS to protected jobs', () => {
+  for (const eventName of ['pull_request', 'pull_request_target', 'push']) {
+    assert.equal(requiresMacosSigning({ eventName, ref: 'refs/heads/main', signedMacos: true }), false);
+  }
+  assert.equal(requiresMacosSigning({ eventName: 'push', ref: 'refs/tags/v1.0.0' }), true);
+  assert.equal(requiresMacosSigning({ eventName: 'workflow_dispatch', signedMacos: true }), true);
+  assert.equal(requiresMacosSigning({ eventName: 'workflow_dispatch' }), false);
+});
+
+test('signed runs remove macOS preview jobs while retaining the full artifact contract', () => {
+  const result = classifyDesktopBuilds({ eventName: 'workflow_dispatch' });
+  const output = githubOutput(result, true);
+  const matrix = JSON.parse(output.match(/^matrix=(.+)$/m)[1]);
+  assert.deepEqual(matrix.include.map(({ name }) => name), ['linux-x64', 'linux-arm64', 'windows-x64', 'windows-arm64']);
+  assert.match(output, /^full_matrix=true$/m);
+  assert.match(output, /^signed_macos=true$/m);
 });

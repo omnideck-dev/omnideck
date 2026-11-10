@@ -13,13 +13,14 @@ from aiohttp import web
 
 from skills import tool_categories
 from skills._policy import is_restricted_tool_category
+from server._integration_cache import INTEGRATION_CACHE_KEY
 
 logger = logging.getLogger(__name__)
 
 
-async def handle_list_tool_categories(_request: web.Request) -> web.Response:
+async def handle_list_tool_categories(request: web.Request) -> web.Response:
     """Return the gated tool-category catalog with per-category connection state."""
-    categories = await tool_categories()
+    categories = await tool_categories(request.app[INTEGRATION_CACHE_KEY].snapshot())
     return web.json_response(
         [
             {
@@ -29,6 +30,8 @@ async def handle_list_tool_categories(_request: web.Request) -> web.Response:
                 "tools": [t.__name__ for t in c.tools],
                 "tool_count": len(c.tools),
                 "connected": c.connected,
+                "connection_id": c.connection_id,
+                "operations": list(c.operations),
             }
             for c in categories.values()
             if not is_restricted_tool_category(c.id)

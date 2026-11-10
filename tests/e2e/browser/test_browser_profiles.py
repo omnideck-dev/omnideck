@@ -170,7 +170,7 @@ def test_agent_browser_access_and_profile_are_saved(page: Page, api_client: ApiC
     try:
         agents = AgentsPage(page).goto()
         agents.profiles.select(profile_id)
-        browser_access = page.get_by_role("switch", name="Allow Browser access")
+        browser_access = page.get_by_role("switch", name="Let this agent open websites")
         expect(browser_access).not_to_be_checked()
         browser_access.locator("xpath=ancestor::label[1]").click()
         profile_select = page.get_by_test_id("agent-browser-profile-select")
@@ -181,8 +181,9 @@ def test_agent_browser_access_and_profile_are_saved(page: Page, api_client: ApiC
         assert profile_select.bounding_box()["width"] >= 240
         assert menu.bounding_box()["width"] >= 240
         page.keyboard.press("Escape")
-        expect(page.get_by_test_id("profile-skill-browser")).to_have_count(0)
+        expect(agents.builder.tools.row("skill", "browser")).to_have_count(0)
         agents.builder.save()
+        expect(page.get_by_test_id("agent-detail").get_by_role("status")).to_have_text("Changes saved")
 
         saved = api_client.get(f"/api/profiles/{profile_id}")
         assert saved.status == 200
@@ -215,11 +216,39 @@ def test_create_profile_and_rename_it_in_settings(page: Page, api_client: ApiCli
         page.get_by_test_id("browser-profiles-settings").wait_for(state="visible")
         row = page.get_by_test_id(f"browser-profile-{created['id']}")
         row.click()
+        # Rounded rows must have an outer gutter, not touch the settings edge.
+        assert row.evaluate("""element => {
+            const host = element.closest('[data-testid="browser-profiles-settings"]');
+            const gutter = parseFloat(getComputedStyle(element).getPropertyValue('--sp-5'));
+            return Math.abs(element.getBoundingClientRect().left
+                - host.getBoundingClientRect().left - gutter) < 1;
+        }""")
+        # Shared selection styling must stay selected while hovering the row.
+        page.get_by_text("Browser profiles", exact=True).hover()
+        selected_border = row.evaluate("""async element => {
+            await Promise.all(element.getAnimations().map(animation => animation.finished));
+            return getComputedStyle(element).borderColor;
+        }""")
+        row.hover()
+        expect(row).to_have_css("border-color", selected_border)
         editor = page.get_by_test_id("browser-profile-editor")
         editor.get_by_label("Name").fill("Client accounts E2E")
         editor.get_by_role("button", name="Save").click()
         expect(row).to_contain_text("Client accounts E2E")
         assert api_client.get("/api/browser/profiles").status == 200
+
+        original_viewport = page.viewport_size
+        assert original_viewport is not None
+        for width in (1440, 700, 390):
+            page.set_viewport_size({"width": width, "height": 900})
+            editor.get_by_label("Name").scroll_into_view_if_needed()
+            expect(editor.get_by_label("Name")).to_be_in_viewport()
+            assert page.get_by_test_id("browser-profiles-settings").evaluate("""element => {
+                const bounds = element.getBoundingClientRect();
+                return bounds.left >= 0 && bounds.right <= innerWidth
+                    && element.scrollWidth <= element.clientWidth + 1;
+            }""")
+        page.set_viewport_size(original_viewport)
 
         page.get_by_role("button", name="Open in Browser").click()
         page.get_by_test_id("browser-page").wait_for(state="visible")

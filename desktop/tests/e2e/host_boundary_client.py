@@ -163,12 +163,15 @@ fetch(%s, options).then(async (response) => {
         )
         if created.get("status") != 201:
             raise AssertionError(f"Could not create fixture profile: {created!r}")
-        self.driver.execute("location.reload(); return true;")
+        self.driver.execute(
+            "window.__desktopBoundaryReloadPending = true; location.reload(); return true;"
+        )
         wait_until(
             "the core application after setup",
             self.timeout,
             lambda: self.driver.execute(
-                "return Boolean(document.querySelector('[data-testid=\"sidebar-nav-agents\"]'));"
+                "return window.__desktopBoundaryReloadPending !== true && "
+                "Boolean(document.querySelector('[data-testid=\"sidebar-nav-agents\"]'));"
             ),
         )
 
@@ -782,7 +785,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fixture-name", required=True)
     parser.add_argument("--upload-path", default="")
     parser.add_argument("--artifact-filename", default="")
-    parser.add_argument("--expected-update-version", default="0.2.3")
+    parser.add_argument("--expected-update-version", default="0.5.3")
     parser.add_argument(
         "--expected-browser-process",
         default="firefox",

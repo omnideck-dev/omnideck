@@ -492,9 +492,10 @@ def test_custom_app_and_workspace_previews_share_the_right_tab_stack(
         ).get_by_text("custom-app-view", exact=False).last
     ).to_be_visible()
     expect(page.get_by_test_id("custom-app-frame")).to_have_count(1)
-    expect(
-        page.get_by_test_id("view-tab-actions-custom-app:text-lab")
-    ).to_have_count(0)
+    inactive_actions = page.get_by_test_id("view-tab-actions-custom-app:text-lab")
+    expect(inactive_actions).to_have_css("opacity", "0")
+    page.get_by_test_id("view-tab-custom-app:text-lab").hover()
+    expect(inactive_actions).to_have_css("opacity", "1")
 
     page.get_by_test_id("view-tab-custom-app:text-lab").click()
     expect(frame.locator("#text")).to_have_value(working_text)

@@ -2,7 +2,8 @@
 .container {
     flex: 1;
     overflow: hidden;
-    padding: var(--sp-5);
+    min-width: 0;
+    min-height: 0;
     display: flex;
     flex-direction: column;
 }
@@ -23,118 +24,13 @@
     align-items: center;
 }
 
-/* ── Master-detail split (matches IntegrationsTab) ──────────────── */
-.split {
-    flex: 1;
-    min-height: 0;
-    display: grid;
-    grid-template-columns: minmax(260px, 36%) 1fr;
-    gap: var(--sp-4);
-    align-items: stretch;
-}
-
-/* ── List pane ──────────────────────────────────────────────────── */
-.listPane {
+/* The shared SplitPanel, ListItem, and Button own the pane and row visuals. */
+.listBody {
     display: flex;
     flex-direction: column;
+    gap: var(--sp-1);
     min-height: 0;
-    border-right: 1px solid var(--border);
-    padding-right: var(--sp-4);
-}
-
-.listHeader {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding-bottom: var(--sp-3);
-    border-bottom: 1px solid var(--border-subtle);
-    margin-bottom: var(--sp-3);
-}
-
-.listTitle {
-    font-family: var(--font-brand);
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--text-secondary);
-}
-
-.listAddBtn {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    height: 24px;
-    padding: 0 var(--sp-2);
-    background: var(--accent);
-    color: #fff;
-    border: 0;
-    border-radius: var(--radius-md);
-    font-family: var(--font-body);
-    font-size: 12px;
-    font-weight: 500;
-    cursor: pointer;
-}
-.listAddBtn:hover { background: var(--accent-hover); }
-
-.listRow {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-3);
-    width: 100%;
-    padding: var(--sp-2);
-    margin-bottom: 2px;
-    background: transparent;
-    border: 0;
-    border-radius: var(--radius-md);
-    color: var(--text-primary);
-    text-align: left;
-    cursor: pointer;
-    font-family: var(--font-body);
-}
-.listRow:hover { background: var(--surface); }
-.listRowSelected { background: var(--accent-muted); }
-
-.listIcon {
-    width: 28px;
-    height: 28px;
-    border-radius: var(--radius-md);
-    background: var(--surface);
-    color: var(--text-secondary);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 15px;
-    flex-shrink: 0;
-}
-.listRowSelected .listIcon {
-    background: var(--accent);
-    color: #fff;
-}
-
-.listMain {
-    flex: 1;
-    min-width: 0;
-}
-.listName {
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--text-primary);
-}
-.listMeta {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-family: var(--font-brand);
-    font-size: 10px;
-    color: var(--text-tertiary);
-    margin-top: 1px;
-}
-.listCount {
-    font-family: var(--font-brand);
-    font-size: 11px;
-    color: var(--text-tertiary);
-    flex-shrink: 0;
+    overflow-y: auto;
 }
 
 /* ── Detail pane ────────────────────────────────────────────────── */
@@ -142,7 +38,7 @@
     display: flex;
     flex-direction: column;
     gap: var(--sp-5);
-    padding-left: var(--sp-3);
+    padding: 0 var(--sp-3) var(--sp-4);
     min-width: 0;
     overflow-y: auto;
 }
@@ -176,25 +72,13 @@
 .detailStatusLine {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--sp-2);
+    flex-wrap: wrap;
     margin-top: 2px;
     font-size: 12px;
     color: var(--text-secondary);
 }
 
-.badge {
-    font-family: var(--font-brand);
-    font-size: 10px;
-    letter-spacing: 0.04em;
-    text-transform: lowercase;
-    padding: 2px 6px;
-    border-radius: var(--radius-sm);
-    background: var(--border);
-    color: var(--text-secondary);
-}
-.badgeSuccess { background: var(--success-muted); color: var(--success); }
-.badgeWarn { background: var(--warning-muted); color: var(--warning); }
-.badgeDanger { background: var(--danger-muted); color: var(--danger); }
 
 .detailSection {
     display: flex;
@@ -229,7 +113,7 @@
     gap: var(--sp-2);
     align-items: center;
 }
-.inputRow .input { flex: 1; }
+.inputRow .input { flex: 1; min-width: 0; }
 
 .input {
     height: 32px;
@@ -265,23 +149,8 @@
     gap: 6px;
     align-self: flex-start;
 }
-.resultChipOk { background: var(--success-muted); color: var(--success); }
+.testResult { margin-top: var(--sp-2); }
 .resultChipErr { background: var(--danger-muted); color: var(--danger); }
-
-/* Override the ConfirmButton's default sizing/colour to match this page */
-.removeBtn {
-    height: 32px;
-    padding: 0 14px;
-    border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
-    color: var(--danger);
-    background: transparent;
-    font-family: var(--font-body);
-    font-size: 13px;
-    font-weight: 500;
-    border-radius: var(--radius-md);
-    cursor: pointer;
-}
-.removeBtn:hover { background: var(--danger-muted); border-color: var(--danger); }
 
 /* ── Empty state ────────────────────────────────────────────────── */
 .emptyState {

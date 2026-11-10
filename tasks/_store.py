@@ -136,7 +136,13 @@ class TaskStore(Protocol):
         ...
 
     def get_due_recurring_routines(self) -> list[Routine]:
-        """Active routines with cron, no in-progress run, and cron due since last run."""
+        """Active routines with cron, no in-progress run, and cron due since the schedule anchor.
+
+        The anchor is the later of the routine's last completed run and its last
+        spawned run, each falling back to the routine's creation time. Anchoring
+        on last-spawned (not just last-completed) keeps a routine from
+        immediately re-firing if its spawned run is deleted before completion.
+        """
         ...
 
     def stamp_last_run_spawned(self, routine_id: str) -> None:

@@ -6,7 +6,7 @@ use crate::cli::{
 use crate::parity::SetupState;
 use crate::state::{
     image_manifest, persisted_port, read_setup_record, reserve_and_persist_port, save_setup_record,
-    ImageManifest, APP_VERSION,
+    ImageManifest, SetupRecord, APP_VERSION,
 };
 use crate::{
     navigation::authorize_local_setup,
@@ -24,14 +24,12 @@ use std::{
     time::Duration,
 };
 use tauri::{ipc::Channel, AppHandle, WebviewWindow};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 pub(crate) const CONTAINER_NAME: &str = "omnideck-desktop";
 const HOME_VOLUME: &str = "omnideck-desktop-home";
 const STATE_VOLUME: &str = "omnideck-desktop-state";
 const DOWNLOAD_URL: &str = "https://github.com/omnideck-dev/omnideck/releases";
 const SUPPORTED_SYSTEMS_URL: &str = "https://github.com/omnideck-dev/omnideck#prerequisites";
-const HEALTH_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -249,7 +247,25 @@ fn selected_manifest(host: &HostState) -> BridgeResult<ImageManifest> {
             image_ref: target.image_ref,
         });
     }
-    image_manifest()
+    Ok(preserve_newer_installed_image(
+        image_manifest()?,
+        read_setup_record().as_ref(),
+    ))
+}
+
+fn preserve_newer_installed_image(
+    mut packaged: ImageManifest,
+    installed: Option<&SetupRecord>,
+) -> ImageManifest {
+    if let Some(record) = installed {
+        // Desktop upgrades and repairs must not downgrade independently updated
+        // application state. Keep the exact digest, even across desktop versions.
+        if updates::is_newer_release(&record.image_version, &packaged.image_version) {
+            packaged.image_version.clone_from(&record.image_version);
+            packaged.image_ref.clone_from(&record.image_ref);
+        }
+    }
+    packaged
 }
 
 fn send_state(
@@ -310,7 +326,8 @@ fn failure_kind_for(platform: &str, error: &BridgeError) -> &'static str {
         "DOWNLOAD_FAILED" => "podmanDownload",
         "UNSUPPORTED" => "support",
         "RUNTIME_SETUP_FAILED" | "ENGINE_NOT_FOUND" | "ENGINE_NOT_READY" => "environment",
-        "PORT_IN_USE" | "CONTAINER_CONFLICT" | "APP_HEALTH_TIMEOUT" => "startup",
+        "MIGRATION_FAILED" => "migration",
+        "PORT_IN_USE" | "CONTAINER_CONFLICT" | "APP_STARTUP_FAILED" => "startup",
         "INVALID_IMAGE_MANIFEST" => "release",
         "SIDECAR_NOT_BUNDLED"
         | "UNEXPECTED_CLI_VERSION"
@@ -321,41 +338,12 @@ fn failure_kind_for(platform: &str, error: &BridgeError) -> &'static str {
     }
 }
 
-async fn wait_for_http(port: u16) -> BridgeResult<()> {
-    let started = tokio::time::Instant::now();
-    loop {
-        if let Ok(Ok(mut stream)) = tokio::time::timeout(
-            Duration::from_secs(2),
-            tokio::net::TcpStream::connect(("127.0.0.1", port)),
-        )
-        .await
-        {
-            let request =
-                format!("GET / HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n");
-            if stream.write_all(request.as_bytes()).await.is_ok() {
-                let mut response = [0u8; 64];
-                if let Ok(Ok(read)) =
-                    tokio::time::timeout(Duration::from_secs(2), stream.read(&mut response)).await
-                {
-                    let status = std::str::from_utf8(&response[..read])
-                        .ok()
-                        .and_then(|value| value.lines().next())
-                        .and_then(|line| line.split_whitespace().nth(1))
-                        .and_then(|value| value.parse::<u16>().ok());
-                    if status.is_some_and(|status| (200..300).contains(&status)) {
-                        return Ok(());
-                    }
-                }
-            }
-        }
-        if started.elapsed() >= HEALTH_TIMEOUT {
-            return Err(BridgeError::new(
-                "APP_HEALTH_TIMEOUT",
-                "omnideck did not become ready in time.",
-            ));
-        }
-        tokio::time::sleep(Duration::from_millis(500)).await;
-    }
+async fn wait_for_application(app: &AppHandle) -> BridgeResult<()> {
+    require_success(
+        run_fixed(app, FixedOperation::WaitInstance).await?,
+        "Application startup checks",
+    )?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -475,7 +463,7 @@ pub(crate) async fn bootstrap(
             .web_ui_port
             .parse::<u16>()
             .map_err(|error| BridgeError::new("INVALID_APP_PORT", error.to_string()))?;
-        wait_for_http(port).await?;
+        wait_for_application(&app).await?;
         show_hosted(&app, &host, port)?;
         Ok(BootstrapResult {
             action: "open",
@@ -652,7 +640,7 @@ pub(crate) async fn begin_setup(
             .web_ui_port
             .parse::<u16>()
             .map_err(|error| BridgeError::new("INVALID_APP_PORT", error.to_string()))?;
-        wait_for_http(actual_port).await?;
+        wait_for_application(&app).await?;
         save_setup_record("complete", &reason, &manifest)?;
         if reason == "update" {
             updates::complete()?;
@@ -710,7 +698,7 @@ pub(crate) async fn open_app(
         .and_then(|value| *value)
         .or_else(persisted_port)
         .ok_or_else(|| BridgeError::new("PORT_MISSING", "The saved omnideck port is missing."))?;
-    wait_for_http(port).await?;
+    wait_for_application(&app).await?;
     show_hosted(&app, &host, port)
 }
 
@@ -812,6 +800,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn migration_failure_selects_specific_recovery_copy_on_all_platforms() {
+        for platform in ["linux", "darwin", "win32"] {
+            assert_eq!(
+                failure_kind_for(platform, &BridgeError::new("MIGRATION_FAILED", "failed")),
+                "migration"
+            );
+        }
+    }
+
+    #[test]
     fn permission_cancellation_copy_is_platform_specific() {
         let error = BridgeError::new("PERMISSION_CANCELLED", "approval cancelled");
         assert_eq!(
@@ -868,6 +866,40 @@ mod tests {
         assert_eq!(target.image_ref, image_ref);
         assert!(interrupted_update_target("complete", "update", "0.1.2", "unused").is_none());
         assert!(interrupted_update_target("in-progress", "repair", "0.1.2", "unused").is_none());
+    }
+
+    #[test]
+    fn desktop_upgrade_preserves_a_newer_installed_container() {
+        let packaged = ImageManifest {
+            schema_version: 3,
+            app_version: APP_VERSION.into(),
+            image_version: "0.2.2".into(),
+            image_ref: format!("ghcr.io/omnideck-dev/omnideck@sha256:{}", "a".repeat(64)),
+        };
+        let installed: SetupRecord = serde_json::from_value(serde_json::json!({
+            "schemaVersion": 2,
+            "status": "complete",
+            "reason": "update",
+            "appVersion": "0.1.0-beta.11",
+            "imageVersion": "0.5.2",
+            "imageRef": format!("ghcr.io/omnideck-dev/omnideck@sha256:{}", "b".repeat(64)),
+        }))
+        .unwrap();
+        let selected = preserve_newer_installed_image(packaged.clone(), Some(&installed));
+        assert_eq!(selected.app_version, APP_VERSION);
+        assert_eq!(selected.image_version, "0.5.2");
+        assert_eq!(selected.image_ref, installed.image_ref);
+
+        let newer_package = ImageManifest {
+            image_version: "0.5.3".into(),
+            ..packaged.clone()
+        };
+        let selected = preserve_newer_installed_image(newer_package.clone(), Some(&installed));
+        assert_eq!(selected.image_version, newer_package.image_version);
+        assert_eq!(selected.image_ref, newer_package.image_ref);
+        let selected = preserve_newer_installed_image(packaged.clone(), None);
+        assert_eq!(selected.image_version, packaged.image_version);
+        assert_eq!(selected.image_ref, packaged.image_ref);
     }
 
     #[test]

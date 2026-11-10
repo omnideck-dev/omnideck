@@ -7,7 +7,8 @@ from collections.abc import Callable, Iterable
 from typing import Any
 
 from config import load_config
-from integrations import broker_client
+from brokering import broker_client
+from tools.integrations._invoke import invoke_operation
 from tools.integrations.drive._format import format_size
 
 logger = logging.getLogger(__name__)
@@ -31,9 +32,9 @@ async def export_drive_file(integration_id: str, file_id: str) -> str:
     """
     app_sock = load_config().integrations.app_sock_path
     try:
-        result = await broker_client.call(
+        result = await invoke_operation(
             integration_id,
-            "export_drive_file",
+            "drive.files.export",
             {"file_id": file_id},
             app_sock_path=app_sock,
         )

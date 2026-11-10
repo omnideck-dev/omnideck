@@ -210,9 +210,8 @@ describe('BrowserProfilesSettings', () => {
     it('opens Browser with a request to load the selected profile', async () => {
         const user = userEvent.setup();
         renderSettings();
-        await screen.findByTestId('browser-profile-default');
-
-        await user.click(screen.getByRole('button', { name: 'Open in Browser' }));
+        // The list arrives before the effect initializes the selected editor.
+        await user.click(await screen.findByRole('button', { name: 'Open in Browser' }));
         expect(mocks.openBrowser).toHaveBeenCalledWith('default', 'Default');
     });
 

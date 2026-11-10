@@ -36,7 +36,7 @@ from server._custom_app_routes import register_custom_app_routes
 from server._custom_tool_routes import register_custom_tool_routes
 from server._desktop_routes import register_desktop_routes
 from server._feature_routes import register_feature_routes
-from server._integrations_oauth_routes import register_oauth_routes
+from server.oauth_setup.routes import register_oauth_routes
 from server._integrations_routes import register_integrations_routes
 from server._memory_routes import register_memory_routes
 from server._model_routes import register_model_routes
@@ -111,11 +111,21 @@ def create_app(
     from browser.runtime import BrowserRuntime
     from server._browser_runtime import BROWSER_RUNTIME_KEY
     from conversations import ConversationStore
+    from integrations.connection_cache import IntegrationConnectionCache
+    from integrations.service import integration_service
+    from server._integration_cache import INTEGRATION_CACHE_KEY
+    from server._integration_selections import SELECTION_MUTATION_LOCK
 
     browser_runtime = BrowserRuntime()
     app = web.Application(client_max_size=client_max_size, middlewares=[cors_and_error_middleware])
     app[BROWSER_RUNTIME_KEY] = browser_runtime
-    app[AGENT_RUNTIME_KEY] = AgentRuntime(conversations=ConversationStore(), browser_runtime=browser_runtime)
+    integration_cache = IntegrationConnectionCache(integration_service)
+    app[INTEGRATION_CACHE_KEY] = integration_cache
+    app[SELECTION_MUTATION_LOCK] = asyncio.Lock()
+    app[AGENT_RUNTIME_KEY] = AgentRuntime(
+        conversations=ConversationStore(), browser_runtime=browser_runtime,
+        integration_cache=integration_cache,
+    )
 
     # Agent-run HTTP channel adapter
     register_agent_run_routes(app)
@@ -179,9 +189,7 @@ def create_app(
     # UI routes
     register_ui_routes(app)
 
-    # Phase 1: Data migrations — synchronous, must complete before anything
-    # else reads state.  No user interaction needed.
-    app.on_startup.append(_run_data_migrations)
+    # Phase 1: Configure services. Data migrations already completed in bootstrap.
     app.on_startup.append(_configure_routines)
 
     # Phase 2: Readiness signals — each contributor hook calls
@@ -205,6 +213,7 @@ def create_app(
     app.on_startup.append(_start_deferred_subsystems)
     app.on_cleanup.append(_stop_deferred_subsystems)
     app.on_cleanup.append(_stop_active_run_manager)
+    app.on_cleanup.append(_stop_integrations)
 
     return app
 
@@ -212,15 +221,6 @@ def create_app(
 async def _stop_active_run_manager(app: web.Application) -> None:
     """Gracefully stop process-owned agent runs during server shutdown."""
     await app[AGENT_RUNTIME_KEY].close()
-
-
-async def _run_data_migrations(_app: web.Application) -> None:
-    """Run pending data migrations against the state directory."""
-    from migrations import run_migrations
-
-    config = load_config()
-    state_dir = Path(config.settings.home_dir)
-    run_migrations(state_dir)
 
 
 def register_ready_contributor(app: web.Application, name: str) -> asyncio.Event:
@@ -251,11 +251,10 @@ async def _init_setup_signal(app: web.Application) -> None:
 
 
 _INTEGRATIONS_LOAD_DEADLINE_SECONDS = 30.0
-_INTEGRATIONS_LOAD_RETRY_INTERVAL_SECONDS = 1.0
 
 
 async def _init_integrations_signal(app: web.Application) -> None:
-    """Register the integrations-readiness contributor and load the cache.
+    """Start discovery polling and register its bounded initial-readiness gate.
 
     The supervisor binds ``app.sock`` after reconciling stored brokers
     (an upstream IMAP/CalDAV login per integration), which can take a
@@ -267,35 +266,38 @@ async def _init_integrations_signal(app: web.Application) -> None:
     keeps working without integration tools and the UI surfaces the
     "Integrations unavailable" state.
     """
-    from tools.integrations import cache_loaded, registered_integrations
+    from server._integration_cache import INTEGRATION_CACHE_KEY
 
     app["integrations_ready"] = register_ready_contributor(app, "integrations")
+    cache = app[INTEGRATION_CACHE_KEY]
+    cache.start()
 
-    async def _load_with_retry() -> None:
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + _INTEGRATIONS_LOAD_DEADLINE_SECONDS
+    async def _wait_for_initial_snapshot() -> None:
         try:
-            while True:
-                await registered_integrations()
-                if cache_loaded():
-                    logger.info("Integrations cache loaded")
-                    return
-                if loop.time() >= deadline:
-                    logger.warning(
-                        "Integrations cache failed to load within %.0fs; "
-                        "deferred subsystems starting without integrations",
-                        _INTEGRATIONS_LOAD_DEADLINE_SECONDS,
-                    )
-                    return
-                await asyncio.sleep(_INTEGRATIONS_LOAD_RETRY_INTERVAL_SECONDS)
+            await asyncio.wait_for(cache.wait_loaded(), _INTEGRATIONS_LOAD_DEADLINE_SECONDS)
+            logger.info("Integrations cache loaded")
+        except TimeoutError:
+            logger.warning("Starting without integrations; discovery will keep retrying")
         finally:
             app["integrations_ready"].set()
 
     # Store the task on the app so the GC doesn't drop it before it completes.
     app["_integrations_load"] = asyncio.create_task(
-        _load_with_retry(),
+        _wait_for_initial_snapshot(),
         name="integrations-load-gate",
     )
+
+
+async def _stop_integrations(app: web.Application) -> None:
+    """Stop startup waiters and the application-owned discovery poller."""
+    from server._integration_cache import INTEGRATION_CACHE_KEY
+
+    tasks = [app.get("_integrations_load"), app.get("_ready_watcher")]
+    for task in tasks:
+        if task is not None:
+            task.cancel()
+    await asyncio.gather(*(task for task in tasks if task is not None), return_exceptions=True)
+    await app[INTEGRATION_CACHE_KEY].close()
 
 
 async def _init_ready_signal(app: web.Application) -> None:

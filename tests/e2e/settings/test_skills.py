@@ -2,7 +2,7 @@
 
 Drives the real UI against the live backend: seeds/reads the skill store in the
 container, exercises the My Skills master-detail (create/rename/delete, plus the
-duplicate-name guard) and the Tool Categories catalog.
+duplicate-name guard) and inline tool-group disclosures.
 """
 
 import json
@@ -86,7 +86,7 @@ def test_renders_seeded_skills(page: Page):
     skills = SettingsPage(page).goto_skills().skills
     expect(skills.item("coder")).to_be_visible()
     expect(skills.item("mailer")).to_be_visible()
-    expect(skills.item("coder")).to_contain_text("category")
+    expect(skills.item("coder")).to_contain_text("tools")
 
 
 def test_create_skill_persists_to_store(page: Page):
@@ -98,7 +98,7 @@ def test_create_skill_persists_to_store(page: Page):
     skills.name_input.fill("E2E Coder")
     skills.description_input.fill("Created by e2e")
     skills.prompt.fill("Write good code.")
-    skills.category_chip("coding").click()
+    skills.tools.add("Built-in tools", "Coding")
     skills.save()
 
     expect(page.get_by_text("E2E Coder")).to_be_visible()
@@ -156,15 +156,16 @@ def test_duplicate_name_is_rejected(page: Page):
     assert sum(1 for s in _read_skills() if s["name"] == "Coder") == 1
 
 
-def test_categories_view_expands_to_tools(page: Page):
-    """The Tool Categories view lists categories and expands a row to its tools."""
+def test_selected_group_expands_to_tools(page: Page):
+    """Tools are disclosed inline instead of in a separate category catalog."""
     _seed_skills([_skill("coder", name="Coder", tool_categories=["coding"])])
 
     skills = SettingsPage(page).goto_skills().skills
-    skills.view_categories()
-
-    expect(skills.category_row("coding")).to_be_visible()
-    expect(skills.category_tools("coding")).not_to_be_visible()
-    skills.category_row("coding").click()
-    expect(skills.category_tools("coding")).to_be_visible()
-    expect(skills.category_tools("coding")).to_contain_text("read_file")
+    skills.select("coder")
+    expect(page.get_by_role("tab", name="Tool Categories")).to_have_count(0)
+    row = skills.tools.row("tool", "coding")
+    tools = row.get_by_role("list", name="Coding & Files tools")
+    expect(tools).not_to_be_visible()
+    row.get_by_role("button", name="Coding & Files", exact=True).click()
+    expect(tools).to_be_visible()
+    expect(tools).to_contain_text("read file")

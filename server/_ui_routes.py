@@ -43,8 +43,7 @@ async def _ensure_custom_css_on_startup(_app: web.Application) -> None:
 
     Deferred to on_startup rather than done eagerly in register_ui_routes, so
     constructing an app (e.g. in tests that never start it) doesn't touch the
-    state directory — matching how _run_data_migrations defers its own
-    settings.home_dir access in server/aiohttp_app.py.
+    state directory. Data migrations are handled separately by container bootstrap.
     """
     _ensure_custom_css()
 

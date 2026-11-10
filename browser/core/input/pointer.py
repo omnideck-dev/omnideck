@@ -7,10 +7,12 @@ import logging
 import math
 import random
 import weakref
+from uuid import uuid4
 
 from playwright.async_api import Error as PlaywrightError
-from playwright.async_api import Locator, Page
+from playwright.async_api import ElementHandle, FloatRect, Frame, Locator, Page
 
+from browser.core.evaluation import evaluate_frame
 from browser.core.exceptions import BrowserToolError
 from browser.core.input._shared import _get_human_config, _sleep_ms
 
@@ -253,7 +255,8 @@ async def _mouse_move_with_fake_cursor(page: Page, *, x: float, y: float) -> Non
     )
 
     try:
-        await page.evaluate(
+        await evaluate_frame(
+            page.main_frame,
             _CURSOR_OVERLAY_SCRIPT,
             {"points": trajectory, "durationMs": duration_ms},
         )
@@ -274,12 +277,53 @@ async def _mouse_move_with_fake_cursor(page: Page, *, x: float, y: float) -> Non
     _remember_pointer_position(page, x=x, y=y)
 
 
-async def human_click(page: Page, locator: Locator) -> None:
+async def _label_bounding_box(handle: ElementHandle, frame: Frame) -> FloatRect | None:
+    """Find the visible native label for an annotated control."""
+    ref = await handle.get_attribute("data-ct-ref")
+    if not ref or not ref.isdecimal():
+        return None
+    marker = f"data-omnideck-label-{uuid4().hex}"
+    marked = await evaluate_frame(
+        frame,
+        """({ref, marker}) => {
+            const refs = window[Symbol.for('omnideck.browser.refElements')];
+            if (!Array.isArray(refs)) return false;
+            const matches = refs.filter(el => el.isConnected && el.getAttribute('data-ct-ref') === ref);
+            if (matches.length !== 1) return false;
+            const label = matches[0].labels?.[0];
+            if (!label) return false;
+            label.setAttribute(marker, '');
+            window[marker] = label;
+            return true;
+        }""",
+        {"ref": ref, "marker": marker},
+    )
+    if not marked:
+        return None
+    try:
+        # Native locator geometry preserves iframe offsets and shadow-root identity.
+        return await frame.locator(f"[{marker}]").bounding_box(timeout=5000)
+    finally:
+        try:
+            await evaluate_frame(
+                frame,
+                """marker => {
+                    window[marker]?.removeAttribute(marker);
+                    delete window[marker];
+                }""",
+                marker,
+            )
+        except PlaywrightError as exc:
+            logger.debug("Could not remove temporary label marker after document change: %s", exc)
+
+
+async def human_click(page: Page, locator: Locator, *, frame: Frame) -> None:
     """Click an element with human-like pointer movement and timing.
 
     Args:
         page: Owning page that receives physical input.
         locator: Locator identifying the element to click.
+        frame: Owning document supplied by the caller.
 
     Raises:
         BrowserToolError: If the locator cannot be resolved or the page lacks a mouse.
@@ -293,27 +337,11 @@ async def human_click(page: Page, locator: Locator) -> None:
     handle = await locator.element_handle(timeout=5000)
     if handle is None:
         raise BrowserToolError("Unable to resolve element handle", tool="click")
-    # A DOM locator supplies the element, while the owning tab supplies the
-    # physical pointer. A detached element has no shared render coordinates,
-    # so it cannot be driven through the tab's mouse.
-    frame = await handle.owner_frame()
-    if frame is None:
-        raise BrowserToolError(
-            "Element is not attached to a frame/page; cannot perform mouse-based click",
-            tool="click",
-        )
-
     box = await handle.bounding_box()
     if box is None or box.get("width", 0) < 4 or box.get("height", 0) < 4:
-        label_handle = await handle.evaluate_handle("(el) => el.labels?.[0] ?? null")
-        try:
-            label_element = label_handle.as_element()
-            if label_element is not None:
-                label_box = await label_element.bounding_box()
-                if label_box and label_box.get("width", 0) >= 4 and label_box.get("height", 0) >= 4:
-                    box = label_box
-        finally:
-            await label_handle.dispose()
+        label_box = await _label_bounding_box(handle, frame)
+        if label_box and label_box.get("width", 0) >= 4 and label_box.get("height", 0) >= 4:
+            box = label_box
 
     if box is None or box.get("width", 0) <= 0 or box.get("height", 0) <= 0:
         # No usable bounding box; the caller should ensure the ref points to a visible element.
@@ -343,6 +371,8 @@ async def human_press_and_hold(
     page: Page,
     locator: Locator,
     duration_ms: int = 3000,
+    *,
+    frame: Frame,
 ) -> None:
     """Press and hold an element for a specified duration.
 
@@ -353,6 +383,7 @@ async def human_press_and_hold(
         page: Owning page that receives physical input.
         locator: Locator identifying the element to press and hold.
         duration_ms: How long to hold the mouse button down in milliseconds.
+        frame: Owning document supplied by the caller.
 
     Raises:
         BrowserToolError: If the locator cannot be resolved or the page lacks a mouse.
@@ -367,24 +398,11 @@ async def human_press_and_hold(
     if handle is None:
         raise BrowserToolError("Unable to resolve element handle", tool="press_and_hold")
 
-    frame = await handle.owner_frame()
-    if frame is None:
-        raise BrowserToolError(
-            "Element is not attached to a frame/page; cannot perform press_and_hold",
-            tool="press_and_hold",
-        )
-
     box = await handle.bounding_box()
     if box is None or box.get("width", 0) < 4 or box.get("height", 0) < 4:
-        label_handle = await handle.evaluate_handle("(el) => el.labels?.[0] ?? null")
-        try:
-            label_element = label_handle.as_element()
-            if label_element is not None:
-                label_box = await label_element.bounding_box()
-                if label_box and label_box.get("width", 0) >= 4 and label_box.get("height", 0) >= 4:
-                    box = label_box
-        finally:
-            await label_handle.dispose()
+        label_box = await _label_bounding_box(handle, frame)
+        if label_box and label_box.get("width", 0) >= 4 and label_box.get("height", 0) >= 4:
+            box = label_box
 
     if box is None or box.get("width", 0) <= 0 or box.get("height", 0) <= 0:
         raise BrowserToolError("Element has no bounding box to press", tool="press_and_hold")
@@ -416,6 +434,8 @@ async def human_drag(
     source_locator: Locator,
     *,
     target_locator: Locator,
+    source_frame: Frame,
+    target_frame: Frame,
 ) -> None:
     """Drag from ``source_locator`` to ``target_locator``.
 
@@ -423,6 +443,8 @@ async def human_drag(
         page: Owning page that receives physical input.
         source_locator: Locator identifying the element where the drag should begin.
         target_locator: Locator identifying the destination element.
+        source_frame: Owning document of the source supplied by the caller.
+        target_frame: Owning document of the target supplied by the caller.
 
     Raises:
         BrowserToolError: On invalid inputs, detached elements, missing mouse APIs,
@@ -435,36 +457,17 @@ async def human_drag(
     if source_handle is None:
         raise BrowserToolError("Unable to resolve source element handle", tool="drag")
 
-    source_frame = await source_handle.owner_frame()
-    if source_frame is None:
-        raise BrowserToolError(
-            "Source element is not attached to a frame/page; cannot perform drag",
-            tool="drag",
-        )
-
     source_box = await source_handle.bounding_box()
     if source_box is None or source_box.get("width", 0) < 4 or source_box.get("height", 0) < 4:
-        label_handle = None
         try:
-            label_handle = await source_handle.evaluate_handle("(el) => el.labels?.[0] ?? null")
+            label_box = await _label_bounding_box(source_handle, source_frame)
+            if label_box and label_box.get("width", 0) >= 4 and label_box.get("height", 0) >= 4:
+                source_box = label_box
         except PlaywrightError as exc:
             logger.warning(
-                "Failed to evaluate source label handle; using element's own bounding box if available. Error: %s",
+                "Failed to find source label; using element's own bounding box if available. Error: %s",
                 exc,
             )
-            label_handle = None
-        if label_handle is not None:
-            try:
-                label_element = label_handle.as_element()
-                if label_element is not None:
-                    label_box = await label_element.bounding_box()
-                    if label_box and label_box.get("width", 0) >= 4 and label_box.get("height", 0) >= 4:
-                        source_box = label_box
-            finally:
-                try:
-                    await label_handle.dispose()
-                except PlaywrightError as exc:
-                    logger.warning("Failed to dispose source label handle; continuing. Error: %s", exc)
 
     if source_box is None or source_box.get("width", 0) <= 0 or source_box.get("height", 0) <= 0:
         raise BrowserToolError("Source element has no bounding box to drag", tool="drag")
@@ -484,36 +487,17 @@ async def human_drag(
     if target_handle is None:
         raise BrowserToolError("Unable to resolve target element handle", tool="drag")
 
-    target_frame = await target_handle.owner_frame()
-    if target_frame is None:
-        raise BrowserToolError(
-            "Target element is not attached to a frame/page; cannot perform drag",
-            tool="drag",
-        )
-
     target_box = await target_handle.bounding_box()
     if target_box is None or target_box.get("width", 0) < 4 or target_box.get("height", 0) < 4:
-        label_handle = None
         try:
-            label_handle = await target_handle.evaluate_handle("(el) => el.labels?.[0] ?? null")
+            label_box = await _label_bounding_box(target_handle, target_frame)
+            if label_box and label_box.get("width", 0) >= 4 and label_box.get("height", 0) >= 4:
+                target_box = label_box
         except PlaywrightError as exc:
             logger.warning(
-                "Failed to evaluate target label handle; using element's own bounding box if available. Error: %s",
+                "Failed to find target label; using element's own bounding box if available. Error: %s",
                 exc,
             )
-            label_handle = None
-        if label_handle is not None:
-            try:
-                label_element = label_handle.as_element()
-                if label_element is not None:
-                    label_box = await label_element.bounding_box()
-                    if label_box and label_box.get("width", 0) >= 4 and label_box.get("height", 0) >= 4:
-                        target_box = label_box
-            finally:
-                try:
-                    await label_handle.dispose()
-                except PlaywrightError as exc:
-                    logger.warning("Failed to dispose target label handle; continuing. Error: %s", exc)
 
     if target_box is None or target_box.get("width", 0) <= 0 or target_box.get("height", 0) <= 0:
         raise BrowserToolError("Target element has no bounding box to drag", tool="drag")

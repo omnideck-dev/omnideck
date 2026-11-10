@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "A modern, extensible AI assistant platform with a responsive chat UI and Python backend."
 requires-python = ">=3.12"
 dependencies = [
-    "aiohttp",
+    "aiohttp>=3.14.4",
     "pydantic",
     "pyyaml",
     "playwright==1.59.0",
@@ -17,13 +17,16 @@ dependencies = [
     "anthropic>=0.52.0",
     "openai>=1.40.0,<2",
     "croniter>=1.3",
-    "cryptography>=46.0.7",
+    "cryptography>=50.0.0",
     "caldav>=1.3",
     "trafilatura>=2.0",
     "google-auth>=2.30",
     "google-auth-oauthlib>=1.2",
     "google-api-python-client>=2.130",
     "curl-cffi>=0.7",
+    "mcp==2.2.0",
+    "jsonschema>=4.26,<5",
+    "referencing>=0.37,<1",
 ]
 
 [project.optional-dependencies]
@@ -41,7 +44,8 @@ dev = [
     "types-cachetools",
     "types-croniter",
     "types-oauthlib",
-    "types-PyYAML"
+    "types-PyYAML",
+    "types-jsonschema>=4.26.0.20261006",
 ]
 
 [tool.uv]
@@ -91,11 +95,12 @@ namespace_packages = true
 explicit_package_bases = true
 show_error_codes = true
 pretty = true
-exclude = "^(tests|repls|container|migrations|desktop/tests)/"
+# Generated review/proof scripts are not application modules. Keep artifacts/*.py checked.
+exclude = "^(tests|repls|container|migrations|desktop/tests)/|^artifacts/(broker-failure-gallery|startup-error-reporting)/"
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["integrations.brokers.*"]
+module = ["brokering.brokers.*"]
 ignore_errors = true
 
 [[tool.mypy.overrides]]
@@ -118,6 +123,9 @@ addopts = [
     "-q",
     "--no-header",
     "--disable-warnings",
+    # Playwright deletes its output directory at session start. Keep its
+    # disposable artifacts separate from sibling manual-test state/logs.
+    "--output=test-results/playwright",
 ]
 asyncio_mode = "auto"
 log_cli = false
@@ -132,6 +140,8 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 # Explicitly include our flat-layout top-level packages
 include = [
+    "brokering*",
+    "integrations*",
     "agent_runtime*",
     "agent_core*",
     "providers*",
@@ -146,6 +156,7 @@ include = [
     "server*",
     "tasks*",
     "tools*",
+    "tool_schemas*",
     "utils*",
 ]
 exclude = [

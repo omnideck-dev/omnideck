@@ -15,29 +15,19 @@ export function nextActiveViewIdAfterClose(tabGroup, closingViewId) {
     return remainingIds[index] || remainingIds[index - 1] || null;
 }
 
-/** Return each tab group once, with the focused group first. */
-export function focusOrderedTabGroupIds(model) {
-    return [
-        model.focusedTabGroupId,
-        ...Object.keys(model.tabGroups),
-    ].filter((tabGroupId, index, all) => (
-        tabGroupId && all.indexOf(tabGroupId) === index
-    ));
+/** Tab groups with room on screen; mobile shows left, or right if left is empty. */
+export function visibleTabGroupIds(model, isMobile) {
+    const left = model.tabGroups.left.viewIds.length > 0;
+    const right = model.tabGroups.right.viewIds.length > 0;
+    return [left && 'left', right && (!isMobile || !left) && 'right'].filter(Boolean);
 }
 
-/**
- * Visible Views ordered as a user would expect focus to fall back:
- * top-most floating Views, then active docked Views by tab-group focus.
- */
-export function focusOrderedVisibleViews(model, excludingViewId = null) {
-    const floatingViews = [...(model.floatingViews || [])]
-        .filter((floatingView) => floatingView.viewId !== excludingViewId)
-        .sort((left, right) => right.zIndex - left.zIndex)
-        .map((floatingView) => model.openViewsById[floatingView.viewId]);
-    const dockedViews = focusOrderedTabGroupIds(model)
-        .map((tabGroupId) => {
-            const activeViewId = model.tabGroups[tabGroupId].activeViewId;
-            return model.openViewsById[activeViewId];
-        });
-    return [...floatingViews, ...dockedViews].filter(Boolean);
+/** Derive presentation visibility without treating keyboard focus as visibility. */
+export function visibleViewIds(model, isMobile) {
+    if (model.fullscreenViewId) return [model.fullscreenViewId];
+    const activeIds = visibleTabGroupIds(model, isMobile)
+        .map((id) => model.tabGroups[id].activeViewId);
+    return Object.keys(model.openViewsById).filter((id) => (
+        Boolean(model.floatingByViewId[id]) || activeIds.includes(id)
+    ));
 }
