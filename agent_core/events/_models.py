@@ -336,12 +336,16 @@ class UserMessagePayload(BaseModel):
         is_nudge: False for the turn-opening prompt; True for queued
             user input that landed between iterations of an already-
             running turn.
+        model_content: What the model sees in place of ``content`` when
+            composer shortcut tokens were resolved; None when ``content``
+            is sent as typed.
     """
 
     type: Literal["user_message"]
     content: str
     attachments: list[UserAttachment] = Field(default_factory=list)
     is_nudge: bool = False
+    model_content: str | None = None
 
 
 class IterationToolCall(BaseModel):

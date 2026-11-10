@@ -44,15 +44,35 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
 
     const { skillsHook } = useAppData();
 
+    // One entry per composer shortcut trigger character. Each source lists
+    // what its overlay offers; the server resolves the inserted token when
+    // the message is sent. `hint` explains when the selected agent can't act
+    // on the shortcut, in which case the token is sent as plain text.
+    const composerSources = useMemo(() => ({
+        '/': {
+            label: 'Skills',
+            items: skillsHook?.skills || [],
+            loading: !!skillsHook?.loading,
+            refresh: skillsHook?.refresh,
+            hint: selectedProfile?.allow_load_skills === false
+                ? `${selectedProfile.name} can't load skills — this will be sent as plain text.`
+                : null,
+        },
+    }), [skillsHook?.skills, skillsHook?.loading, skillsHook?.refresh, selectedProfile]);
+    const composerTriggers = useMemo(() => Object.keys(composerSources), [composerSources]);
+    const composerSource = composerTrigger ? composerSources[composerTrigger.trigger] : null;
+
     // Re-derive the open trigger (if any) from the textarea's own current
     // value/caret — covers typing, arrow-key caret moves, and clicks alike.
+    // Shortcuts only apply to a new message, never to a nudge sent while
+    // the agent is running, so no overlay opens then.
     const refreshComposerTrigger = useCallback(() => {
         const el = textareaRef.current;
-        if (!el) {
+        if (!el || isStreaming) {
             setComposerTrigger(null);
             return;
         }
-        const detected = detectComposerTrigger(el.value, el.selectionStart);
+        const detected = detectComposerTrigger(el.value, el.selectionStart, composerTriggers);
         const dismissed = dismissedRef.current;
         if (
             detected && dismissed
@@ -63,42 +83,44 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
         }
         if (dismissed && el.value !== dismissed.text) dismissedRef.current = null;
         setComposerTrigger(detected);
-    }, []);
+    }, [isStreaming, composerTriggers]);
 
-    // Skills are otherwise only fetched once, at mount — so without this,
+    // Sources are otherwise only fetched once, at mount — so without this,
     // commitComposerToken's slug-collision check (below) could stay stale
-    // for a whole session and miss a same-slug skill created
-    // elsewhere after this tab loaded. Refreshing once per overlay-open
-    // narrows that window to "since the dropdown was last opened" instead.
+    // for a whole session and miss a same-slug item created elsewhere
+    // after this tab loaded. Refreshing once per overlay-open narrows that
+    // window to "since the dropdown was last opened" instead.
     const triggerRefreshedRef = useRef(false);
     useEffect(() => {
-        if (!composerTrigger) {
+        if (!composerSource) {
             triggerRefreshedRef.current = false;
             return;
         }
         if (triggerRefreshedRef.current) return;
         triggerRefreshedRef.current = true;
-        skillsHook?.refresh?.();
-    }, [composerTrigger, skillsHook]);
+        composerSource.refresh?.();
+    }, [composerSource]);
 
-    // Depend on the trigger's query, not the object itself: the keyup
+    // Depend on the trigger's fields, not the object itself: the keyup
     // that follows every keydown (including an arrow key the overlay already
     // handled) re-derives the trigger via detectComposerTrigger, which always
     // returns a new object even when the caret hasn't moved. Depending on the
     // object would recompute this array on that new-but-equal reference,
     // which resets composerActiveIndex to 0 below — undoing arrow-key
     // navigation on its own keyup, one keystroke after it moved.
+    const composerPool = composerSource?.items;
+    const composerQuery = composerTrigger?.query;
     const composerItems = useMemo(() => {
-        if (!composerTrigger) return [];
-        const query = composerTrigger.query.toLowerCase();
-        return (skillsHook?.skills || []).filter((item) => item.name.toLowerCase().startsWith(query));
-    }, [composerTrigger?.query, skillsHook?.skills]);
+        if (!composerPool) return [];
+        const query = composerQuery.toLowerCase();
+        return composerPool.filter((item) => item.name.toLowerCase().startsWith(query));
+    }, [composerQuery, composerPool]);
 
-    // While the skill list is still loading, an open trigger has no items
-    // yet through no fault of the user's typing — don't let Enter fall
-    // through to a plain send of the raw "/xxx" text just because the
-    // overlay hasn't had a chance to populate.
-    const composerDataLoading = !!composerTrigger && !!skillsHook?.loading;
+    // Before the first fetch lands, an open trigger has no items through no
+    // fault of the user's typing — don't let Enter fall through to a plain
+    // send of the raw token. A background refresh with items already cached
+    // doesn't block: an empty filter then really means nothing matches.
+    const composerDataLoading = !!composerSource?.loading && !composerSource.items.length;
 
     // The active row resets whenever the filtered list changes shape (new
     // query, items added/removed) so it never points past the new end.
@@ -107,7 +129,7 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
     }, [composerItems]);
 
     const commitComposerToken = useCallback((item) => {
-        if (!composerTrigger) return;
+        if (!composerTrigger || !composerPool) return;
         // Names may contain spaces, which the backend's whitespace-delimited
         // token grammar can't parse — slugify then, so the token stays
         // readable instead of falling back to the item's opaque id. Only
@@ -116,14 +138,14 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
         let token = item.name;
         if (/\s/.test(item.name)) {
             const slug = slugify(item.name);
-            const collides = (skillsHook?.skills || []).some((other) => other.id !== item.id && slugify(other.name) === slug);
+            const collides = composerPool.some((other) => other.id !== item.id && slugify(other.name) === slug);
             token = slug && !collides ? slug : item.id;
         }
-        const { text, cursorIndex } = applyComposerToken(message, composerTrigger, `/${token}`);
+        const { text, cursorIndex } = applyComposerToken(message, composerTrigger, `${composerTrigger.trigger}${token}`);
         pendingCursorRef.current = cursorIndex;
         setMessage(text);
         setComposerTrigger(null);
-    }, [composerTrigger, message, skillsHook?.skills]);
+    }, [composerTrigger, composerPool, message]);
 
     // Restore the caret to right after the inserted token once the
     // controlled value has actually re-rendered into the textarea.
@@ -137,13 +159,7 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
         el.selectionStart = el.selectionEnd = cursor;
     }, [message]);
 
-    const composerHint = useMemo(() => {
-        if (!composerTrigger || !selectedProfile) return null;
-        if (selectedProfile.allow_load_skills === false) {
-            return `${selectedProfile.name} can't load skills — this may not work as expected.`;
-        }
-        return null;
-    }, [composerTrigger, selectedProfile]);
+    const composerHint = composerSource?.hint ?? null;
 
     const profileName = selectedProfile?.name;
     const placeholder = stopRequested
@@ -380,6 +396,7 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
                     {composerItems.length > 0 && (
                         <ComposerAutocomplete
                             anchorRef={textareaRef}
+                            label={composerSource.label}
                             items={composerItems}
                             activeIndex={composerActiveIndex}
                             onHover={setComposerActiveIndex}

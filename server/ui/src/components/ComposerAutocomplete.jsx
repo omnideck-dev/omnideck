@@ -3,7 +3,7 @@ import Tooltip from './primitives/Tooltip.jsx';
 import styles from './ComposerAutocomplete.module.css';
 
 /**
- * Filtered listbox overlay for the composer's `/` (skills) trigger. Anchored to the textarea itself rather than
+ * Filtered listbox overlay for a composer shortcut trigger (`/` for skills). Anchored to the textarea itself rather than
  * caret-pixel coordinates — no caret-mirroring needed for v1.
  *
  * Purely presentational: keyboard handling (arrow-key cycling, Enter/Tab
@@ -12,13 +12,14 @@ import styles from './ComposerAutocomplete.module.css';
  * state, so a commit/dismiss on the same keypress that would otherwise
  * unmount this overlay can't race a document-level listener's own removal.
  *
+ * `label`: accessible name of the list, e.g. "Skills".
  * `items`: [{ id, name, description }] — already filtered by the caller.
  * `activeIndex`: currently highlighted row.
  * `onHover(index)`: called when the pointer moves over a row.
  * `onCommit(item)`: called on click of a row.
  * `onClose()`: called on outside-click (via Popover).
  */
-export default function ComposerAutocomplete({ anchorRef, items, activeIndex, onHover, onCommit, onClose }) {
+export default function ComposerAutocomplete({ anchorRef, label, items, activeIndex, onHover, onCommit, onClose }) {
     if (!items.length) return null;
 
     return (
@@ -34,7 +35,7 @@ export default function ComposerAutocomplete({ anchorRef, items, activeIndex, on
             <div
                 className={styles.listbox}
                 role="listbox"
-                aria-label="Skills"
+                aria-label={label}
             >
                 {items.map((item, index) => (
                     <Tooltip key={item.id} text={item.description} placement="top">

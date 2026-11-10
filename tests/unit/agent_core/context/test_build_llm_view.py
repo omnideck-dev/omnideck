@@ -110,68 +110,42 @@ def test_attachments_appended_to_first_user_message():
     ]
 
 
-def test_user_content_transform_applies_to_first_user_message():
+def test_model_content_replaces_typed_text_for_the_model():
     events = [
         _started(ROOT, "COMPUTRON"),
-        _user(ROOT, "/skill do it"),
+        {**_user(ROOT, "/skill do it"), "model_content": "Load skill and do it"},
         _iter(ROOT, 0, content="ok"),
     ]
-    result = build_llm_view(events, user_content_transform=lambda text: text.upper())
-    assert result[0] == {"role": "user", "content": "/SKILL DO IT"}
+    assert build_llm_view(events)[0] == {"role": "user", "content": "Load skill and do it"}
 
 
-def test_user_content_transform_runs_before_attachment_augmentation():
+def test_model_content_is_used_for_every_user_message_not_only_the_latest():
+    """A resolved message reads the same on every later turn, so the prompt
+    prefix stays stable."""
     events = [
         _started(ROOT, "COMPUTRON"),
-        _user(ROOT, "/skill do it",
-              attachments=[{"filename": "a.png", "content_type": "image/png", "path": "/v/a.png"}]),
-        _iter(ROOT, 0, content="ok"),
+        {**_user(ROOT, "/skill first", evt_id="evt_u1"), "model_content": "rendered first"},
+        _iter(ROOT, 0, content="done", evt_id="evt_i1"),
+        {**_user(ROOT, "/skill second", evt_id="evt_u2"), "model_content": "rendered second"},
+        _user(ROOT, "a hook nudge", evt_id="evt_u3"),
     ]
-    result = build_llm_view(events, user_content_transform=lambda text: text.upper())
-    assert result[0] == {"role": "user", "content":
-        "/SKILL DO IT\n\n[Attached files written to virtual computer]\n"
-        "  - a.png (image/png) -> /v/a.png"}
+    contents = [m["content"] for m in build_llm_view(events) if m["role"] == "user"]
+    assert contents == ["rendered first", "rendered second", "a hook nudge"]
 
 
-def test_user_content_transform_applies_to_the_latest_user_message():
-    """Only the message the current turn is actively answering gets transformed."""
+def test_attachments_appended_after_model_content():
     events = [
         _started(ROOT, "COMPUTRON"),
-        _user(ROOT, "hi", evt_id="evt_u1"),
-        _iter(ROOT, 0, content="hello"),
-        _user(ROOT, "/skill nudge", evt_id="evt_u2"),
+        {
+            **_user(ROOT, "/skill do it",
+                    attachments=[{"filename": "a.png", "content_type": "image/png", "path": "/v/a.png"}]),
+            "model_content": "rendered",
+        },
     ]
-    result = build_llm_view(events, user_content_transform=lambda text: text.upper())
-    assert result[-1] == {"role": "user", "content": "/SKILL NUDGE"}
-
-
-def test_user_content_transform_skips_already_answered_user_messages():
-    """An earlier, already-answered message must not be re-transformed on later
-    re-derivations — its rendering was settled when it was the active turn."""
-    events = [
-        _started(ROOT, "COMPUTRON"),
-        _user(ROOT, "/skill original", evt_id="evt_u1"),
-        _iter(ROOT, 0, content="hello"),
-        _user(ROOT, "hi again", evt_id="evt_u2"),
-    ]
-    result = build_llm_view(events, user_content_transform=lambda text: text.upper())
-    assert result[0] == {"role": "user", "content": "/skill original"}
-    assert result[-1] == {"role": "user", "content": "HI AGAIN"}
-
-
-def test_user_content_transform_skipped_for_compaction_intent_summary():
-    events = [
-        _started(ROOT, "COMPUTRON"),
-        _user(ROOT, "/skill original", evt_id="evt_u1"),
-        _iter(ROOT, 0, content="ok", evt_id="evt_i1"),
-        _compaction(
-            ROOT, "summary text", kept_from_id="evt_i1", kept_to_id="evt_i1",
-            user_intent_summary="the user wants X",
-        ),
-        _iter(ROOT, 1, content="continuing", evt_id="evt_i2"),
-    ]
-    result = build_llm_view(events, user_content_transform=lambda text: text.upper())
-    assert result[0]["content"] == _INTENT_PREFIX + "the user wants X"
+    assert build_llm_view(events)[0]["content"] == (
+        "rendered\n\n[Attached files written to virtual computer]\n"
+        "  - a.png (image/png) -> /v/a.png"
+    )
 
 
 def test_nudge_appears_as_second_user_message():

@@ -33,7 +33,7 @@ from agent_core.turn import ExecutionContext, ExecutionResult, ToolLoopError
 from tools.virtual_computer.receive_file import receive_attachment
 
 from ._compaction import LLMCompactionStrategy
-from ._composer_tokens import enrich_composer_message
+from ._composer_tokens import resolve_composer_tokens
 from ._factory import AgentFactory, persist_loaded_skills
 from ._models import AgentRunRequest, RunAttachment, RunPolicy
 from ._scratchpad_hook import ScratchpadHook
@@ -131,15 +131,12 @@ class AgentRunner:
             if history is None or session.conversation is None:
                 raise RuntimeError("RunSession has no prepared history")
             history.set_system_message(prepared.system_prompt)
-            # Model-facing only: resolves composer `/skill`
-            # tokens against current skill state, without ever touching
-            # the stored event or what the transcript displays. Only the root
-            # execution's history carries user-typed composer text — a spawned
-            # child's message is an LLM-generated task description, not
-            # something a person typed into the composer, so it must never be
-            # reinterpreted as a command.
-            if context.parent_execution_id is None:
-                history.set_user_content_transform(enrich_composer_message)
+            # Only a root run's message was typed into the composer. A spawned
+            # child's message is task text the parent model wrote, so a
+            # coincidental `/name` in it must never be read as a shortcut.
+            model_content = (
+                resolve_composer_tokens(message, profile) if context.parent_execution_id is None else None
+            )
             ctx_manager = ContextManager(
                 history=history,
                 agent_capabilities=prepared.capabilities,
@@ -172,7 +169,12 @@ class AgentRunner:
                     ))
                     publish_event(
                         AgentEvent(
-                            payload=UserMessagePayload(type="user_message", content=message, attachments=attachments or [])
+                            payload=UserMessagePayload(
+                                type="user_message",
+                                content=message,
+                                attachments=attachments or [],
+                                model_content=model_content,
+                            )
                         )
                     )
                     parallel = load_config().parallel

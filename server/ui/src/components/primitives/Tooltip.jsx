@@ -4,21 +4,19 @@ import { createPortal } from 'react-dom';
 import styles from './Tooltip.module.css';
 
 /**
- * Hover/focus tooltip that wraps arbitrary children without affecting their
- * layout (`display: contents` on the wrapper). Portaled to `document.body`
- * and positioned from the wrapper's `getBoundingClientRect()` so it escapes
- * any clipping ancestor, the same approach as `Popover`.
- *
- * Promoted out of `ModelSettingsPanel`'s local `InfoTip` once a second caller
- * (the composer autocomplete's skill/agent rows) needed the identical
- * show/hide-on-hover behavior.
+ * Hover/focus tooltip that wraps a single child element without affecting
+ * its layout (`display: contents` on the wrapper). Portaled to
+ * `document.body` and positioned from the child's bounding rect so it
+ * escapes any clipping ancestor, the same approach as `Popover`.
  */
 export default function Tooltip({ text, placement = 'right', children }) {
     const wrapRef = useRef(null);
     const [pos, setPos] = useState(null);
 
     const show = useCallback(() => {
-        const el = wrapRef.current;
+        // A `display: contents` wrapper has no box of its own (its rect is
+        // all zeros), so measure the wrapped element instead.
+        const el = wrapRef.current?.firstElementChild;
         if (!el) return;
         const rect = el.getBoundingClientRect();
         if (placement === 'top') {

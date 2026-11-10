@@ -299,16 +299,12 @@ async def test_stopped_root_lifecycle_precedes_turn_end(
     assert seen[-1].payload.type == "turn_end"
 
 
-async def test_composer_token_enriches_llm_view_but_not_stored_message(
+async def test_composer_token_is_resolved_once_and_stored_beside_typed_text(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
 ) -> None:
-    """A `/skill` composer token is resolved only in what the model sees.
-
-    The persisted event and the UserMessagePayload broadcast to the UI must
-    keep the user's exact text — enrichment is a read-time transform on the
-    derived LLM view, never a rewrite of the stored message.
-    """
+    """The model sees the resolved `/skill` instruction; the stored event keeps
+    the user's exact text for the transcript."""
     monkeypatch.setattr("skills._store._skills_dir", lambda: tmp_path / "skills")
     save_skill_record(SkillRecord(id="skill_review", name="review-code", description="", prompt="", tool_categories=[]))
 
@@ -334,26 +330,20 @@ async def test_composer_token_enriches_llm_view_but_not_stored_message(
     _ = [record async for record in info.events(after_seq=0)]
 
     llm_view = captured["history"].non_system_messages
-    assert llm_view[0]["content"] != raw_message
-    assert "load_skill" in llm_view[0]["content"]
     assert 'skill "review-code" (id: skill_review)' in llm_view[0]["content"]
 
     persisted = load_events_jsonl(conversation_id)
     user_events = [event for event in persisted if event["type"] == "user_message"]
     assert user_events[0]["content"] == raw_message
+    assert user_events[0]["model_content"] == llm_view[0]["content"]
 
 
-async def test_composer_transform_not_applied_to_spawned_child_instructions(
+async def test_spawned_child_instructions_are_never_resolved_as_shortcuts(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
 ) -> None:
-    """A subagent's own task instructions are never composer-rewritten.
-
-    Only what a person actually typed into the chat composer is eligible for
-    `/skill`-token rewriting. `spawn_agent`'s `instructions` argument is text
-    the *parent LLM* wrote, so a coincidental `/skill-name` inside it must
-    reach the child verbatim, not get reinterpreted as a command.
-    """
+    """`spawn_agent` instructions are text the parent model wrote, so a
+    coincidental `/skill-name` in them reaches the child verbatim."""
     monkeypatch.setattr("skills._store._skills_dir", lambda: tmp_path / "skills")
     save_skill_record(SkillRecord(id="skill_review", name="review-code", description="", prompt="", tool_categories=[]))
     monkeypatch.setattr(factory_module, "get_agent_profile", lambda _pid: _profile())
@@ -364,7 +354,6 @@ async def test_composer_transform_not_applied_to_spawned_child_instructions(
 
     async def _fake_execute(self, *, history: ConversationHistory, context, capabilities, **_kwargs: Any) -> ExecutionResult:
         if context.parent_execution_id is None:
-            captured["root_history"] = history
             spawn_agent = next(t for t in capabilities.tools if t.__name__ == "spawn_agent")
             await spawn_agent(instructions=child_instructions, profile="profile-1", agent_name="CHILD")
         else:
@@ -383,6 +372,4 @@ async def test_composer_transform_not_applied_to_spawned_child_instructions(
     info = await manager.start(request)
     _ = [record async for record in info.events(after_seq=0)]
 
-    assert captured["root_history"]._user_content_transform is not None
-    assert captured["child_history"]._user_content_transform is None
     assert captured["child_history"].non_system_messages[0]["content"] == child_instructions

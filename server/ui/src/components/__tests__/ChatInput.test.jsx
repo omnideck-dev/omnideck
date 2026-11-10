@@ -600,6 +600,31 @@ describe('ChatInput', () => {
             }
         });
 
+        it('does not open the overlay while the agent is running', async () => {
+            const user = userEvent.setup();
+            render(<ChatInput onSend={vi.fn()} isStreaming />);
+
+            const textarea = screen.getByPlaceholderText('Send a nudge…');
+            await user.type(textarea, '/rev');
+
+            expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+        });
+
+        it('sends a path on Enter during a background refresh of cached skills', async () => {
+            const onSend = vi.fn();
+            const user = userEvent.setup();
+            skillsHook.loading = true;
+            try {
+                render(<ChatInput onSend={onSend} isStreaming={false} />);
+                const textarea = screen.getByPlaceholderText('Message Omnideck…');
+                await user.type(textarea, 'check /var/log{Enter}');
+
+                expect(onSend).toHaveBeenCalledWith('check /var/log', null);
+            } finally {
+                skillsHook.loading = false;
+            }
+        });
+
         it('refreshes the skill list once per overlay-open, not on every keystroke', async () => {
             const user = userEvent.setup();
             skillsHook.refresh.mockClear();

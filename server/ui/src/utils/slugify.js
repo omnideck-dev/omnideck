@@ -1,10 +1,9 @@
 /**
  * Kebab-case a display name for use as a composer token.
  *
- * Must stay behaviorally identical to the backend's copy of this algorithm
- * (`agent_runtime/_composer_tokens.py`, `_slugify`) — there's no shared
- * runtime between the two, so any drift here silently breaks resolution for
- * a token this function already produced.
+ * Must stay behaviorally identical to the server's copy used to resolve
+ * composer tokens — there's no shared runtime between the two, so any drift
+ * here silently breaks resolution for a token this function produced.
  *
  * @param {string} text
  * @returns {string}

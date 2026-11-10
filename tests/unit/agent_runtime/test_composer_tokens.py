@@ -1,9 +1,14 @@
-"""Tests for agent_runtime._composer_tokens enrichment of `/skill` tokens."""
+"""Tests for agent_runtime._composer_tokens shortcut resolution."""
 
 import pytest
 
-from agent_runtime._composer_tokens import enrich_composer_message
+from agent_runtime._composer_tokens import resolve_composer_tokens
+from agents._agent_profiles import AgentProfile
 from skills._store import SkillRecord, save_skill_record
+
+pytestmark = [pytest.mark.unit]
+
+PROFILE = AgentProfile(id="root", name="Root")
 
 
 @pytest.fixture(autouse=True)
@@ -16,143 +21,120 @@ def _make_skill(name: str, id_: str | None = None) -> SkillRecord:
     return save_skill_record(record)
 
 
-@pytest.mark.unit
-def test_no_tokens_passes_through_unchanged():
-    text = "hello, just a plain message with no slashes at all"
-    assert enrich_composer_message(text) == text
+def _resolve(text: str, profile: AgentProfile = PROFILE) -> str | None:
+    return resolve_composer_tokens(text, profile)
 
 
-@pytest.mark.unit
+def test_no_tokens_returns_none():
+    assert _resolve("hello, just a plain message with no slashes at all") is None
+
+
 def test_bare_skill_load():
     _make_skill("review-code", id_="skill_review")
-    result = enrich_composer_message("/review-code please check this")
+    result = _resolve("/review-code please check this")
     assert "load_skill" in result
     assert 'skill "review-code" (id: skill_review)' in result
     assert "please check this" in result
     assert "Do not spawn a subagent" in result
 
 
-@pytest.mark.unit
-def test_bare_skill_no_args():
-    _make_skill("review-code", id_="skill_review")
-    result = enrich_composer_message("/review-code")
-    assert "load_skill" in result
-    assert 'skill "review-code" (id: skill_review)' in result
-
-
-@pytest.mark.unit
 def test_bare_skill_no_args_asks_for_output_not_a_status_report():
     """With nothing typed after the token, the instruction must steer the
-    model toward delivering the skill's actual output — not toward verifying
-    and reporting on the load mechanism itself (the failure mode this
-    wording exists to prevent)."""
+    model toward delivering the skill's actual output, not toward reporting
+    on whether the load worked."""
     _make_skill("review-code", id_="skill_review")
-    result = enrich_composer_message("/review-code")
+    result = _resolve("/review-code")
     assert "respond with what it produces, not a report on whether it loaded" in result
 
 
-@pytest.mark.unit
-def test_token_at_end_of_message_args_terminate_correctly():
+def test_text_before_the_token_is_kept():
     _make_skill("summarize", id_="skill_sum")
-    result = enrich_composer_message("please handle this /summarize")
-    # "please handle this" is untouched literal text preceding the token.
+    result = _resolve("please handle this /summarize")
     assert result.startswith("please handle this ")
     assert 'skill "summarize" (id: skill_sum)' in result
 
 
-@pytest.mark.unit
 def test_multiline_args_preserved():
     _make_skill("summarize", id_="skill_sum")
-    result = enrich_composer_message("/summarize line one\nline two")
-    assert "line one\nline two" in result
+    assert "line one\nline two" in _resolve("/summarize line one\nline two")
 
 
-@pytest.mark.unit
 def test_unresolved_skill_is_left_fully_inert():
-    """A name that matches no known skill is never a real command — treat it
-    as ordinary text, not a typo to explain. This is also what keeps
-    incidental text that merely looks like a token (a file path, a URL
-    segment) from being misfired into a fabricated instruction."""
-    text = "/does-not-exist do something"
-    assert enrich_composer_message(text) == text
+    assert _resolve("/does-not-exist do something") is None
 
 
-@pytest.mark.unit
 def test_path_like_text_is_left_fully_inert():
-    """The real-world case the inert rule exists for: an absolute path or
-    root-relative URL that happens to parse as a token but names no real
-    skill must never be rewritten into a fabricated instruction."""
-    text = "check /etc/hosts for the entry, and also look at /home/ron/project/file.py"
-    assert enrich_composer_message(text) == text
+    """A path that parses as a token but names no skill is never a command."""
+    assert _resolve("check /etc/hosts and also /home/ron/project/file.py") is None
 
 
-@pytest.mark.unit
+def test_unresolved_token_after_a_skill_stays_in_its_task():
+    """A path in the task text must not cut the task off from the skill."""
+    _make_skill("summarize", id_="skill_sum")
+    result = _resolve("/summarize /tmp/report.txt please")
+    assert "then use it to: /tmp/report.txt please." in result
+    assert "in order" not in result
+
+
+def test_unresolved_token_before_a_skill_passes_through():
+    _make_skill("review-code", id_="skill_review")
+    result = _resolve("look at /etc/hosts then /review-code it please")
+    assert result.startswith("look at /etc/hosts then ")
+    assert "then use it to: it please." in result
+
+
+def test_whitespace_boundary_ignores_mid_word_slash():
+    _make_skill("b", id_="skill_b")
+    assert _resolve("check a/b and http://example.com/b for details") is None
+
+
 def test_resolves_by_id_as_well_as_name():
     _make_skill("Review Code", id_="skill_review")
-    result = enrich_composer_message("/skill_review do it")
-    assert 'skill "Review Code" (id: skill_review)' in result
+    assert 'skill "Review Code" (id: skill_review)' in _resolve("/skill_review do it")
 
 
-@pytest.mark.unit
 def test_resolves_skill_by_slug_of_multiword_name():
     _make_skill("Joke teller", id_="4dffecbf8559")
-    result = enrich_composer_message("/joke-teller tell me one")
-    assert 'skill "Joke teller" (id: 4dffecbf8559)' in result
+    assert 'skill "Joke teller" (id: 4dffecbf8559)' in _resolve("/joke-teller tell me one")
 
 
-@pytest.mark.unit
 def test_ambiguous_skill_slug_is_left_fully_inert():
-    """Two names that happen to slugify identically must never resolve to
-    either one silently — same "unresolved" treatment as a typo."""
     _make_skill("Joke teller", id_="skill_a")
     _make_skill("joke   TELLER!!", id_="skill_b")
-    text = "/joke-teller tell me one"
-    assert enrich_composer_message(text) == text
+    assert _resolve("/joke-teller tell me one") is None
 
 
-@pytest.mark.unit
-def test_whitespace_boundary_ignores_mid_word_slash():
-    text = "check a/b path and http://example.com/x for details"
-    assert enrich_composer_message(text) == text
+def test_reserved_skill_is_left_fully_inert():
+    _make_skill("browser", id_="browser")
+    assert _resolve("/browser open the page") is None
 
 
-@pytest.mark.unit
-def test_multiple_tokens_beyond_two():
-    _make_skill("s1", id_="skill1")
-    _make_skill("s2", id_="skill2")
-    _make_skill("s3", id_="skill3")
-    result = enrich_composer_message("/s1 a /s2 b /s3 c")
-    assert result.count("load_skill") == 3
-
-
-@pytest.mark.unit
-def test_mix_of_resolved_and_unresolved_tokens_in_one_message():
-    """Only the resolvable token is rewritten; the unresolved one — and all
-    surrounding text — passes through exactly as typed."""
+def test_profile_that_cannot_load_skills_gets_no_rewrite():
     _make_skill("review-code", id_="skill_review")
-    text = "look at /etc/hosts then /review-code it please"
-    result = enrich_composer_message(text)
-    assert result.startswith("look at /etc/hosts then ")
-    assert 'skill "review-code" (id: skill_review)' in result
-    assert "it please" in result
+    profile = AgentProfile(id="locked", name="Locked", allow_load_skills=False)
+    assert _resolve("/review-code do it", profile) is None
 
 
-@pytest.mark.unit
 def test_chained_skills_get_sequencing_instruction():
     _make_skill("create-draft", id_="skill_create")
     _make_skill("review-draft", id_="skill_review_draft")
-    result = enrich_composer_message("/create-draft from mynotes.txt and then /review-draft")
+    result = _resolve("/create-draft from mynotes.txt and then /review-draft")
     assert result.index("skill_create") < result.index("skill_review_draft")
     assert "in order" in result
     assert "mynotes.txt and then" in result
-    # The first instruction's closing sentence must not run directly into the
-    # second's opening word — the single space between the tokens survives.
+    # The single space between the tokens survives, so the two rendered
+    # instructions don't run together.
     assert "in this conversation. Load skill" in result
 
 
-@pytest.mark.unit
-def test_at_sign_text_is_not_a_token():
+def test_multiple_tokens_beyond_two():
+    for i in (1, 2, 3):
+        _make_skill(f"s{i}", id_=f"skill{i}")
+    assert _resolve("/s1 a /s2 b /s3 c").count("load_skill") == 3
+
+
+def test_at_and_hash_are_not_tokens_yet():
     _make_skill("review-code", id_="skill_review")
-    text = "@coder /review-code myfile.py"
-    result = enrich_composer_message(text)
-    assert result.startswith("@coder Load skill")
+    _make_skill("tag", id_="skill_tag")
+    result = _resolve("@coder #tag /review-code myfile.py")
+    assert result.startswith("@coder #tag Load skill")

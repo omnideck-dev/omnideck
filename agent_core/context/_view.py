@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -45,37 +44,20 @@ def events_for_agent(
 def build_llm_view(
     events: list[dict[str, Any]],
     agent_filter: str | None = None,
-    *,
-    user_content_transform: Callable[[str], str] | None = None,
 ) -> list[dict[str, Any]]:
     """The model-facing message list for one agent.
 
     Collapses the conversation at its latest compaction (first user message
-    + summary marker + the kept tail) and augments user messages with the
-    [Attached files…] block, so the model knows where uploads landed in the
-    sandbox. This is the list sent to the provider.
-
-    ``user_content_transform``, when given, runs only over the most recent
-    user message — the one the current turn is actively answering — before
-    any attachment augmentation, e.g. rewriting a composer `/skill` token
-    into an explicit tool instruction. Earlier, already-answered user
-    messages are never re-passed through it: the skill/profile store can
-    change between turns, and a message that resolved (or didn't) when it
-    was submitted must keep reading that way on every later re-derivation,
-    not flip based on what exists now. It only ever touches this model-facing
-    view: the stored event keeps the user's text verbatim, so what's
-    persisted and displayed always matches what the user actually typed.
-    Skipped for a compaction's intent-summary override, since that text is
-    already a compacted abstraction, not a literal typed message.
+    + summary marker + the kept tail), sends each user message's resolved
+    composer shortcuts in place of its typed text, and augments user messages
+    with the [Attached files…] block, so the model knows where uploads landed
+    in the sandbox. This is the list sent to the provider.
     """
     evs = events_for_agent(events, agent_filter)
     first_user = next((e for e in evs if e["type"] == "user_message"), None)
     if first_user is None:
         return []
     agent_names = _agent_names(events)
-    latest_user_id = next(
-        (e["id"] for e in reversed(evs) if e["type"] == "user_message"), None,
-    )
 
     latest_compaction = max(
         (e for e in evs if e["type"] == "compaction"),
@@ -84,18 +66,11 @@ def build_llm_view(
     )
 
     # First user message: intent-summary override if a compaction set one,
-    # else the user's text (transformed only if it's the active turn) with
-    # the attachment block appended.
+    # else the user's message as the model sees it.
     if latest_compaction and latest_compaction.get("user_intent_summary"):
         user_content = _INTENT_PREFIX + latest_compaction["user_intent_summary"]
     else:
-        raw = first_user["content"]
-        if user_content_transform is not None and first_user["id"] == latest_user_id:
-            raw = user_content_transform(raw)
-        if first_user.get("attachments"):
-            user_content = _augment_with_attachments(raw, first_user["attachments"])
-        else:
-            user_content = raw
+        user_content = _user_content(first_user)
     messages: list[dict[str, Any]] = [{"role": "user", "content": user_content}]
 
     if latest_compaction is None:
@@ -113,10 +88,7 @@ def build_llm_view(
         except StopIteration:
             return messages
 
-    messages.extend(_walk(
-        evs[start_idx:], agent_names,
-        user_content_transform=user_content_transform, latest_user_id=latest_user_id,
-    ))
+    messages.extend(_walk(evs[start_idx:], agent_names))
     return messages
 
 
@@ -131,26 +103,15 @@ def _agent_names(events: list[dict[str, Any]]) -> dict[str, str | None]:
 def _walk(
     evs: list[dict[str, Any]],
     agent_names: dict[str, str | None],
-    *,
-    user_content_transform: Callable[[str], str] | None = None,
-    latest_user_id: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Emit model-facing user, assistant, and tool messages.
-
-    ``user_content_transform`` applies only to the ``latest_user_id`` event.
-    """
+    """Emit model-facing user, assistant, and tool messages."""
     out: list[dict[str, Any]] = []
     for e in evs:
         t = e["type"]
         if t == "compaction":
             continue
         if t == "user_message":
-            content = e["content"]
-            if user_content_transform is not None and e.get("id") == latest_user_id:
-                content = user_content_transform(content)
-            if e.get("attachments"):
-                content = _augment_with_attachments(content, e["attachments"])
-            out.append({"role": "user", "content": content})
+            out.append({"role": "user", "content": _user_content(e)})
         elif t == "iteration":
             # An assistant message with neither content nor tool calls (e.g.
             # a thinking-only partial captured when the user stopped
@@ -185,6 +146,14 @@ def _walk(
                 "content": e["content"],
             })
     return out
+
+
+def _user_content(event: dict[str, Any]) -> str:
+    """A user message as the model sees it: resolved shortcuts, then attachments."""
+    content = event.get("model_content") or event["content"]
+    if event.get("attachments"):
+        content = _augment_with_attachments(content, event["attachments"])
+    return content
 
 
 def _augment_with_attachments(content: str, attachments: list[dict[str, Any]]) -> str:

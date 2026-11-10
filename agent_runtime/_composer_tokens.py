@@ -1,52 +1,52 @@
-"""Composer message enrichment for `/skill` chat tokens.
+"""Composer shortcut tokens: resolve chat shortcuts like `/skill` into tool instructions.
 
-The chat composer lets a user type `/skill-name` to load a skill into the
-current agent's own run — normally by picking one from the composer's own
-autocomplete overlay. Neither the browser nor this module drives the
-underlying tool directly — instead a token that resolves to a real skill is
-rewritten into an explicit natural-language instruction naming its id and
-the `load_skill` tool, and the root agent's own tool-calling loop does the
-actual work.
+The chat composer lets a user insert a shortcut token — a trigger character
+followed by a name, such as `/review-code` — normally by picking one from the
+composer's own autocomplete overlay. Each trigger character has a handler
+that resolves the name against live server state. A resolved token, together
+with the text that follows it, is rendered into an explicit natural-language
+instruction naming the resolved id and the tool to call; the agent's own
+tool-calling loop does the actual work.
 
-A token that *doesn't* resolve — a typo, a stale name, or just incidental
-text that happens to look like one (a file path such as `/etc/hosts`, a URL
-segment) — is left completely untouched: no rewrite, no hint. The overlay is
-the only sanctioned way to produce a real token; anything else reaching here
-unresolved was never actually a command, so there's nothing to explain.
+A token whose name doesn't resolve — a typo, a stale name, or incidental
+text that merely looks like one (a path such as `/etc/hosts`, a URL segment)
+— is not a command. It is left as typed and read as part of the preceding
+token's task text.
 
-This rewrite runs as a model-facing-only view transform applied when the LLM
-message list is derived, never on the message before it's stored or
-broadcast — the persisted event and the transcript the user sees always keep
-their exact typed text.
+Resolution happens once, when the user's message is recorded. The result is
+stored beside the typed text, so the transcript shows exactly what the user
+typed and the model sees the same rendered instruction on every later turn.
 """
 
 import re
+from collections.abc import Callable
+from functools import cached_property, partial
+from typing import Protocol
 
+from agents._agent_profiles import AgentProfile
+from skills._policy import is_reserved_skill_id
 from skills._store import SkillRecord, list_skill_records
 
-# Matches a trigger only at the start of the message or after whitespace, so
-# "user@host/path" or "a/b" mid-word never counts as a token.
-_TOKEN_RE = re.compile(r"(?:(?<=^)|(?<=\s))/(?P<skill>\S+)")
+# Renders a resolved token as an instruction, given the task text after it.
+TokenRenderer = Callable[[str], str]
+
+
+class _TokenHandler(Protocol):
+    trigger: str
+
+    def resolve(self, ref: str) -> TokenRenderer | None:
+        """Return a renderer for ``ref``, or None when it names nothing."""
+        ...
 
 
 def _slugify(text: str) -> str:
     """Kebab-case a display name for token matching.
 
-    Must stay behaviorally identical to the frontend's copy of this
-    algorithm (``server/ui/src/utils/slugify.js``) — there's no shared
-    runtime between the two, so any drift here silently breaks resolution
-    for names the composer already slugified client-side.
+    Must stay behaviorally identical to the composer's client-side copy —
+    the composer inserts these slugs, so any drift silently breaks
+    resolution for multi-word names.
     """
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
-
-
-def _resolve_skill(ref: str, skills: list[SkillRecord]) -> SkillRecord | None:
-    lowered = ref.lower()
-    for skill in skills:
-        if skill.name.lower() == lowered or skill.id.lower() == lowered:
-            return skill
-    slug_matches = [skill for skill in skills if _slugify(skill.name) == lowered]
-    return slug_matches[0] if len(slug_matches) == 1 else None
 
 
 # A user who types the bare token with nothing after it hasn't given a task —
@@ -68,48 +68,81 @@ def _render_load(skill: SkillRecord, args: str) -> str:
     )
 
 
-def enrich_composer_message(text: str) -> str:
-    """Rewrite resolvable `/skill` tokens into `load_skill` instructions.
+class _SkillTokens:
+    """`/skill-name task`: load a skill into the current run and use it."""
 
-    Scans left-to-right for `/skill-name` at word boundaries. Only a token
-    whose name resolves against the current skill store is replaced, in place, by a natural-language
-    instruction naming the resolved id and the tool to call; everything
-    else — unresolved tokens, and all text between/around tokens — passes
-    through byte-for-byte. A message with no matches at all, or where
-    nothing resolves, is returned unchanged.
+    trigger = "/"
+
+    @cached_property
+    def _skills(self) -> list[SkillRecord]:
+        # Reserved skills are app capabilities, not user-invocable skills.
+        return [record for record in list_skill_records() if not is_reserved_skill_id(record.id)]
+
+    def resolve(self, ref: str) -> TokenRenderer | None:
+        lowered = ref.lower()
+        for skill in self._skills:
+            if skill.name.lower() == lowered or skill.id.lower() == lowered:
+                return partial(_render_load, skill)
+        # Two names that slugify identically are ambiguous; resolve neither.
+        slug_matches = [skill for skill in self._skills if _slugify(skill.name) == lowered]
+        if len(slug_matches) == 1:
+            return partial(_render_load, slug_matches[0])
+        return None
+
+
+def _handlers_for(profile: AgentProfile) -> list[_TokenHandler]:
+    """The shortcut handlers available to an agent with ``profile``.
+
+    A handler is left out when the agent lacks the tool its instruction
+    would name, so the token stays plain text rather than steering the
+    model toward a tool it can't call.
     """
-    matches = list(_TOKEN_RE.finditer(text))
-    if not matches:
-        return text
+    handlers: list[_TokenHandler] = []
+    if profile.allow_load_skills:
+        handlers.append(_SkillTokens())
+    return handlers
 
-    skills = list_skill_records()
 
-    resolved_count = 0
-    pieces = [text[:matches[0].start()]]
-    for i, match in enumerate(matches):
-        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
-        span_text = text[match.start():end]
+def resolve_composer_tokens(text: str, profile: AgentProfile) -> str | None:
+    """Rewrite resolvable shortcut tokens in a typed message into tool instructions.
+
+    A token is a handler's trigger character followed by a name, at the
+    start of the message or after whitespace. Each resolved token is
+    replaced, together with the task text up to the next resolved token,
+    by its handler's instruction. Text before the first resolved token and
+    unresolved tokens pass through as typed. Several resolved tokens get a
+    leading instruction to perform them in order.
+
+    Returns:
+        The rewritten message, or None when no token resolved.
+    """
+    handlers = {handler.trigger: handler for handler in _handlers_for(profile)}
+    if not handlers:
+        return None
+
+    triggers = "".join(re.escape(trigger) for trigger in handlers)
+    token_re = re.compile(rf"(?:^|(?<=\s))(?P<trigger>[{triggers}])(?P<ref>\S+)")
+
+    resolved: list[tuple[re.Match[str], TokenRenderer]] = []
+    for match in token_re.finditer(text):
+        renderer = handlers[match["trigger"]].resolve(match["ref"])
+        if renderer is not None:
+            resolved.append((match, renderer))
+    if not resolved:
+        return None
+
+    pieces = [text[:resolved[0][0].start()]]
+    for i, (match, render) in enumerate(resolved):
+        end = resolved[i + 1][0].start() if i + 1 < len(resolved) else len(text)
         raw_args = text[match.end():end]
-        args = raw_args.strip()
-        # Preserved so a rendered instruction butts up against whatever
-        # follows it (the next token, or end of message) with the same
-        # whitespace the user's own text had there, instead of running two
-        # sentences together with no separator.
+        # Keep the whitespace the user had before the next token so two
+        # rendered instructions don't run together.
         trailing_ws = raw_args[len(raw_args.rstrip()):]
-        skill = _resolve_skill(match.group("skill"), skills)
-        if skill is not None:
-            pieces.append(_render_load(skill, args) + trailing_ws)
-            resolved_count += 1
-        else:
-            pieces.append(span_text)
-
-    if resolved_count == 0:
-        return text
+        pieces.append(render(raw_args.strip()) + trailing_ws)
 
     body = "".join(pieces)
-    if resolved_count == 1:
+    if len(resolved) == 1:
         return body
-
     return (
         "Perform the following in order, waiting for each step's result "
         f"before starting the next:\n{body}"
