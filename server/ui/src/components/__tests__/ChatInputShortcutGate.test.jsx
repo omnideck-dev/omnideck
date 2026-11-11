@@ -14,7 +14,7 @@ vi.mock('../../contexts/AppData.jsx', () => ({
     }),
 }));
 
-// The selected profile can't load skills.
+// The selected profile can't load skills on its own.
 vi.mock('../ProfileSelector.jsx', () => ({
     default: function ProfileSelector({ onSelectedProfile }) {
         useEffect(() => {
@@ -24,21 +24,18 @@ vi.mock('../ProfileSelector.jsx', () => ({
     },
 }));
 
-describe('ChatInput with a profile that cannot load skills', () => {
-    it('opens no list and shows no chip, only the plain-text hint', async () => {
+describe('ChatInput with a profile that cannot load skills on its own', () => {
+    it('still lets the user select a skill explicitly', async () => {
         const onSend = vi.fn();
         const user = userEvent.setup();
         render(<ChatInput onSend={onSend} isStreaming={false} />);
 
         const textarea = screen.getByPlaceholderText('Message Locked…');
         await user.type(textarea, '/rev');
-        expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
-
-        await user.type(textarea, 'iew-code');
-        expect(screen.queryByTestId('composer-shortcuts')).not.toBeInTheDocument();
-        expect(screen.getByText(/Locked can't load skills/)).toBeInTheDocument();
+        await user.click(await screen.findByText('review-code'));
+        expect(screen.getByTestId('composer-shortcuts')).toHaveTextContent('review-code');
 
         await user.keyboard('{Enter}');
-        expect(onSend).toHaveBeenCalledWith('/review-code', null);
+        expect(onSend).toHaveBeenCalledWith('/review-code', null, [{ id: 'skill_review', name: 'review-code' }]);
     });
 });

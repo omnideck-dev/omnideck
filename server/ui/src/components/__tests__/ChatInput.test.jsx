@@ -37,7 +37,7 @@ describe('ChatInput', () => {
         await user.type(textarea, 'Hello world');
         await user.click(screen.getByLabelText('Send message'));
 
-        expect(onSend).toHaveBeenCalledWith('Hello world', null);
+        expect(onSend).toHaveBeenCalledWith('Hello world', null, []);
     });
 
     it('trims whitespace from messages', async () => {
@@ -49,7 +49,7 @@ describe('ChatInput', () => {
         await user.type(textarea, '  test message  ');
         await user.click(screen.getByLabelText('Send message'));
 
-        expect(onSend).toHaveBeenCalledWith('test message', null);
+        expect(onSend).toHaveBeenCalledWith('test message', null, []);
     });
 
     it('clears message after sending', async () => {
@@ -72,7 +72,7 @@ describe('ChatInput', () => {
         const textarea = screen.getByPlaceholderText('Message Omnideck…');
         await user.type(textarea, 'Test{Enter}');
 
-        expect(onSend).toHaveBeenCalledWith('Test', null);
+        expect(onSend).toHaveBeenCalledWith('Test', null, []);
     });
 
     it('does not submit on Shift+Enter', async () => {
@@ -245,6 +245,7 @@ describe('ChatInput', () => {
                     filename: 'test.png',
                 }),
             ]),
+            [],
         );
     });
 
@@ -386,6 +387,7 @@ describe('ChatInput', () => {
                         base64: MOCK_BASE64_PNG,
                     }),
                 ]),
+                [],
             );
         });
 
@@ -498,7 +500,7 @@ describe('ChatInput', () => {
             await screen.findByRole('listbox', { name: 'Skills' });
             await user.keyboard('{Enter}');
 
-            expect(onSend).toHaveBeenCalledWith('a or /', null);
+            expect(onSend).toHaveBeenCalledWith('a or /', null, []);
         });
 
         it('commits from a bare trigger with Tab or after arrowing into the list', async () => {
@@ -622,7 +624,7 @@ describe('ChatInput', () => {
                 const textarea = screen.getByPlaceholderText('Message Omnideck…');
                 await user.type(textarea, 'what is in /etc/hosts{Enter}');
 
-                expect(onSend).toHaveBeenCalledWith('what is in /etc/hosts', null);
+                expect(onSend).toHaveBeenCalledWith('what is in /etc/hosts', null, []);
             } finally {
                 skillsHook.loading = false;
                 skillsHook.skills = [
@@ -717,7 +719,7 @@ describe('ChatInput', () => {
                 const textarea = screen.getByPlaceholderText('Message Omnideck…');
                 await user.type(textarea, 'check /var/log{Enter}');
 
-                expect(onSend).toHaveBeenCalledWith('check /var/log', null);
+                expect(onSend).toHaveBeenCalledWith('check /var/log', null, []);
             } finally {
                 skillsHook.loading = false;
             }
@@ -763,6 +765,29 @@ describe('ChatInput', () => {
             });
 
             expect(screen.getAllByRole('button', { name: 'Remove skill summarize' })).toHaveLength(1);
+        });
+
+        it('sends the chips\' skills, by id with the shown name, with the message', async () => {
+            const onSend = vi.fn();
+            const user = userEvent.setup();
+            render(<ChatInput onSend={onSend} isStreaming={false} />);
+
+            const textarea = screen.getByPlaceholderText('Message Omnideck…');
+            await user.type(textarea, '/rev');
+            await user.click(await screen.findByText('review-code'));
+            await user.type(textarea, 'check /etc/hosts{Enter}');
+
+            expect(onSend).toHaveBeenCalledWith(
+                '/review-code check /etc/hosts',
+                null,
+                [{ id: 'skill_review', name: 'review-code' }],
+            );
+        });
+
+        it('shows chips again for a restored draft', () => {
+            render(<ChatInput onSend={vi.fn()} isStreaming={false} draft="/summarize the thread" onDraftConsumed={vi.fn()} />);
+
+            expect(screen.getByTestId('composer-shortcuts')).toHaveTextContent('Skillsummarize');
         });
 
         it('refreshes the skill list when the list opens, at most once per interval', async () => {

@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from agent_runtime import AgentRuntime, AgentRunner, AgentRunRequest, RunAttachment, RunPolicy
+from agent_runtime import AgentRuntime, AgentRunner, AgentRunRequest, RunAttachment, RunPolicy, SelectedSkill
 from agent_runtime import _runner as runner_module
 from agent_runtime import _factory as factory_module
 from agents._agent_profiles import AgentProfile
@@ -299,110 +299,113 @@ async def test_stopped_root_lifecycle_precedes_turn_end(
     assert seen[-1].payload.type == "turn_end"
 
 
-async def test_composer_skill_is_loaded_before_the_first_model_call(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path,
-) -> None:
-    """A `/skill` token loads the skill before the agent runs; the model gets
-    the message exactly as typed."""
-    monkeypatch.setattr("skills._store._skills_dir", lambda: tmp_path / "skills")
-    save_skill_record(SkillRecord(id="skill_review", name="review-code", description="", prompt="", tool_categories=[]))
+def _skill_record(id_: str = "skill_review", name: str = "review-code") -> SkillRecord:
+    return save_skill_record(SkillRecord(id=id_, name=name, description="", prompt="Review carefully.", tool_categories=[]))
 
-    conversation_id = "runner-composer-token"
+
+async def _run_capturing(monkeypatch, request: AgentRunRequest, profile: AgentProfile | None = None) -> dict[str, Any]:
     captured: dict[str, Any] = {}
-    raw_message = "Fix the bug using /review-code"
 
     async def _capture_execute(self, *, history: ConversationHistory, capabilities, **_kwargs: Any) -> ExecutionResult:
-        captured["history"] = history
+        captured["messages"] = history.non_system_messages
         captured["skill_ids"] = capabilities.skill_ids
+        captured["tools"] = [tool.__name__ for tool in capabilities.tools]
+        captured["prompt_extensions"] = capabilities.build_prompt_extensions()
         return ExecutionResult("success")
 
-    monkeypatch.setattr(factory_module, "get_agent_profile", lambda _pid: _profile())
+    monkeypatch.setattr(factory_module, "get_agent_profile", lambda _pid: profile or _profile())
     monkeypatch.setattr(runner_module.AgentExecutor, "execute", _capture_execute)
-
-    request = AgentRunRequest(
-        conversation_id=conversation_id,
-        message=raw_message,
-        attachments=None,
-        profile_id="profile-1",
-        policy=RunPolicy(resolve_composer_tokens=True),
-    )
-    manager = AgentRuntime()
-    info = await manager.start(request)
+    info = await AgentRuntime().start(request)
     _ = [record async for record in info.events(after_seq=0)]
+    return captured
+
+
+async def test_selected_skill_is_loaded_before_the_first_model_call(monkeypatch, tmp_path) -> None:
+    """The skill's instructions and tools are attached before the agent runs,
+    and the model gets the message exactly as typed."""
+    monkeypatch.setattr("skills._store._skills_dir", lambda: tmp_path / "skills")
+    _skill_record()
+    conversation_id = "runner-composer-skill"
+    message = "Fix the bug using /review-code"
+
+    captured = await _run_capturing(monkeypatch, AgentRunRequest(
+        conversation_id=conversation_id, message=message, attachments=None, profile_id="profile-1",
+        skills=(SelectedSkill("skill_review", "review-code"),),
+    ))
 
     assert "skill_review" in captured["skill_ids"]
-    assert captured["history"].non_system_messages[0]["content"] == raw_message
+    assert "### review-code (/review-code)\nReview carefully." in captured["prompt_extensions"]
+    assert captured["messages"][0]["content"] == message
 
     persisted = load_events_jsonl(conversation_id)
     types = [event["type"] for event in persisted]
     assert types.index("user_message") < types.index("skill_loaded")
     loaded = next(event for event in persisted if event["type"] == "skill_loaded")
-    assert (loaded["skill_id"], loaded["status"]) == ("skill_review", "loaded")
+    assert (loaded["skill_id"], loaded["skill_name"], loaded["status"]) == ("skill_review", "review-code", "loaded")
     assert load_loaded_skills(conversation_id) == ["skill_review"]
 
 
-async def test_spawned_child_instructions_are_never_resolved_as_shortcuts(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path,
-) -> None:
-    """`spawn_agent` instructions are text the parent model wrote, so a
-    coincidental `/skill-name` in them loads nothing."""
+async def test_selected_skill_loads_without_granting_the_load_skill_tool(monkeypatch, tmp_path) -> None:
+    """A profile that can't load skills on its own still gets a skill the user
+    explicitly selected, and the model's loading tool stays absent."""
     monkeypatch.setattr("skills._store._skills_dir", lambda: tmp_path / "skills")
-    save_skill_record(SkillRecord(id="skill_review", name="review-code", description="", prompt="", tool_categories=[]))
-    monkeypatch.setattr(factory_module, "get_agent_profile", lambda _pid: _profile())
-    monkeypatch.setattr(runner_module, "get_agent_profile", lambda _pid: _profile())
+    _skill_record()
+    locked = _profile().model_copy(update={"allow_load_skills": False})
 
-    captured: dict[str, Any] = {}
+    captured = await _run_capturing(monkeypatch, AgentRunRequest(
+        conversation_id="runner-composer-locked", message="/review-code go", attachments=None,
+        profile_id="profile-1", skills=(SelectedSkill("skill_review", "review-code"),),
+    ), profile=locked)
 
-    async def _fake_execute(self, *, context, capabilities, **_kwargs: Any) -> ExecutionResult:
-        if context.parent_execution_id is None:
-            spawn_agent = next(t for t in capabilities.tools if t.__name__ == "spawn_agent")
-            await spawn_agent(instructions="/review-code do it", profile="profile-1", agent_name="CHILD")
-        else:
-            captured["child_skill_ids"] = capabilities.skill_ids
-        return ExecutionResult("success")
-
-    monkeypatch.setattr(runner_module.AgentExecutor, "execute", _fake_execute)
-
-    request = AgentRunRequest(
-        conversation_id="runner-composer-child",
-        message="hi",
-        attachments=None,
-        profile_id="profile-1",
-        policy=RunPolicy(resolve_composer_tokens=True),
-    )
-    manager = AgentRuntime()
-    info = await manager.start(request)
-    _ = [record async for record in info.events(after_seq=0)]
-
-    assert "skill_review" not in captured["child_skill_ids"]
+    assert "skill_review" in captured["skill_ids"]
+    assert "load_skill" not in captured["tools"]
+    assert "list_available_skills" not in captured["tools"]
 
 
-async def test_shortcuts_are_not_resolved_unless_the_channel_asks(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path,
-) -> None:
-    """A root run from another channel, such as a routine task whose message
-    embeds earlier model output, loads nothing for a coincidental `/skill`."""
+async def test_missing_selected_skill_is_reported_before_the_model_runs(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr("skills._store._skills_dir", lambda: tmp_path / "skills")
-    save_skill_record(SkillRecord(id="skill_review", name="review-code", description="", prompt="", tool_categories=[]))
-    monkeypatch.setattr(factory_module, "get_agent_profile", lambda _pid: _profile())
+    conversation_id = "runner-composer-missing"
 
-    async def _execute(self, **_kwargs: Any) -> ExecutionResult:
-        return ExecutionResult("success")
+    captured = await _run_capturing(monkeypatch, AgentRunRequest(
+        conversation_id=conversation_id, message="/gone do it", attachments=None, profile_id="profile-1",
+        skills=(SelectedSkill("gone", "Deleted skill"),),
+    ))
 
-    monkeypatch.setattr(runner_module.AgentExecutor, "execute", _execute)
+    assert "gone" not in captured["skill_ids"]
+    loaded = next(event for event in load_events_jsonl(conversation_id) if event["type"] == "skill_loaded")
+    assert (loaded["skill_name"], loaded["status"]) == ("Deleted skill", "unavailable")
 
-    conversation_id = "runner-composer-routine"
-    request = AgentRunRequest(
-        conversation_id=conversation_id,
-        message="next, run /review-code to finish",
-        attachments=None,
+
+async def test_shortcut_text_without_a_selection_loads_nothing(monkeypatch, tmp_path) -> None:
+    """Only explicit composer selections load skills. Text that looks like a
+    shortcut — typed, or from a routine task or spawned agent — does not."""
+    monkeypatch.setattr("skills._store._skills_dir", lambda: tmp_path / "skills")
+    _skill_record()
+    conversation_id = "runner-composer-text-only"
+
+    captured = await _run_capturing(monkeypatch, AgentRunRequest(
+        conversation_id=conversation_id, message="next, run /review-code to finish", attachments=None,
         profile_id="profile-1",
-    )
-    manager = AgentRuntime()
-    info = await manager.start(request)
-    _ = [record async for record in info.events(after_seq=0)]
+    ))
 
+    assert "skill_review" not in captured["skill_ids"]
     assert not any(e["type"] == "skill_loaded" for e in load_events_jsonl(conversation_id))
+
+
+async def test_selected_skill_and_attachment_together(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr("skills._store._skills_dir", lambda: tmp_path / "skills")
+    monkeypatch.setattr(runner_module, "receive_attachment", lambda *_a, **_k: "/home/omnideck/uploads/a.txt")
+    _skill_record()
+    conversation_id = "runner-composer-attachment"
+
+    captured = await _run_capturing(monkeypatch, AgentRunRequest(
+        conversation_id=conversation_id, message="/review-code check this", profile_id="profile-1",
+        attachments=[RunAttachment(base64_encoded="aGk=", content_type="text/plain", filename="a.txt")],
+        skills=(SelectedSkill("skill_review", "review-code"),),
+    ))
+
+    assert "skill_review" in captured["skill_ids"]
+    assert captured["messages"][0]["content"].startswith("/review-code check this\n\n[Attached files")
+    user = next(e for e in load_events_jsonl(conversation_id) if e["type"] == "user_message")
+    assert user["content"] == "/review-code check this"
+    assert user["attachments"][0]["filename"] == "a.txt"

@@ -2,7 +2,15 @@
 
 from ._runtime import AgentRuntime, AgentRuntimeClosedError, RunConflictError, RunHandle
 from ._session import RunSession, InvalidRunCursorError
-from ._models import AgentRunRequest, RunAttachment, RunPolicy, RunResult, RunSnapshot, SequencedEvent
+from ._models import (
+    AgentRunRequest,
+    RunAttachment,
+    RunPolicy,
+    RunResult,
+    RunSnapshot,
+    SelectedSkill,
+    SequencedEvent,
+)
 from ._factory import AgentFactory, PreparedAgent
 from ._runner import AgentRunner
 
@@ -18,6 +26,7 @@ __all__ = [
     "RunPolicy",
     "RunResult",
     "RunSnapshot",
+    "SelectedSkill",
     "SequencedEvent",
     "AgentFactory",
     "PreparedAgent",

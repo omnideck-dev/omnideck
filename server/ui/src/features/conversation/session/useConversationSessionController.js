@@ -623,7 +623,7 @@ export default function useConversationSessionController({
         setStopRequested,
     ]);
 
-    const sendMessage = useCallback(async (message, attachments, profileId) => {
+    const sendMessage = useCallback(async (message, attachments, profileId, skills) => {
         if (
             (!message && !attachments?.length)
             || isStreamingRef.current
@@ -658,7 +658,7 @@ export default function useConversationSessionController({
         await runConnection({
             conversationId: conversationIdRef.current,
             controller,
-            initialRequest: { message, attachments, profileId },
+            initialRequest: { message, attachments, profileId, skills },
             persistedEvents: eventsRef.current,
         });
     }, [runConnection]);

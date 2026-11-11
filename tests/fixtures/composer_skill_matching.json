@@ -1,5 +1,5 @@
 {
-  "_comment": "Shared cases for composer skill-token matching. The server resolver and the composer's client-side copy both run these, so the two can't drift apart.",
+  "_comment": "Composer skill matching. `cases` drive the composer's token-to-skill matching (which chips show). `slugs` are run by both the server's skill_slug and the composer's slugify, which must agree.",
   "skills": [
     {"id": "skill_review", "name": "review-code"},
     {"id": "4dffecbf8559", "name": "Joke teller"},

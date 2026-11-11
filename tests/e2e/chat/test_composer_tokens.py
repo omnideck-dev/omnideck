@@ -1,39 +1,45 @@
-"""End-to-end: a `/skill` composer token loads the skill before the agent runs."""
+"""End-to-end: a skill selected in the composer loads before the agent runs."""
 
+import json
 from uuid import uuid4
 
 from playwright.sync_api import Page
 
 from tests.e2e._protocol import model_script
-from tests.e2e._runtime import agent_profile, delete_conversation, run_turn
+from tests.e2e._runtime import agent_profile, api, delete_conversation
 
 
-def payloads(events, event_type):
-    return [e["payload"] for e in events if e["payload"]["type"] == event_type]
+def chat(conversation, message, profile_id, skills=None):
+    body = {"conversation_id": conversation, "profile_id": profile_id, "message": message}
+    if skills:
+        body["skills"] = skills
+    response = api().post("/api/chat", data=body, timeout=30)
+    assert response.status == 200, response.text
+    return [json.loads(line)["payload"] for line in response.text.splitlines() if line.strip()]
 
 
-def test_skill_token_loads_skill_without_a_model_tool_call(page: Page):
+def of_type(payloads, event_type):
+    return [p for p in payloads if p["type"] == event_type]
+
+
+def test_selected_skill_loads_without_a_model_tool_call(page: Page):
     conversation = f"e2e_composer_load_{uuid4().hex}"
     with agent_profile(skills=[]) as profile:
         try:
             message = "/coder " + model_script({"content": "done"})
-            events = run_turn(conversation, message, profile_id=profile["id"])
+            payloads = chat(conversation, message, profile["id"], skills=[{"id": "coder", "name": "coder"}])
 
-            loaded = payloads(events, "skill_loaded")
-            assert [(p["skill_id"], p["status"]) for p in loaded] == [("coder", "loaded")]
-            assert not [p for p in payloads(events, "tool_call") if p["name"] == "load_skill"]
-            assert payloads(events, "user_message")[0]["content"] == message
+            assert [(p["skill_id"], p["status"]) for p in of_type(payloads, "skill_loaded")] == [("coder", "loaded")]
+            assert not [p for p in of_type(payloads, "tool_call") if p["name"] == "load_skill"]
         finally:
             delete_conversation(conversation)
 
 
-def test_unknown_token_loads_nothing(page: Page):
-    conversation = f"e2e_composer_inert_{uuid4().hex}"
+def test_shortcut_text_without_a_selection_loads_nothing(page: Page):
+    conversation = f"e2e_composer_text_{uuid4().hex}"
     with agent_profile(skills=[]) as profile:
         try:
-            events = run_turn(
-                conversation, "check /etc/hosts " + model_script({"content": "ok"}), profile_id=profile["id"],
-            )
-            assert payloads(events, "skill_loaded") == []
+            payloads = chat(conversation, "/coder " + model_script({"content": "ok"}), profile["id"])
+            assert of_type(payloads, "skill_loaded") == []
         finally:
             delete_conversation(conversation)

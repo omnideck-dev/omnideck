@@ -27,7 +27,7 @@ from agent_runtime import (
     AgentRunRequest,
     InvalidRunCursorError,
     RunAttachment,
-    RunPolicy,
+    SelectedSkill,
 )
 from server._agent_runtime import AGENT_RUNTIME_KEY
 from server._run_activity import run_activity_handler
@@ -51,11 +51,19 @@ class Attachment(BaseModel):
     filename: str | None = None
 
 
+class ComposerSkill(BaseModel):
+    """A skill the user selected in the composer: its id and displayed name."""
+
+    id: str
+    name: str
+
+
 class ChatRequest(BaseModel):
     """Legacy chat-shaped request translated into an ``AgentRunRequest``."""
 
     message: str
     data: list[Attachment] | None = None
+    skills: list[ComposerSkill] = []
     profile_id: str | None = None
     conversation_id: str | None = None
 
@@ -145,7 +153,7 @@ async def chat_handler(request: Request) -> StreamResponse:
             message=user_query,
             attachments=run_attachments,
             profile_id=payload.profile_id,
-            policy=RunPolicy(resolve_composer_tokens=True),
+            skills=tuple(SelectedSkill(id=skill.id, name=skill.name) for skill in payload.skills),
         ))
     except RunConflictError:
         return web.json_response(

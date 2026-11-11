@@ -74,6 +74,14 @@ describe('streamChatTurn', () => {
         });
     });
 
+    it('sends composer skill selections', async () => {
+        const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true, body: null });
+
+        await collect(streamChatTurn({ message: '/joke-teller', skills: [{ id: 'j1', name: 'Joke teller' }] }));
+
+        expect(JSON.parse(fetchSpy.mock.calls[0][1].body).skills).toEqual([{ id: 'j1', name: 'Joke teller' }]);
+    });
+
     it('omits optional request fields when they are not supplied', async () => {
         const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true, body: null });
 

@@ -33,9 +33,9 @@ from agent_core.turn import ExecutionContext, ExecutionResult, ToolLoopError
 from tools.virtual_computer.receive_file import receive_attachment
 
 from ._compaction import LLMCompactionStrategy
-from ._composer_tokens import apply_composer_effects, resolve_composer_effects
+from ._composer_effects import apply_composer_effects, composer_effects
 from ._factory import AgentFactory, persist_loaded_skills
-from ._models import AgentRunRequest, RunAttachment, RunPolicy
+from ._models import AgentRunRequest, RunAttachment, RunPolicy, SelectedSkill
 from ._scratchpad_hook import ScratchpadHook
 from ._session import RunSession
 from ._spawn import make_spawn_tool
@@ -74,6 +74,7 @@ class AgentRunner:
                 attachments=attachments,
                 name=request.policy.agent_name,
                 policy=request.policy,
+                skills=request.skills,
             )
         except StopRequestedError:
             return ExecutionResult("stopped")
@@ -103,6 +104,7 @@ class AgentRunner:
         attachments: list[UserAttachment] | None = None,
         policy: RunPolicy = _CHILD_POLICY,
         correlation_id: str | None = None,
+        skills: Sequence[SelectedSkill] = (),
     ) -> ExecutionResult:
         """Use explicit session-owned identity, controls, history, and event delivery."""
         prepared = None
@@ -131,11 +133,6 @@ class AgentRunner:
             if history is None or session.conversation is None:
                 raise RuntimeError("RunSession has no prepared history")
             history.set_system_message(prepared.system_prompt)
-            # Reads the skill store from disk, so keep it off the event loop.
-            composer_effects = (
-                await asyncio.to_thread(resolve_composer_effects, message, profile)
-                if policy.resolve_composer_tokens else []
-            )
             ctx_manager = ContextManager(
                 history=history,
                 agent_capabilities=prepared.capabilities,
@@ -174,7 +171,7 @@ class AgentRunner:
                     # Applied after the user's message so the transcript shows it
                     # first, and before the model's first call so the skill's
                     # instructions and tools are there from the start.
-                    await apply_composer_effects(composer_effects, prepared.capabilities)
+                    await apply_composer_effects(composer_effects(skills), prepared.capabilities)
                     parallel = load_config().parallel
                     result = await AgentExecutor().execute(
                         history=history,

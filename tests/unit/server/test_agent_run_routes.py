@@ -1,9 +1,7 @@
 """Tests for server._agent_run_routes.chat_handler's request translation.
 
-Composer-token enrichment (`/skill`) is NOT applied here —
-it runs downstream as a model-facing-only view transform, so the raw text
-the user typed reaches AgentRunRequest.message unchanged and is what gets
-stored/displayed.
+The message the user typed reaches AgentRunRequest.message unchanged;
+composer skill selections travel separately, by id.
 """
 
 import json
@@ -54,7 +52,13 @@ async def test_composer_token_text_reaches_the_run_request_verbatim():
 
 
 @pytest.mark.unit
-async def test_chat_requests_composer_token_resolution():
-    req, manager = _make_request({"message": "/x", "conversation_id": "conv-1"})
+async def test_chat_passes_composer_skill_selections():
+    req, manager = _make_request({
+        "message": "/joke-teller",
+        "conversation_id": "conv-1",
+        "skills": [{"id": "4dffecbf8559", "name": "Joke teller"}],
+    })
     await routes.chat_handler(req)
-    assert manager.start.call_args[0][0].policy.resolve_composer_tokens is True
+    sent = manager.start.call_args[0][0]
+    assert [(s.id, s.name) for s in sent.skills] == [("4dffecbf8559", "Joke teller")]
+    assert sent.message == "/joke-teller"

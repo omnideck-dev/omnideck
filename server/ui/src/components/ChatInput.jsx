@@ -54,32 +54,20 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
     const { skillsHook } = useAppData();
 
     // One entry per composer shortcut trigger character. Each source lists
-    // what its overlay offers; the server resolves the inserted token when
-    // the message is sent. A source is `enabled` when the selected agent can
-    // act on it; otherwise its tokens are sent as plain text and `hint` says
-    // why. `kind` and `icon` label the chip shown for a resolved token.
-    const composerSources = useMemo(() => {
-        const canLoadSkills = selectedProfile?.allow_load_skills !== false;
-        return {
-            '/': {
-                label: 'Skills',
-                kind: 'Skill',
-                icon: 'bi-lightning-charge',
-                items: skillsHook?.skills || [],
-                loading: !!skillsHook?.loading,
-                refresh: skillsHook?.refresh,
-                enabled: canLoadSkills,
-                hint: canLoadSkills
-                    ? null
-                    : `${selectedProfile.name} can't load skills — this will be sent as plain text.`,
-            },
-        };
-    }, [skillsHook?.skills, skillsHook?.loading, skillsHook?.refresh, selectedProfile]);
+    // what its overlay offers; a token that resolves to one of its items
+    // shows as a chip, and the chips are what's sent with the message, by
+    // id. `kind` and `icon` label the chip.
+    const composerSources = useMemo(() => ({
+        '/': {
+            label: 'Skills',
+            kind: 'Skill',
+            icon: 'bi-lightning-charge',
+            items: skillsHook?.skills || [],
+            refresh: skillsHook?.refresh,
+        },
+    }), [skillsHook?.skills, skillsHook?.refresh]);
     const composerTriggers = useMemo(() => Object.keys(composerSources), [composerSources]);
-    const triggerSource = composerTrigger ? composerSources[composerTrigger.trigger] : null;
-    // A source the selected agent can't use opens no list; its hint shows
-    // instead.
-    const composerSource = triggerSource?.enabled ? triggerSource : null;
+    const composerSource = composerTrigger ? composerSources[composerTrigger.trigger] : null;
 
     // Re-derive the open trigger (if any) from the textarea's own current
     // value/caret — covers typing, arrow-key caret moves, and clicks alike.
@@ -176,34 +164,28 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
         el.selectionStart = el.selectionEnd = cursor;
     }, [message]);
 
-    // Tokens already in the message that will take effect when it's sent,
-    // one chip per resolved item, so the user can see what's set. Nudges sent
-    // while the agent runs aren't resolved, so no chips show then.
-    const { composerChips, blockedHint } = useMemo(() => {
+    // Tokens in the message that name an item, one chip per item. The chips
+    // are the selection: what they show is exactly what's sent with the
+    // message. Nudges sent while the agent runs carry no selection, so no
+    // chips show then.
+    const composerChips = useMemo(() => {
+        if (isStreaming) return [];
         const chips = new Map();
-        let hint = null;
-        if (isStreaming) return { composerChips: [], blockedHint: null };
         for (const token of findComposerTokens(message, composerTriggers)) {
             const source = composerSources[token.trigger];
             const item = resolveComposerItem(token.ref, source.items);
             if (!item) continue;
-            if (!source.enabled) {
-                hint = hint ?? source.hint;
-                continue;
-            }
             const key = `${token.trigger}${item.id}`;
-            if (!chips.has(key)) chips.set(key, { key, source, item, tokens: [] });
+            if (!chips.has(key)) chips.set(key, { key, trigger: token.trigger, source, item, tokens: [] });
             chips.get(key).tokens.push(token);
         }
-        return { composerChips: [...chips.values()], blockedHint: hint };
+        return [...chips.values()];
     }, [message, composerTriggers, composerSources, isStreaming]);
 
     const removeComposerChip = useCallback((chip) => {
         setMessage((current) => removeComposerTokens(current, chip.tokens));
         textareaRef.current?.focus();
     }, []);
-
-    const composerHint = triggerSource?.hint ?? blockedHint;
 
     const profileName = selectedProfile?.name;
     const placeholder = stopRequested
@@ -298,7 +280,11 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
         e.preventDefault();
         if (stopRequested || isOffline) return;
         if (!message.trim() && !attachments.length) return;
-        onSend(message.trim(), attachments.length ? attachments : null);
+        // The skills the chips show, sent by id with the name the user saw.
+        const skills = composerChips
+            .filter((chip) => chip.trigger === '/')
+            .map((chip) => ({ id: chip.item.id, name: chip.item.name }));
+        onSend(message.trim(), attachments.length ? attachments : null, skills);
         setMessage('');
         setComposerTrigger(null);
         setAttachments([]);
@@ -475,9 +461,6 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
                             onCommit={commitComposerToken}
                             onClose={() => setComposerTrigger(null)}
                         />
-                    )}
-                    {composerHint && (
-                        <div className={styles.composerHint}>{composerHint}</div>
                     )}
                     {showCornerBtn && (
                         <button
