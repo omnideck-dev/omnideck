@@ -87,6 +87,7 @@ export default function Turn({
     onSelectAgent,
     streaming,
     stalled = false,
+    currentSkillNames,
 }) {
     if (!turn || !Array.isArray(turn.children)) return null;
 
@@ -167,7 +168,13 @@ export default function Turn({
                     );
                 }
                 if (item.kind === 'skills') {
-                    return <SkillLoadedNote key={`s-${item.skills[0].id}`} skills={item.skills} />;
+                    return (
+                        <SkillLoadedNote
+                            key={`s-${item.skills[0].id}`}
+                            skills={item.skills}
+                            currentNames={currentSkillNames}
+                        />
+                    );
                 }
                 if (item.kind === 'error') {
                     return (

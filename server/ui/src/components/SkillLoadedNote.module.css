@@ -39,3 +39,9 @@
 .failed > .bi {
   color: var(--danger);
 }
+
+.currentName {
+  color: var(--text-primary);
+  font-style: italic;
+  font-weight: 600;
+}

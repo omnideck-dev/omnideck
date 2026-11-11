@@ -403,4 +403,19 @@ describe('Turn with mid-turn compaction', () => {
 
         expect(screen.getByTestId('skill-loaded-note')).toHaveTextContent('Gone (unavailable)');
     });
+
+    it('points from the name a skill was used under to its current name', () => {
+        render(<Turn
+            turn={_turn([
+                _userPrompt('/new-skill'),
+                { kind: 'skill_loaded', id: 's1', skillId: 'sk1', skillName: 'New Skill', status: 'loaded' },
+                { kind: 'skill_loaded', id: 's2', skillId: 'sk2', skillName: 'coder', status: 'loaded' },
+            ])}
+            currentSkillNames={new Map([['sk1', 'Testing skill'], ['sk2', 'coder']])}
+        />);
+
+        const note = screen.getByTestId('skill-loaded-note');
+        expect(note).toHaveTextContent('New Skill · now Testing skill');
+        expect(note).not.toHaveTextContent('coder · now');
+    });
 });

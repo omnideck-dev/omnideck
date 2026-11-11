@@ -1,8 +1,9 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import Turn from './Turn.jsx';
 import StarterPrompts from './StarterPrompts.jsx';
 import useAutoScroll from '../hooks/useAutoScroll.js';
 import { useAgentState } from '../features/agent/AgentState.jsx';
+import { useAppData } from '../contexts/AppData.jsx';
 import styles from './ChatMessages.module.css';
 
 /**
@@ -19,6 +20,13 @@ export default function ChatMessages({
     onSelectAgent,
 }) {
     const { agents } = useAgentState();
+    const { skillsHook } = useAppData();
+    // Current skill names by id, so a transcript note can point from the name
+    // a skill had when it was used to the name it has now.
+    const currentSkillNames = useMemo(
+        () => new Map((skillsHook?.skills || []).map((skill) => [skill.id, skill.name])),
+        [skillsHook?.skills],
+    );
 
     // The conversation session rebuilds turns whenever persisted events or
     // the in-flight iteration changes, so transcript growth is the chat's
@@ -94,6 +102,7 @@ export default function ChatMessages({
                                         onSelectAgent={onSelectAgent}
                                         streaming={streaming}
                                         stalled={stalled}
+                                        currentSkillNames={currentSkillNames}
                                     />
                                 );
                             })}
