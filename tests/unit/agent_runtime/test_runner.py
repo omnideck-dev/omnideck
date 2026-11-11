@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from agent_runtime import AgentRuntime, AgentRunner, AgentRunRequest, RunAttachment, RunPolicy, SelectedSkill
+from agent_runtime import AgentRuntime, AgentRunner, AgentRunRequest, RunAttachment, RunPolicy, SkillContextRef
 from agent_runtime import _runner as runner_module
 from agent_runtime import _factory as factory_module
 from agents._agent_profiles import AgentProfile
@@ -330,7 +330,7 @@ async def test_selected_skill_is_loaded_before_the_first_model_call(monkeypatch,
 
     captured = await _run_capturing(monkeypatch, AgentRunRequest(
         conversation_id=conversation_id, message=message, attachments=None, profile_id="profile-1",
-        skills=(SelectedSkill("skill_review", "review-code"),),
+        context=(SkillContextRef("skill_review", "review-code"),),
     ))
 
     assert "skill_review" in captured["skill_ids"]
@@ -338,6 +338,9 @@ async def test_selected_skill_is_loaded_before_the_first_model_call(monkeypatch,
     assert captured["messages"][0]["content"] == message
 
     persisted = load_events_jsonl(conversation_id)
+    user = next(event for event in persisted if event["type"] == "user_message")
+    assert user["content"] == message
+    assert user["context"] == [{"type": "skill", "skill_id": "skill_review", "name": "review-code"}]
     types = [event["type"] for event in persisted]
     assert types.index("user_message") < types.index("skill_loaded")
     loaded = next(event for event in persisted if event["type"] == "skill_loaded")
@@ -354,7 +357,7 @@ async def test_selected_skill_loads_without_granting_the_load_skill_tool(monkeyp
 
     captured = await _run_capturing(monkeypatch, AgentRunRequest(
         conversation_id="runner-composer-locked", message="/review-code go", attachments=None,
-        profile_id="profile-1", skills=(SelectedSkill("skill_review", "review-code"),),
+        profile_id="profile-1", context=(SkillContextRef("skill_review", "review-code"),),
     ), profile=locked)
 
     assert "skill_review" in captured["skill_ids"]
@@ -368,7 +371,7 @@ async def test_missing_selected_skill_is_reported_before_the_model_runs(monkeypa
 
     captured = await _run_capturing(monkeypatch, AgentRunRequest(
         conversation_id=conversation_id, message="/gone do it", attachments=None, profile_id="profile-1",
-        skills=(SelectedSkill("gone", "Deleted skill"),),
+        context=(SkillContextRef("gone", "Deleted skill"),),
     ))
 
     assert "gone" not in captured["skill_ids"]
@@ -401,7 +404,7 @@ async def test_selected_skill_and_attachment_together(monkeypatch, tmp_path) -> 
     captured = await _run_capturing(monkeypatch, AgentRunRequest(
         conversation_id=conversation_id, message="/review-code check this", profile_id="profile-1",
         attachments=[RunAttachment(base64_encoded="aGk=", content_type="text/plain", filename="a.txt")],
-        skills=(SelectedSkill("skill_review", "review-code"),),
+        context=(SkillContextRef("skill_review", "review-code"),),
     ))
 
     assert "skill_review" in captured["skill_ids"]

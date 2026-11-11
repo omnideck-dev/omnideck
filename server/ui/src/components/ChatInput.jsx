@@ -56,7 +56,8 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
     // One entry per composer shortcut trigger character. Each source lists
     // what its overlay offers; a token that resolves to one of its items
     // shows as a chip, and the chips are what's sent with the message, by
-    // id. `kind` and `icon` label the chip.
+    // id. `kind` and `icon` label the chip; `toContext` turns a chip's item
+    // into the typed context item sent with the message.
     const composerSources = useMemo(() => ({
         '/': {
             label: 'Skills',
@@ -64,6 +65,7 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
             icon: 'bi-lightning-charge',
             items: skillsHook?.skills || [],
             refresh: skillsHook?.refresh,
+            toContext: (item) => ({ type: 'skill', skill_id: item.id, name: item.name }),
         },
     }), [skillsHook?.skills, skillsHook?.refresh]);
     const composerTriggers = useMemo(() => Object.keys(composerSources), [composerSources]);
@@ -280,11 +282,9 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
         e.preventDefault();
         if (stopRequested || isOffline) return;
         if (!message.trim() && !attachments.length) return;
-        // The skills the chips show, sent by id with the name the user saw.
-        const skills = composerChips
-            .filter((chip) => chip.trigger === '/')
-            .map((chip) => ({ id: chip.item.id, name: chip.item.name }));
-        onSend(message.trim(), attachments.length ? attachments : null, skills);
+        // What the chips show, sent as typed context items.
+        const context = composerChips.map((chip) => chip.source.toContext(chip.item));
+        onSend(message.trim(), attachments.length ? attachments : null, context);
         setMessage('');
         setComposerTrigger(null);
         setAttachments([]);

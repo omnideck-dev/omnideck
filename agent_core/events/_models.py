@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Union
 
 from pydantic import BaseModel, Field
 
@@ -324,6 +324,26 @@ class UserAttachment(BaseModel):
     path: str
 
 
+class SkillContext(BaseModel):
+    """A skill the user explicitly selected for one message.
+
+    Attributes:
+        type: Discriminator; always "skill".
+        skill_id: Id of the selected skill.
+        name: The skill's name as the user saw it when selecting it, kept so
+            history reads the same after a rename.
+    """
+
+    type: Literal["skill"]
+    skill_id: str
+    name: str
+
+
+# What a user can explicitly attach to a message, one variant per kind.
+# Agents and artifacts become further variants.
+MessageContext = Annotated[Union[SkillContext], Field(discriminator="type")]
+
+
 class UserMessagePayload(BaseModel):
     """User-authored input to an agent — the prompt that opens a turn,
     or a nudge injected mid-turn into a running agent (root or sub-agent).
@@ -336,12 +356,15 @@ class UserMessagePayload(BaseModel):
         is_nudge: False for the turn-opening prompt; True for queued
             user input that landed between iterations of an already-
             running turn.
+        context: Items the user explicitly selected for this message, such
+            as skills, in the order they were selected.
     """
 
     type: Literal["user_message"]
     content: str
     attachments: list[UserAttachment] = Field(default_factory=list)
     is_nudge: bool = False
+    context: list[MessageContext] = Field(default_factory=list)
 
 
 class IterationToolCall(BaseModel):
@@ -582,6 +605,8 @@ __all__ = [
     "AudioPlaybackPayload",
     "BrowserScreenshotPayload",
     "CompactionPayload",
+    "SkillContext",
+    "MessageContext",
     "SkillLoadedPayload",
     "CompactionScope",
     "CompactionStats",

@@ -361,3 +361,17 @@ describe('projectTurns skill_loaded', () => {
         });
     });
 });
+
+describe('projectTurns user context', () => {
+    it('keeps the context recorded on a user message, and none for older messages', () => {
+        const context = [{ type: 'skill', skill_id: 'j1', name: 'Joke teller' }];
+        const turns = projectTurns([
+            _agentStarted(1),
+            { ..._userMsg('/joke-teller', { id: 'evt_u1' }), context },
+            _agentStarted(2),
+            _userMsg('plain older message', { id: 'evt_u2' }),
+        ]);
+        expect(turns[0].children[0].context).toEqual(context);
+        expect(turns[1].children[0].context).toEqual([]);
+    });
+});

@@ -1,7 +1,7 @@
 """Composer effects: what a user's explicit composer selections do to a run.
 
-When a user picks a shortcut in the chat composer — a skill via `/` — the
-composer sends that selection by id alongside the message. Each selection
+When a user picks an item in the chat composer — a skill via `/` — the
+composer sends it as a typed context item alongside the message. Each item
 becomes an effect the runner applies before the agent runs: a selected skill
 is loaded, so its instructions and tools are present from the first model
 call. The message itself reaches the model exactly as typed.
@@ -22,7 +22,7 @@ from agent_core.events import AgentEvent, SkillLoadedPayload, publish_event
 from skills._policy import is_reserved_skill_id
 from skills._store import get_skill_record
 
-from ._models import SelectedSkill
+from ._models import RunContext, SkillContextRef
 
 logger = logging.getLogger(__name__)
 
@@ -31,21 +31,21 @@ logger = logging.getLogger(__name__)
 class LoadSkill:
     """Attach a selected skill to the agent before it runs."""
 
-    selection: SelectedSkill
+    selection: SkillContextRef
 
 
 # One variant per kind of composer effect.
 ComposerEffect = LoadSkill
 
 
-def composer_effects(skills: Sequence[SelectedSkill]) -> list[ComposerEffect]:
-    """The effects of a run's composer selections, in order, each skill once."""
+def composer_effects(context: Sequence[RunContext]) -> list[ComposerEffect]:
+    """The effects of a run's context items, in order, each skill once."""
     effects: list[ComposerEffect] = []
     seen: set[str] = set()
-    for skill in skills:
-        if skill.id not in seen:
-            seen.add(skill.id)
-            effects.append(LoadSkill(skill))
+    for item in context:
+        if item.skill_id not in seen:
+            seen.add(item.skill_id)
+            effects.append(LoadSkill(item))
     return effects
 
 
@@ -61,9 +61,11 @@ async def _load_skill(effect: LoadSkill, capabilities: AgentCapabilities) -> Non
     # or the name the user saw if it can no longer be found.
     name = selection.name
     status: Literal["loaded", "already_loaded", "unavailable"]
-    record = None if is_reserved_skill_id(selection.id) else await asyncio.to_thread(get_skill_record, selection.id)
+    record = None
+    if not is_reserved_skill_id(selection.skill_id):
+        record = await asyncio.to_thread(get_skill_record, selection.skill_id)
     if record is None:
-        logger.warning("selected skill %r no longer exists", selection.id)
+        logger.warning("selected skill %r no longer exists", selection.skill_id)
         status = "unavailable"
     elif record.id in capabilities.skill_ids:
         name = record.name
@@ -77,11 +79,11 @@ async def _load_skill(effect: LoadSkill, capabilities: AgentCapabilities) -> Non
         resolver = capabilities.skill_resolver
         skill = await resolver(record.name) if resolver is not None else None
         if skill is None:
-            logger.warning("selected skill %r could not be resolved", selection.id)
+            logger.warning("selected skill %r could not be resolved", selection.skill_id)
             status = "unavailable"
         else:
             capabilities.load(skill)
             status = "loaded"
     publish_event(AgentEvent(payload=SkillLoadedPayload(
-        type="skill_loaded", skill_id=selection.id, skill_name=name, status=status,
+        type="skill_loaded", skill_id=selection.skill_id, skill_name=name, status=status,
     )))

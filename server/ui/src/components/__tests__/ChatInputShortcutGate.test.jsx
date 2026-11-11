@@ -36,6 +36,6 @@ describe('ChatInput with a profile that cannot load skills on its own', () => {
         expect(screen.getByTestId('composer-shortcuts')).toHaveTextContent('review-code');
 
         await user.keyboard('{Enter}');
-        expect(onSend).toHaveBeenCalledWith('/review-code', null, [{ id: 'skill_review', name: 'review-code' }]);
+        expect(onSend).toHaveBeenCalledWith('/review-code', null, [{ type: 'skill', skill_id: 'skill_review', name: 'review-code' }]);
     });
 });

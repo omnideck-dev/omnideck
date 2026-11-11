@@ -16,10 +16,10 @@ from __future__ import annotations
 import json
 import logging
 from contextlib import suppress
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated, Literal, Union
 
 from aiohttp import web
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from agent_runtime import (
     RunConflictError,
@@ -27,7 +27,7 @@ from agent_runtime import (
     AgentRunRequest,
     InvalidRunCursorError,
     RunAttachment,
-    SelectedSkill,
+    SkillContextRef,
 )
 from server._agent_runtime import AGENT_RUNTIME_KEY
 from server._run_activity import run_activity_handler
@@ -51,11 +51,16 @@ class Attachment(BaseModel):
     filename: str | None = None
 
 
-class ComposerSkill(BaseModel):
-    """A skill the user selected in the composer: its id and displayed name."""
+class SkillContextInput(BaseModel):
+    """A skill the user selected in the composer, with the name they saw."""
 
-    id: str
+    type: Literal["skill"]
+    skill_id: str
     name: str
+
+
+# One variant per kind of context the composer can attach.
+ContextInput = Annotated[Union[SkillContextInput], Field(discriminator="type")]
 
 
 class ChatRequest(BaseModel):
@@ -63,7 +68,7 @@ class ChatRequest(BaseModel):
 
     message: str
     data: list[Attachment] | None = None
-    skills: list[ComposerSkill] = []
+    context: list[ContextInput] = []
     profile_id: str | None = None
     conversation_id: str | None = None
 
@@ -153,7 +158,7 @@ async def chat_handler(request: Request) -> StreamResponse:
             message=user_query,
             attachments=run_attachments,
             profile_id=payload.profile_id,
-            skills=tuple(SelectedSkill(id=skill.id, name=skill.name) for skill in payload.skills),
+            context=tuple(SkillContextRef(skill_id=item.skill_id, name=item.name) for item in payload.context),
         ))
     except RunConflictError:
         return web.json_response(

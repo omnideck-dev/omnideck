@@ -767,7 +767,7 @@ describe('ChatInput', () => {
             expect(screen.getAllByRole('button', { name: 'Remove skill summarize' })).toHaveLength(1);
         });
 
-        it('sends the chips\' skills, by id with the shown name, with the message', async () => {
+        it('sends the chips as typed context items with the message', async () => {
             const onSend = vi.fn();
             const user = userEvent.setup();
             render(<ChatInput onSend={onSend} isStreaming={false} />);
@@ -780,7 +780,7 @@ describe('ChatInput', () => {
             expect(onSend).toHaveBeenCalledWith(
                 '/review-code check /etc/hosts',
                 null,
-                [{ id: 'skill_review', name: 'review-code' }],
+                [{ type: 'skill', skill_id: 'skill_review', name: 'review-code' }],
             );
         });
 

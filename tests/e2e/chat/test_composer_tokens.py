@@ -9,10 +9,10 @@ from tests.e2e._protocol import model_script
 from tests.e2e._runtime import agent_profile, api, delete_conversation
 
 
-def chat(conversation, message, profile_id, skills=None):
+def chat(conversation, message, profile_id, context=None):
     body = {"conversation_id": conversation, "profile_id": profile_id, "message": message}
-    if skills:
-        body["skills"] = skills
+    if context:
+        body["context"] = context
     response = api().post("/api/chat", data=body, timeout=30)
     assert response.status == 200, response.text
     return [json.loads(line)["payload"] for line in response.text.splitlines() if line.strip()]
@@ -27,10 +27,12 @@ def test_selected_skill_loads_without_a_model_tool_call(page: Page):
     with agent_profile(skills=[]) as profile:
         try:
             message = "/coder " + model_script({"content": "done"})
-            payloads = chat(conversation, message, profile["id"], skills=[{"id": "coder", "name": "coder"}])
+            payloads = chat(conversation, message, profile["id"], context=[{"type": "skill", "skill_id": "coder", "name": "coder"}])
 
             assert [(p["skill_id"], p["status"]) for p in of_type(payloads, "skill_loaded")] == [("coder", "loaded")]
             assert not [p for p in of_type(payloads, "tool_call") if p["name"] == "load_skill"]
+            user = of_type(payloads, "user_message")[0]
+            assert user["context"] == [{"type": "skill", "skill_id": "coder", "name": "coder"}]
         finally:
             delete_conversation(conversation)
 

@@ -88,6 +88,7 @@ export function projectTurns(events) {
                 id: ev.id,
                 content: ev.content || '',
                 attachments: ev.attachments || [],
+                context: ev.context || [],
                 isNudge: !!ev.is_nudge,
             });
         } else if (t === EVENT.ITERATION) {

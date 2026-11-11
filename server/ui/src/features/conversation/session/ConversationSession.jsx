@@ -35,9 +35,9 @@ export function ConversationSessionProvider({ children }) {
         appEffectDispatch,
     });
 
-    const sendMessage = useCallback((message, attachments, profileId, skills) => {
+    const sendMessage = useCallback((message, attachments, profileId, context) => {
         if (!message && !attachments?.length) {
-            return session.sendMessage(message, attachments, profileId, skills);
+            return session.sendMessage(message, attachments, profileId, context);
         }
         if (session.isOffline) return null;
         if (isFreshConversationRef.current) {
@@ -47,7 +47,7 @@ export function ConversationSessionProvider({ children }) {
                 firstMessage: message || '',
             });
         }
-        return session.sendMessage(message, attachments, profileId, skills);
+        return session.sendMessage(message, attachments, profileId, context);
     }, [
         addStartedConversation,
         session.activeConversationId,

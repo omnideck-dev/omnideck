@@ -4,7 +4,7 @@ import pytest
 
 from agent_core.agent_capabilities import AgentCapabilities
 from agent_core.skills import Skill
-from agent_runtime import SelectedSkill
+from agent_runtime import SkillContextRef
 from agent_runtime._composer_effects import LoadSkill, apply_composer_effects, composer_effects
 from skills._store import SkillRecord, save_skill_record
 
@@ -41,7 +41,7 @@ def _capabilities(*records: SkillRecord) -> AgentCapabilities:
 
 
 def test_effects_keep_selection_order_and_drop_repeats():
-    a, b = SelectedSkill("a", "A"), SelectedSkill("b", "B")
+    a, b = SkillContextRef("a", "A"), SkillContextRef("b", "B")
     effects = composer_effects([a, b, a])
     assert effects == [LoadSkill(a), LoadSkill(b)]
 
@@ -50,7 +50,7 @@ async def test_selected_skill_is_loaded_and_reported(published):
     record = _make_skill("Joke teller", "4dffecbf8559")
     capabilities = _capabilities(record)
 
-    await apply_composer_effects(composer_effects([SelectedSkill("4dffecbf8559", "Joke teller")]), capabilities)
+    await apply_composer_effects(composer_effects([SkillContextRef("4dffecbf8559", "Joke teller")]), capabilities)
 
     assert capabilities.loaded_skill_ids == frozenset({"4dffecbf8559"})
     assert [(p.skill_id, p.skill_name, p.status) for p in published] == [("4dffecbf8559", "Joke teller", "loaded")]
@@ -63,7 +63,7 @@ async def test_loading_is_by_id_and_records_the_current_name(published):
     lower = _make_skill("foo", "skill_lower")
     capabilities = _capabilities(lower)
 
-    await apply_composer_effects(composer_effects([SelectedSkill("skill_lower", "an older label")]), capabilities)
+    await apply_composer_effects(composer_effects([SkillContextRef("skill_lower", "an older label")]), capabilities)
 
     assert capabilities.loaded_skill_ids == frozenset({"skill_lower"})
     assert published[0].skill_name == "foo"
@@ -74,7 +74,7 @@ async def test_already_attached_skill_is_not_loaded_again(published):
     capabilities = _capabilities(record)
     capabilities.add(_runtime_skill(record))
 
-    await apply_composer_effects(composer_effects([SelectedSkill("coder", "coder")]), capabilities)
+    await apply_composer_effects(composer_effects([SkillContextRef("coder", "coder")]), capabilities)
 
     assert capabilities.loaded_skill_ids == frozenset()
     assert [p.status for p in published] == ["already_loaded"]
@@ -83,7 +83,7 @@ async def test_already_attached_skill_is_not_loaded_again(published):
 async def test_missing_skill_is_reported_with_the_name_the_user_saw(published):
     capabilities = _capabilities()
 
-    await apply_composer_effects(composer_effects([SelectedSkill("gone", "Deleted skill")]), capabilities)
+    await apply_composer_effects(composer_effects([SkillContextRef("gone", "Deleted skill")]), capabilities)
 
     assert capabilities.skill_ids == frozenset()
     assert [(p.skill_name, p.status) for p in published] == [("Deleted skill", "unavailable")]
@@ -93,7 +93,7 @@ async def test_reserved_skill_is_never_loaded(published):
     record = _make_skill("browser", "browser")
     capabilities = _capabilities(record)
 
-    await apply_composer_effects(composer_effects([SelectedSkill("browser", "browser")]), capabilities)
+    await apply_composer_effects(composer_effects([SkillContextRef("browser", "browser")]), capabilities)
 
     assert capabilities.skill_ids == frozenset()
     assert [p.status for p in published] == ["unavailable"]

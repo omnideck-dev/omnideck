@@ -162,6 +162,7 @@ export type TranscriptItem =
         id: string;
         content: string;
         attachments: Array<unknown>;
+        context: Array<import('./conversationEvents.generated').SkillContext>;
         isNudge: boolean;
     }
     | {

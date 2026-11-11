@@ -47,6 +47,12 @@ export interface IterationToolCall {
     arguments: Record<string, unknown> | null;
 }
 
+export interface SkillContext {
+    type: 'skill';
+    skill_id: string;
+    name: string;
+}
+
 export interface UserAttachment {
     filename: string;
     content_type: string;
@@ -165,6 +171,7 @@ export interface UserMessagePayload {
     content: string;
     attachments: Array<UserAttachment>;
     is_nudge: boolean;
+    context: Array<SkillContext>;
 }
 
 export interface IterationPayload {

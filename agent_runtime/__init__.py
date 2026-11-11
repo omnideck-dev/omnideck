@@ -8,7 +8,8 @@ from ._models import (
     RunPolicy,
     RunResult,
     RunSnapshot,
-    SelectedSkill,
+    RunContext,
+    SkillContextRef,
     SequencedEvent,
 )
 from ._factory import AgentFactory, PreparedAgent
@@ -26,7 +27,8 @@ __all__ = [
     "RunPolicy",
     "RunResult",
     "RunSnapshot",
-    "SelectedSkill",
+    "RunContext",
+    "SkillContextRef",
     "SequencedEvent",
     "AgentFactory",
     "PreparedAgent",
