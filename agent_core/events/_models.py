@@ -357,7 +357,8 @@ class UserMessagePayload(BaseModel):
             user input that landed between iterations of an already-
             running turn.
         context: Items the user explicitly selected for this message, such
-            as skills, in the order they were selected.
+            as skills, in the order they appear in the message, which is
+            also the order selected skills are loaded.
     """
 
     type: Literal["user_message"]

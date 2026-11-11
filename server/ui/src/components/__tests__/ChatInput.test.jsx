@@ -490,6 +490,23 @@ describe('ChatInput', () => {
             expect(textarea.value).toBe('/review-code ');
         });
 
+        it('sends on Enter when the typed token already names the highlighted skill', async () => {
+            const onSend = vi.fn();
+            const user = userEvent.setup();
+            render(<ChatInput onSend={onSend} isStreaming={false} />);
+
+            const textarea = screen.getByPlaceholderText('Message Omnideck…');
+            await user.type(textarea, 'summarize this /review-code');
+            await screen.findByRole('listbox', { name: 'Skills' });
+            await user.keyboard('{Enter}');
+
+            expect(onSend).toHaveBeenCalledWith(
+                'summarize this /review-code',
+                null,
+                [{ type: 'skill', skill_id: 'skill_review', name: 'review-code' }],
+            );
+        });
+
         it('sends on Enter after a bare trigger the user has not moved into', async () => {
             const onSend = vi.fn();
             const user = userEvent.setup();
@@ -593,7 +610,7 @@ describe('ChatInput', () => {
             // hit with no event-loop turn in between.
             expect(() => {
                 act(() => {
-                    fireEvent.change(textarea, { target: { value: '/summarize' } });
+                    fireEvent.change(textarea, { target: { value: '/summ' } });
                     fireEvent.keyDown(textarea, { key: 'Enter' });
                 });
             }).not.toThrow();

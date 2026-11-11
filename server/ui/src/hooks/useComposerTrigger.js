@@ -76,7 +76,7 @@ export function applyComposerToken(text, trigger, replacement) {
 /**
  * Find every shortcut token in `text`: a trigger character at the start of
  * the message or after whitespace, followed by a run of non-whitespace.
- * This is the same token rule the server applies when the message is sent.
+ * The chips the composer shows, and so what it sends, come from these.
  *
  * @param {string} text
  * @param {string[]} triggers
@@ -100,8 +100,8 @@ export function findComposerTokens(text, triggers) {
 }
 
 /**
- * Resolve a token's name the way the server does: exact id, then exact name,
- * then a case-insensitive name, id, or slug match that fits exactly one item.
+ * Resolve a token to an item: exact id, then exact name, then a
+ * case-insensitive name, id, or slug match that fits exactly one item.
  *
  * @param {string} ref
  * @param {Array<{id: string, name: string}>} items
@@ -120,16 +120,17 @@ export function resolveComposerItem(ref, items) {
 }
 
 /**
- * The token to insert for `item`: its name when that has no whitespace,
- * else its slug, else its id — the first that resolves back to `item`.
- * The id always does, so the inserted token can never name another item.
+ * The token to insert for `item`: its slug, or its id when the slug is empty
+ * or would match another item. This is the token the model sees beside the
+ * skill's heading in the system prompt, so the two read the same. The id
+ * always resolves back to `item`, so the inserted token never names another.
  *
  * @param {{id: string, name: string}} item
  * @param {Array<{id: string, name: string}>} items
  * @returns {string}
  */
 export function composerTokenFor(item, items) {
-    const candidates = [!/\s/.test(item.name) && item.name, slugify(item.name), item.id];
+    const candidates = [slugify(item.name), item.id];
     return candidates.find((candidate) => candidate && resolveComposerItem(candidate, items)?.id === item.id) ?? item.id;
 }
 

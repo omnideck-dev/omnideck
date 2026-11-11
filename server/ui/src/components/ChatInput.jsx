@@ -354,11 +354,17 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
                     }
                     return;
                 }
-                // A bare trigger with nothing typed after it (a message ending
-                // in " /") sends on Enter unless the user has moved into the
-                // list. Tab always picks.
-                const bareEnter = e.key === 'Enter' && !composerQuery && !composerNavigatedRef.current;
-                if ((e.key === 'Enter' || e.key === 'Tab') && !bareEnter) {
+                // Enter sends instead of picking when there's nothing to pick:
+                // a bare trigger (a message ending in " /"), or a token that
+                // already names the highlighted item, whose chip is showing.
+                // Moving into the list with the arrows makes Enter pick again;
+                // Tab always picks.
+                const highlighted = composerItems[composerActiveIndex] ?? composerItems[0];
+                const alreadyNamed = !!composerQuery
+                    && resolveComposerItem(composerQuery, composerPool)?.id === highlighted?.id;
+                const enterSends = e.key === 'Enter' && !composerNavigatedRef.current
+                    && (!composerQuery || alreadyNamed);
+                if ((e.key === 'Enter' || e.key === 'Tab') && !enterSends) {
                     e.preventDefault();
                     e.stopPropagation();
                     // Fall back to the first row if the stored index is stale

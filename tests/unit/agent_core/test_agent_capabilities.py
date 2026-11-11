@@ -122,6 +122,14 @@ class TestAgentCapabilities:
         ls.add(Skill(id="sk_1", name="!!!", description="", prompt="p", tools=[]))
         assert "### !!! (/sk_1)" in ls.build_prompt_extensions()
 
+    def test_already_loaded_line_only_when_skills_are_attached(self):
+        """An agent with capabilities but no skills isn't told about load_skill."""
+        caps = AgentCapabilities([])
+        caps.add_capability(AgentCapability("selected-tools", "Tools", "", []))
+        assert "load_skill" not in caps.build_prompt_extensions()
+        caps.add(_make_skill("coder", ["a"]))
+        assert "already loaded" in caps.build_prompt_extensions()
+
     def test_add_idempotent(self):
         """Adding the same skill twice is a no-op."""
         sk = _make_skill("sk", ["t"])

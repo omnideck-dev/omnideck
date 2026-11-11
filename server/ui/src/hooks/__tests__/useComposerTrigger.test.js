@@ -101,11 +101,13 @@ describe('composerTokenFor', () => {
         }
     });
 
-    it('prefers the name, then the slug, then the id', () => {
+    it('inserts the slug, falling back to the id when the slug is empty or ambiguous', () => {
         const byId = (id) => shared.skills.find((s) => s.id === id);
         expect(composerTokenFor(byId('skill_review'), shared.skills)).toBe('review-code');
         expect(composerTokenFor(byId('4dffecbf8559'), shared.skills)).toBe('joke-teller');
         expect(composerTokenFor(byId('skill_clash_1'), shared.skills)).toBe('skill_clash_1');
+        expect(composerTokenFor({ id: 'x1', name: 'code_review' }, [{ id: 'x1', name: 'code_review' }])).toBe('code-review');
+        expect(composerTokenFor({ id: 'jp1', name: '日本語' }, [{ id: 'jp1', name: '日本語' }])).toBe('jp1');
     });
 });
 

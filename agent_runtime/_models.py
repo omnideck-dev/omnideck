@@ -63,7 +63,7 @@ class AgentRunRequest:
     attachments: Sequence[RunAttachment] | None
     profile_id: str | None
     policy: RunPolicy = RunPolicy()
-    # Items the user explicitly selected for this message, in order.
+    # Items the user explicitly selected for this message, in message order.
     context: Sequence[RunContext] = ()
 
 

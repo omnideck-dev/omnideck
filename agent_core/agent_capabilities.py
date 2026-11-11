@@ -136,10 +136,12 @@ class AgentCapabilities:
             *(f"### {capability.name}\n{capability.prompt}" for capability in self._capabilities.values()),
             *(f"### {skill.name} (/{skill_slug(skill.name) or skill.id})\n{skill.prompt}" for skill in self._skills.values()),
         ]
-        # Without this the model, prompted elsewhere to load skills on
-        # demand, re-loads a skill that is already attached.
-        preamble = "Everything below is already loaded and its tools are available now; don't call load_skill for these."
-        return "\n── Capabilities & Skills ──\n\n" + preamble + "\n\n" + "\n\n".join(parts)
+        header = "\n── Capabilities & Skills ──\n\n"
+        if self._skills:
+            # Without this the model, prompted elsewhere to load skills on
+            # demand, re-loads a skill that is already attached.
+            header += "Everything below is already loaded and its tools are available now; don't call load_skill for these.\n\n"
+        return header + "\n\n".join(parts)
 
 
 def get_active_agent_capabilities() -> "AgentCapabilities | None":

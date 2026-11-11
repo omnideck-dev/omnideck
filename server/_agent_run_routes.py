@@ -68,7 +68,8 @@ class ChatRequest(BaseModel):
 
     message: str
     data: list[Attachment] | None = None
-    context: list[ContextInput] = []
+    # Bounded: each item is a store lookup and a recorded event.
+    context: list[ContextInput] = Field(default_factory=list, max_length=20)
     profile_id: str | None = None
     conversation_id: str | None = None
 

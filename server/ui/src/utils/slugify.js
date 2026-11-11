@@ -1,9 +1,10 @@
 /**
  * Kebab-case a display name for use as a composer token.
  *
- * Must stay behaviorally identical to the server's copy used to resolve
- * composer tokens — there's no shared runtime between the two, so any drift
- * here silently breaks resolution for a token this function produced.
+ * Must stay behaviorally identical to the server's copy, which labels each
+ * skill with its token in the system prompt — there's no shared runtime
+ * between the two, so any drift leaves the token a user typed different
+ * from the one the model sees.
  *
  * @param {string} text
  * @returns {string}

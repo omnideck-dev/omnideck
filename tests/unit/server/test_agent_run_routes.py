@@ -76,3 +76,15 @@ async def test_chat_rejects_an_unknown_context_type():
     with pytest.raises(ValidationError):
         await routes.chat_handler(req)
     manager.start.assert_not_called()
+
+
+@pytest.mark.unit
+async def test_chat_rejects_too_many_context_items():
+    req, manager = _make_request({
+        "message": "hi",
+        "conversation_id": "conv-1",
+        "context": [{"type": "skill", "skill_id": f"s{i}", "name": f"S{i}"} for i in range(21)],
+    })
+    with pytest.raises(ValidationError):
+        await routes.chat_handler(req)
+    manager.start.assert_not_called()
