@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { detectComposerTrigger, applyComposerToken } from '../useComposerTrigger.js';
+import {
+    detectComposerTrigger,
+    applyComposerToken,
+    findComposerTokens,
+    resolveComposerItem,
+    removeComposerTokens,
+} from '../useComposerTrigger.js';
 
 const TRIGGERS = ['/'];
 
@@ -60,5 +66,53 @@ describe('applyComposerToken', () => {
     it('replaces the whole query run even if the cursor was mid-token', () => {
         const result = applyComposerToken('/review-code', { triggerIndex: 0 }, '/review-code');
         expect(result.text).toBe('/review-code ');
+    });
+});
+
+describe('findComposerTokens', () => {
+    it('finds tokens at the start and after whitespace only', () => {
+        expect(findComposerTokens('/a then b/c and /d', TRIGGERS).map((t) => t.ref)).toEqual(['a', 'd']);
+    });
+
+    it('treats a path as a single token', () => {
+        expect(findComposerTokens('look at /tmp/x.txt', TRIGGERS)).toEqual([
+            { trigger: '/', ref: 'tmp/x.txt', start: 8, end: 18 },
+        ]);
+    });
+
+    it('ignores a bare trigger with no name', () => {
+        expect(findComposerTokens('a / b', TRIGGERS)).toEqual([]);
+    });
+});
+
+describe('resolveComposerItem', () => {
+    const items = [
+        { id: 'skill_review', name: 'review-code' },
+        { id: '4dffecbf8559', name: 'Joke teller' },
+    ];
+
+    it('resolves by name, id, or slug, ignoring case', () => {
+        expect(resolveComposerItem('REVIEW-CODE', items).id).toBe('skill_review');
+        expect(resolveComposerItem('4dffecbf8559', items).name).toBe('Joke teller');
+        expect(resolveComposerItem('joke-teller', items).id).toBe('4dffecbf8559');
+    });
+
+    it('returns null for unknown names and ambiguous slugs', () => {
+        expect(resolveComposerItem('etc', items)).toBeNull();
+        const clashing = [...items, { id: 'other', name: 'joke   TELLER!!' }];
+        expect(resolveComposerItem('joke-teller', clashing)).toBeNull();
+    });
+});
+
+describe('removeComposerTokens', () => {
+    it('removes each token with one adjoining space', () => {
+        const text = '/a do this /a then that';
+        const tokens = findComposerTokens(text, TRIGGERS);
+        expect(removeComposerTokens(text, tokens)).toBe('do this then that');
+    });
+
+    it('takes the preceding space for a token at the end', () => {
+        const text = 'do this /a';
+        expect(removeComposerTokens(text, findComposerTokens(text, TRIGGERS))).toBe('do this');
     });
 });

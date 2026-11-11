@@ -1,6 +1,9 @@
+import { slugify } from '../utils/slugify.js';
+
 /**
- * Pure detection of a composer shortcut trigger at the cursor, plus a
- * splice helper to commit a picked item back into the message text. No DOM
+ * Pure helpers for composer shortcut tokens: detecting the trigger at the
+ * cursor, splicing a picked item into the text, and finding, resolving, and
+ * removing the tokens already in a message. No DOM
  * dependency — callers derive `text`/`cursorIndex` from the textarea
  * themselves, which keeps this unit-testable without rendering anything.
  */
@@ -66,4 +69,67 @@ export function applyComposerToken(text, trigger, replacement) {
         text: `${before}${inserted}${after}`,
         cursorIndex: before.length + inserted.length,
     };
+}
+
+/**
+ * Find every shortcut token in `text`: a trigger character at the start of
+ * the message or after whitespace, followed by a run of non-whitespace.
+ * This is the same token rule the server applies when the message is sent.
+ *
+ * @param {string} text
+ * @param {string[]} triggers
+ * @returns {Array<{trigger: string, ref: string, start: number, end: number}>}
+ */
+export function findComposerTokens(text, triggers) {
+    const tokens = [];
+    let i = 0;
+    while (i < text.length) {
+        const atBoundary = i === 0 || /\s/.test(text[i - 1]);
+        if (atBoundary && triggers.includes(text[i])) {
+            let end = i + 1;
+            while (end < text.length && !/\s/.test(text[end])) end += 1;
+            if (end > i + 1) tokens.push({ trigger: text[i], ref: text.slice(i + 1, end), start: i, end });
+            i = end;
+        } else {
+            i += 1;
+        }
+    }
+    return tokens;
+}
+
+/**
+ * Resolve a token's name the way the server does: exact name or id
+ * (case-insensitive), else a slug that matches exactly one item.
+ *
+ * @param {string} ref
+ * @param {Array<{id: string, name: string}>} items
+ * @returns {object | null}
+ */
+export function resolveComposerItem(ref, items) {
+    const lowered = ref.toLowerCase();
+    const exact = items.find((item) => item.name.toLowerCase() === lowered || item.id.toLowerCase() === lowered);
+    if (exact) return exact;
+    const slugMatches = items.filter((item) => slugify(item.name) === lowered);
+    return slugMatches.length === 1 ? slugMatches[0] : null;
+}
+
+/**
+ * Remove the given tokens from `text`, each with one adjoining space so no
+ * double space is left behind.
+ *
+ * @param {string} text
+ * @param {Array<{start: number, end: number}>} tokens
+ * @returns {string}
+ */
+export function removeComposerTokens(text, tokens) {
+    let result = text;
+    // Right to left, so earlier offsets stay valid.
+    for (const { start, end } of [...tokens].sort((a, b) => b.start - a.start)) {
+        let from = start;
+        let to = end;
+        if (result[to] === ' ') to += 1;
+        else if (from > 0 && result[from - 1] === ' ') from -= 1;
+        result = result.slice(0, from) + result.slice(to);
+    }
+    return result;
 }

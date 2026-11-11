@@ -8,7 +8,13 @@ import ProfileSelector from './ProfileSelector.jsx';
 import AttachmentChip from './AttachmentChip.jsx';
 import ComposerAutocomplete from './ComposerAutocomplete.jsx';
 import { loadChatDraft, saveChatDraft } from '../utils/chatDraftStorage.js';
-import { detectComposerTrigger, applyComposerToken } from '../hooks/useComposerTrigger.js';
+import {
+    detectComposerTrigger,
+    applyComposerToken,
+    findComposerTokens,
+    resolveComposerItem,
+    removeComposerTokens,
+} from '../hooks/useComposerTrigger.js';
 import { slugify } from '../utils/slugify.js';
 import { useAppData } from '../contexts/AppData.jsx';
 
@@ -46,19 +52,26 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
 
     // One entry per composer shortcut trigger character. Each source lists
     // what its overlay offers; the server resolves the inserted token when
-    // the message is sent. `hint` explains when the selected agent can't act
-    // on the shortcut, in which case the token is sent as plain text.
-    const composerSources = useMemo(() => ({
-        '/': {
-            label: 'Skills',
-            items: skillsHook?.skills || [],
-            loading: !!skillsHook?.loading,
-            refresh: skillsHook?.refresh,
-            hint: selectedProfile?.allow_load_skills === false
-                ? `${selectedProfile.name} can't load skills — this will be sent as plain text.`
-                : null,
-        },
-    }), [skillsHook?.skills, skillsHook?.loading, skillsHook?.refresh, selectedProfile]);
+    // the message is sent. A source is `enabled` when the selected agent can
+    // act on it; otherwise its tokens are sent as plain text and `hint` says
+    // why. `kind` and `icon` label the chip shown for a resolved token.
+    const composerSources = useMemo(() => {
+        const canLoadSkills = selectedProfile?.allow_load_skills !== false;
+        return {
+            '/': {
+                label: 'Skills',
+                kind: 'Skill',
+                icon: 'bi-lightning-charge',
+                items: skillsHook?.skills || [],
+                loading: !!skillsHook?.loading,
+                refresh: skillsHook?.refresh,
+                enabled: canLoadSkills,
+                hint: canLoadSkills
+                    ? null
+                    : `${selectedProfile.name} can't load skills — this will be sent as plain text.`,
+            },
+        };
+    }, [skillsHook?.skills, skillsHook?.loading, skillsHook?.refresh, selectedProfile]);
     const composerTriggers = useMemo(() => Object.keys(composerSources), [composerSources]);
     const composerSource = composerTrigger ? composerSources[composerTrigger.trigger] : null;
 
@@ -159,7 +172,34 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
         el.selectionStart = el.selectionEnd = cursor;
     }, [message]);
 
-    const composerHint = composerSource?.hint ?? null;
+    // Tokens already in the message that will take effect when it's sent,
+    // one chip per resolved item, so the user can see what's set. Nudges sent
+    // while the agent runs aren't resolved, so no chips show then.
+    const { composerChips, blockedHint } = useMemo(() => {
+        const chips = new Map();
+        let hint = null;
+        if (isStreaming) return { composerChips: [], blockedHint: null };
+        for (const token of findComposerTokens(message, composerTriggers)) {
+            const source = composerSources[token.trigger];
+            const item = resolveComposerItem(token.ref, source.items);
+            if (!item) continue;
+            if (!source.enabled) {
+                hint = hint ?? source.hint;
+                continue;
+            }
+            const key = `${token.trigger}${item.id}`;
+            if (!chips.has(key)) chips.set(key, { key, source, item, tokens: [] });
+            chips.get(key).tokens.push(token);
+        }
+        return { composerChips: [...chips.values()], blockedHint: hint };
+    }, [message, composerTriggers, composerSources, isStreaming]);
+
+    const removeComposerChip = useCallback((chip) => {
+        setMessage((current) => removeComposerTokens(current, chip.tokens));
+        textareaRef.current?.focus();
+    }, []);
+
+    const composerHint = composerSource?.hint ?? blockedHint;
 
     const profileName = selectedProfile?.name;
     const placeholder = stopRequested
@@ -380,6 +420,29 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
                                 sizeBytes={att.base64 ? _base64Bytes(att.base64) : undefined}
                                 onRemove={() => removeAttachment(i)}
                             />
+                        ))}
+                    </div>
+                )}
+                {composerChips.length > 0 && (
+                    <div className={styles.shortcutTray} data-testid="composer-shortcuts">
+                        {composerChips.map((chip) => (
+                            <span
+                                key={chip.key}
+                                className={styles.shortcutChip}
+                                title={chip.item.description || undefined}
+                            >
+                                <i className={`bi ${chip.source.icon}`} aria-hidden="true" />
+                                <span className={styles.shortcutKind}>{chip.source.kind}</span>
+                                <span className={styles.shortcutName}>{chip.item.name}</span>
+                                <button
+                                    type="button"
+                                    className={styles.shortcutRemove}
+                                    aria-label={`Remove ${chip.source.kind.toLowerCase()} ${chip.item.name}`}
+                                    onClick={() => removeComposerChip(chip)}
+                                >
+                                    <i className="bi bi-x" aria-hidden="true" />
+                                </button>
+                            </span>
                         ))}
                     </div>
                 )}

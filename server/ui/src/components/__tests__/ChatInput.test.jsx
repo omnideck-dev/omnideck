@@ -625,6 +625,48 @@ describe('ChatInput', () => {
             }
         });
 
+        it('shows a chip for a selected skill', async () => {
+            const user = userEvent.setup();
+            render(<ChatInput onSend={vi.fn()} isStreaming={false} />);
+
+            const textarea = screen.getByPlaceholderText('Message Omnideck…');
+            await user.type(textarea, '/rev');
+            await user.click(await screen.findByText('review-code'));
+
+            const tray = screen.getByTestId('composer-shortcuts');
+            expect(tray).toHaveTextContent('Skillreview-code');
+        });
+
+        it('shows no chip for text that names no skill', async () => {
+            const user = userEvent.setup();
+            render(<ChatInput onSend={vi.fn()} isStreaming={false} />);
+
+            await user.type(screen.getByPlaceholderText('Message Omnideck…'), 'check /etc/hosts ');
+
+            expect(screen.queryByTestId('composer-shortcuts')).not.toBeInTheDocument();
+        });
+
+        it('removes the token from the message when its chip is removed', async () => {
+            const user = userEvent.setup();
+            render(<ChatInput onSend={vi.fn()} isStreaming={false} />);
+
+            const textarea = screen.getByPlaceholderText('Message Omnideck…');
+            fireEvent.change(textarea, { target: { value: '/summarize this thread' } });
+            await user.click(screen.getByRole('button', { name: 'Remove skill summarize' }));
+
+            expect(textarea.value).toBe('this thread');
+            expect(screen.queryByTestId('composer-shortcuts')).not.toBeInTheDocument();
+        });
+
+        it('shows one chip per skill even when its token repeats', () => {
+            render(<ChatInput onSend={vi.fn()} isStreaming={false} />);
+            fireEvent.change(screen.getByPlaceholderText('Message Omnideck…'), {
+                target: { value: '/summarize a then /summarize b' },
+            });
+
+            expect(screen.getAllByRole('button', { name: 'Remove skill summarize' })).toHaveLength(1);
+        });
+
         it('refreshes the skill list once per overlay-open, not on every keystroke', async () => {
             const user = userEvent.setup();
             skillsHook.refresh.mockClear();
