@@ -378,4 +378,29 @@ describe('Turn with mid-turn compaction', () => {
         expect(items[1]).toHaveAttribute('data-testid', 'compaction-row');
         expect(items[2]).toHaveAttribute('data-testid', 'message-assistant');
     });
+
+    it('shows the skills a message loaded as one note after it', () => {
+        const skill = (id, name, status = 'loaded') => ({ kind: 'skill_loaded', id, skillId: id, skillName: name, status });
+        render(<Turn turn={_turn([
+            _userPrompt('/joke-teller /coder go'),
+            skill('s1', 'Joke teller'),
+            skill('s2', 'coder', 'already_loaded'),
+            _iteration('i1', { content: 'done' }),
+        ])} />);
+
+        const notes = screen.getAllByTestId('skill-loaded-note');
+        expect(notes).toHaveLength(1);
+        expect(notes[0]).toHaveTextContent('Skills');
+        expect(notes[0]).toHaveTextContent('Joke teller');
+        expect(notes[0]).toHaveTextContent('coder (already loaded)');
+    });
+
+    it('marks a skill that could not be loaded', () => {
+        render(<Turn turn={_turn([
+            _userPrompt('/gone'),
+            { kind: 'skill_loaded', id: 's1', skillId: 'gone', skillName: 'Gone', status: 'unavailable' },
+        ])} />);
+
+        expect(screen.getByTestId('skill-loaded-note')).toHaveTextContent('Gone (unavailable)');
+    });
 });

@@ -110,44 +110,6 @@ def test_attachments_appended_to_first_user_message():
     ]
 
 
-def test_model_content_replaces_typed_text_for_the_model():
-    events = [
-        _started(ROOT, "COMPUTRON"),
-        {**_user(ROOT, "/skill do it"), "model_content": "Load skill and do it"},
-        _iter(ROOT, 0, content="ok"),
-    ]
-    assert build_llm_view(events)[0] == {"role": "user", "content": "Load skill and do it"}
-
-
-def test_model_content_is_used_for_every_user_message_not_only_the_latest():
-    """A resolved message reads the same on every later turn, so the prompt
-    prefix stays stable."""
-    events = [
-        _started(ROOT, "COMPUTRON"),
-        {**_user(ROOT, "/skill first", evt_id="evt_u1"), "model_content": "rendered first"},
-        _iter(ROOT, 0, content="done", evt_id="evt_i1"),
-        {**_user(ROOT, "/skill second", evt_id="evt_u2"), "model_content": "rendered second"},
-        _user(ROOT, "a hook nudge", evt_id="evt_u3"),
-    ]
-    contents = [m["content"] for m in build_llm_view(events) if m["role"] == "user"]
-    assert contents == ["rendered first", "rendered second", "a hook nudge"]
-
-
-def test_attachments_appended_after_model_content():
-    events = [
-        _started(ROOT, "COMPUTRON"),
-        {
-            **_user(ROOT, "/skill do it",
-                    attachments=[{"filename": "a.png", "content_type": "image/png", "path": "/v/a.png"}]),
-            "model_content": "rendered",
-        },
-    ]
-    assert build_llm_view(events)[0]["content"] == (
-        "rendered\n\n[Attached files written to virtual computer]\n"
-        "  - a.png (image/png) -> /v/a.png"
-    )
-
-
 def test_nudge_appears_as_second_user_message():
     """A second user_message mid-loop (a nudge) shows up in the kept range."""
     events = [

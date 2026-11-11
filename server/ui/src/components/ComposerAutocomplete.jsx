@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import Popover from './primitives/Popover.jsx';
 import styles from './ComposerAutocomplete.module.css';
 
@@ -20,6 +21,14 @@ import styles from './ComposerAutocomplete.module.css';
  * `onClose()`: called on outside-click (via Popover).
  */
 export default function ComposerAutocomplete({ anchorRef, label, items, activeIndex, onHover, onCommit, onClose }) {
+    const listRef = useRef(null);
+
+    // Keyboard navigation can move past the visible rows of a long list.
+    useEffect(() => {
+        const option = listRef.current?.children[activeIndex];
+        option?.scrollIntoView?.({ block: 'nearest' });
+    }, [activeIndex]);
+
     if (!items.length) return null;
 
     return (
@@ -33,6 +42,7 @@ export default function ComposerAutocomplete({ anchorRef, label, items, activeIn
             className={styles.popover}
         >
             <div
+                ref={listRef}
                 className={styles.listbox}
                 role="listbox"
                 aria-label={label}

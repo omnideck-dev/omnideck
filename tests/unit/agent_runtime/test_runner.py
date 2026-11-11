@@ -14,7 +14,7 @@ from agent_runtime import AgentRuntime, AgentRunner, AgentRunRequest, RunAttachm
 from agent_runtime import _runner as runner_module
 from agent_runtime import _factory as factory_module
 from agents._agent_profiles import AgentProfile
-from conversations import load_events_jsonl
+from conversations import load_events_jsonl, load_loaded_skills
 from skills._store import SkillRecord, save_skill_record
 from agent_core.context import ConversationHistory
 from agent_core.events import (
@@ -299,21 +299,22 @@ async def test_stopped_root_lifecycle_precedes_turn_end(
     assert seen[-1].payload.type == "turn_end"
 
 
-async def test_composer_token_is_resolved_once_and_stored_beside_typed_text(
+async def test_composer_skill_is_loaded_before_the_first_model_call(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
 ) -> None:
-    """The model sees the resolved `/skill` instruction; the stored event keeps
-    the user's exact text for the transcript."""
+    """A `/skill` token loads the skill before the agent runs; the model gets
+    the message exactly as typed."""
     monkeypatch.setattr("skills._store._skills_dir", lambda: tmp_path / "skills")
     save_skill_record(SkillRecord(id="skill_review", name="review-code", description="", prompt="", tool_categories=[]))
 
     conversation_id = "runner-composer-token"
-    captured: dict[str, ConversationHistory] = {}
-    raw_message = "/review-code do it"
+    captured: dict[str, Any] = {}
+    raw_message = "Fix the bug using /review-code"
 
-    async def _capture_execute(self, *, history: ConversationHistory, **_kwargs: Any) -> ExecutionResult:
+    async def _capture_execute(self, *, history: ConversationHistory, capabilities, **_kwargs: Any) -> ExecutionResult:
         captured["history"] = history
+        captured["skill_ids"] = capabilities.skill_ids
         return ExecutionResult("success")
 
     monkeypatch.setattr(factory_module, "get_agent_profile", lambda _pid: _profile())
@@ -330,13 +331,15 @@ async def test_composer_token_is_resolved_once_and_stored_beside_typed_text(
     info = await manager.start(request)
     _ = [record async for record in info.events(after_seq=0)]
 
-    llm_view = captured["history"].non_system_messages
-    assert 'load_skill with name="review-code"' in llm_view[0]["content"]
+    assert "skill_review" in captured["skill_ids"]
+    assert captured["history"].non_system_messages[0]["content"] == raw_message
 
     persisted = load_events_jsonl(conversation_id)
-    user_events = [event for event in persisted if event["type"] == "user_message"]
-    assert user_events[0]["content"] == raw_message
-    assert user_events[0]["model_content"] == llm_view[0]["content"]
+    types = [event["type"] for event in persisted]
+    assert types.index("user_message") < types.index("skill_loaded")
+    loaded = next(event for event in persisted if event["type"] == "skill_loaded")
+    assert (loaded["skill_id"], loaded["status"]) == ("skill_review", "loaded")
+    assert load_loaded_skills(conversation_id) == ["skill_review"]
 
 
 async def test_spawned_child_instructions_are_never_resolved_as_shortcuts(
@@ -344,21 +347,20 @@ async def test_spawned_child_instructions_are_never_resolved_as_shortcuts(
     tmp_path,
 ) -> None:
     """`spawn_agent` instructions are text the parent model wrote, so a
-    coincidental `/skill-name` in them reaches the child verbatim."""
+    coincidental `/skill-name` in them loads nothing."""
     monkeypatch.setattr("skills._store._skills_dir", lambda: tmp_path / "skills")
     save_skill_record(SkillRecord(id="skill_review", name="review-code", description="", prompt="", tool_categories=[]))
     monkeypatch.setattr(factory_module, "get_agent_profile", lambda _pid: _profile())
     monkeypatch.setattr(runner_module, "get_agent_profile", lambda _pid: _profile())
 
-    captured: dict[str, ConversationHistory] = {}
-    child_instructions = "/review-code do it"
+    captured: dict[str, Any] = {}
 
-    async def _fake_execute(self, *, history: ConversationHistory, context, capabilities, **_kwargs: Any) -> ExecutionResult:
+    async def _fake_execute(self, *, context, capabilities, **_kwargs: Any) -> ExecutionResult:
         if context.parent_execution_id is None:
             spawn_agent = next(t for t in capabilities.tools if t.__name__ == "spawn_agent")
-            await spawn_agent(instructions=child_instructions, profile="profile-1", agent_name="CHILD")
+            await spawn_agent(instructions="/review-code do it", profile="profile-1", agent_name="CHILD")
         else:
-            captured["child_history"] = history
+            captured["child_skill_ids"] = capabilities.skill_ids
         return ExecutionResult("success")
 
     monkeypatch.setattr(runner_module.AgentExecutor, "execute", _fake_execute)
@@ -368,12 +370,13 @@ async def test_spawned_child_instructions_are_never_resolved_as_shortcuts(
         message="hi",
         attachments=None,
         profile_id="profile-1",
+        policy=RunPolicy(resolve_composer_tokens=True),
     )
     manager = AgentRuntime()
     info = await manager.start(request)
     _ = [record async for record in info.events(after_seq=0)]
 
-    assert captured["child_history"].non_system_messages[0]["content"] == child_instructions
+    assert "skill_review" not in captured["child_skill_ids"]
 
 
 async def test_shortcuts_are_not_resolved_unless_the_channel_asks(
@@ -381,7 +384,7 @@ async def test_shortcuts_are_not_resolved_unless_the_channel_asks(
     tmp_path,
 ) -> None:
     """A root run from another channel, such as a routine task whose message
-    embeds earlier model output, keeps a coincidental `/skill` as text."""
+    embeds earlier model output, loads nothing for a coincidental `/skill`."""
     monkeypatch.setattr("skills._store._skills_dir", lambda: tmp_path / "skills")
     save_skill_record(SkillRecord(id="skill_review", name="review-code", description="", prompt="", tool_categories=[]))
     monkeypatch.setattr(factory_module, "get_agent_profile", lambda _pid: _profile())
@@ -402,5 +405,4 @@ async def test_shortcuts_are_not_resolved_unless_the_channel_asks(
     info = await manager.start(request)
     _ = [record async for record in info.events(after_seq=0)]
 
-    user_events = [e for e in load_events_jsonl(conversation_id) if e["type"] == "user_message"]
-    assert "model_content" not in user_events[0]
+    assert not any(e["type"] == "skill_loaded" for e in load_events_jsonl(conversation_id))

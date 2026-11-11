@@ -142,12 +142,6 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
         ));
     }, [composerQuery, composerPool]);
 
-    // Before the first fetch lands, an open trigger has no items through no
-    // fault of the user's typing — don't let Enter fall through to a plain
-    // send of the raw token. A background refresh with items already cached
-    // doesn't block: an empty filter then really means nothing matches.
-    const composerDataLoading = !!composerSource?.loading && !composerSource.items.length;
-
     // The active row resets when the typed query changes, not when a
     // background refresh replaces the items — that would move the highlight
     // out from under the user. A shrunken list still can't leave it past
@@ -359,7 +353,11 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
             // below and the document-level Escape listener that collapses
             // expanded mode (stopPropagation reaches the underlying native
             // event too, per React 17+ root-delegated event semantics).
-            if (composerTrigger && (composerItems.length || composerDataLoading)) {
+            // Shift+Enter (a new line) and an Enter that confirms an IME
+            // candidate are ordinary typing, not a pick from the list.
+            const listKeys = composerTrigger && composerItems.length
+                && !e.shiftKey && !e.nativeEvent.isComposing;
+            if (listKeys) {
                 if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
                     e.preventDefault();
                     e.stopPropagation();
@@ -377,13 +375,9 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
                 if ((e.key === 'Enter' || e.key === 'Tab') && !bareEnter) {
                     e.preventDefault();
                     e.stopPropagation();
-                    // Still loading: swallow this keypress rather than commit
-                    // nothing or fall through to sending the raw text. Fall
-                    // back to the first row if the stored index is stale (the
-                    // list can narrow between a query-changing keystroke and
-                    // this one, before the reset-to-0 effect has flushed) —
-                    // an undefined item would otherwise throw in
-                    // commitComposerToken.
+                    // Fall back to the first row if the stored index is stale
+                    // (the list can narrow between a query-changing keystroke
+                    // and this one, before the reset-to-0 effect has flushed).
                     const item = composerItems[composerActiveIndex] ?? composerItems[0];
                     if (item) commitComposerToken(item);
                     return;
@@ -396,7 +390,7 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
                     return;
                 }
             }
-            if (e.key === 'Enter' && !e.shiftKey) {
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault();
                 handleSubmit(e);
             }

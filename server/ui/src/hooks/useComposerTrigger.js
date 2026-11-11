@@ -48,8 +48,9 @@ export function detectComposerTrigger(text, cursorIndex, triggers) {
 
 /**
  * Replace the open trigger token (from `triggerIndex` through the end of its
- * query run) with `replacement`, followed by a single trailing space.
- * Returns the new text and the cursor index right after the inserted space.
+ * query run) with `replacement`, followed by a single space — reusing one
+ * that already follows. Returns the new text and the cursor index right
+ * after that space.
  *
  * @param {string} text
  * @param {{triggerIndex: number}} trigger
@@ -64,10 +65,11 @@ export function applyComposerToken(text, trigger, replacement) {
     }
     const before = text.slice(0, triggerIndex);
     const after = text.slice(end);
-    const inserted = `${replacement} `;
+    // One space after the token, unless the text already has one there.
+    const inserted = /^\s/.test(after) ? replacement : `${replacement} `;
     return {
         text: `${before}${inserted}${after}`,
-        cursorIndex: before.length + inserted.length,
+        cursorIndex: before.length + replacement.length + 1,
     };
 }
 

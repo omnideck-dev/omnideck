@@ -346,3 +346,18 @@ describe('projectTurns with inflight iteration appended (live streaming)', () =>
         expect(iter.content).toBe('partial');
     });
 });
+
+describe('projectTurns skill_loaded', () => {
+    it('adds a skill_loaded child after the user prompt', () => {
+        const turns = projectTurns([
+            _agentStarted(1),
+            _userMsg('/joke-teller'),
+            { id: 'evt_sl', type: 'skill_loaded', skill_id: 'j1', skill_name: 'Joke teller', status: 'loaded' },
+            _iter('evt_i1', { content: 'ha' }),
+        ]);
+        expect(turns[0].children.map((c) => c.kind)).toEqual(['user_prompt', 'skill_loaded', 'iteration']);
+        expect(turns[0].children[1]).toEqual({
+            kind: 'skill_loaded', id: 'evt_sl', skillId: 'j1', skillName: 'Joke teller', status: 'loaded',
+        });
+    });
+});

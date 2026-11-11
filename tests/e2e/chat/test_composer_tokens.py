@@ -1,41 +1,39 @@
-"""End-to-end: `/skill` composer tokens through real chat execution.
-
-The composer's tokens are rewritten into an explicit natural-language
-instruction only in the model-facing view built at read time — the
-stored/displayed message stays exactly what the user typed. Against the fake
-provider these tests only prove the enriched view still round-trips through
-the real HTTP/agent-runtime pipeline without corrupting the scripted
-directives embedded in it — proving the model actually *chooses* to call
-load_skill because of the enrichment requires a real provider, which these
-tests don't have available.
-"""
+"""End-to-end: a `/skill` composer token loads the skill before the agent runs."""
 
 from uuid import uuid4
 
 from playwright.sync_api import Page
 
-from tests.e2e._protocol import model_script, model_tool
+from tests.e2e._protocol import model_script
 from tests.e2e._runtime import agent_profile, delete_conversation, run_turn
 
 
-def tool_calls(events, name):
-    return [e["payload"] for e in events if e["payload"]["type"] == "tool_call" and e["payload"]["name"] == name]
+def payloads(events, event_type):
+    return [e["payload"] for e in events if e["payload"]["type"] == event_type]
 
 
-def test_bare_skill_token_loads_skill_in_same_run(page: Page):
+def test_skill_token_loads_skill_without_a_model_tool_call(page: Page):
     conversation = f"e2e_composer_load_{uuid4().hex}"
     with agent_profile(skills=[]) as profile:
         try:
-            events = run_turn(
-                conversation,
-                "/coder " + model_script(
-                    {"tool_calls": [model_tool("load_skill", name="coder")]},
-                    {"content": "loaded"},
-                ),
-                profile_id=profile["id"],
-            )
-            assert tool_calls(events, "load_skill")
-            assert tool_calls(events, "spawn_agent") == []
+            message = "/coder " + model_script({"content": "done"})
+            events = run_turn(conversation, message, profile_id=profile["id"])
+
+            loaded = payloads(events, "skill_loaded")
+            assert [(p["skill_id"], p["status"]) for p in loaded] == [("coder", "loaded")]
+            assert not [p for p in payloads(events, "tool_call") if p["name"] == "load_skill"]
+            assert payloads(events, "user_message")[0]["content"] == message
         finally:
             delete_conversation(conversation)
 
+
+def test_unknown_token_loads_nothing(page: Page):
+    conversation = f"e2e_composer_inert_{uuid4().hex}"
+    with agent_profile(skills=[]) as profile:
+        try:
+            events = run_turn(
+                conversation, "check /etc/hosts " + model_script({"content": "ok"}), profile_id=profile["id"],
+            )
+            assert payloads(events, "skill_loaded") == []
+        finally:
+            delete_conversation(conversation)

@@ -33,7 +33,7 @@ from agent_core.turn import ExecutionContext, ExecutionResult, ToolLoopError
 from tools.virtual_computer.receive_file import receive_attachment
 
 from ._compaction import LLMCompactionStrategy
-from ._composer_tokens import resolve_composer_tokens
+from ._composer_tokens import apply_composer_effects, resolve_composer_effects
 from ._factory import AgentFactory, persist_loaded_skills
 from ._models import AgentRunRequest, RunAttachment, RunPolicy
 from ._scratchpad_hook import ScratchpadHook
@@ -131,7 +131,11 @@ class AgentRunner:
             if history is None or session.conversation is None:
                 raise RuntimeError("RunSession has no prepared history")
             history.set_system_message(prepared.system_prompt)
-            model_content = resolve_composer_tokens(message, profile) if policy.resolve_composer_tokens else None
+            # Reads the skill store from disk, so keep it off the event loop.
+            composer_effects = (
+                await asyncio.to_thread(resolve_composer_effects, message, profile)
+                if policy.resolve_composer_tokens else []
+            )
             ctx_manager = ContextManager(
                 history=history,
                 agent_capabilities=prepared.capabilities,
@@ -164,14 +168,13 @@ class AgentRunner:
                     ))
                     publish_event(
                         AgentEvent(
-                            payload=UserMessagePayload(
-                                type="user_message",
-                                content=message,
-                                attachments=attachments or [],
-                                model_content=model_content,
-                            )
+                            payload=UserMessagePayload(type="user_message", content=message, attachments=attachments or [])
                         )
                     )
+                    # Applied after the user's message so the transcript shows it
+                    # first, and before the model's first call so the skill's
+                    # instructions and tools are there from the start.
+                    await apply_composer_effects(composer_effects, prepared.capabilities)
                     parallel = load_config().parallel
                     result = await AgentExecutor().execute(
                         history=history,

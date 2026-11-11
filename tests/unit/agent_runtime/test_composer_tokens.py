@@ -1,12 +1,19 @@
-"""Tests for agent_runtime._composer_tokens shortcut resolution."""
+"""Tests for agent_runtime._composer_tokens shortcut resolution and effects."""
 
 import json
 from pathlib import Path
 
 import pytest
 
-from agent_runtime._composer_tokens import _match_skill, _slugify, resolve_composer_tokens
-from agents._agent_profiles import AgentProfile
+from agent_core.agent_capabilities import AgentCapabilities
+from agent_core.skills import Skill
+from agent_runtime._composer_tokens import (
+    LoadSkill,
+    _match_skill,
+    apply_composer_effects,
+    resolve_composer_effects,
+)
+from agents import AgentProfile
 from skills._store import SkillRecord, save_skill_record
 
 pytestmark = [pytest.mark.unit]
@@ -24,149 +31,121 @@ def _make_skill(name: str, id_: str | None = None) -> SkillRecord:
     return save_skill_record(record)
 
 
-def _resolve(text: str, profile: AgentProfile = PROFILE) -> str | None:
-    return resolve_composer_tokens(text, profile)
+def _loaded_ids(text: str, profile: AgentProfile = PROFILE) -> list[str]:
+    return [effect.record.id for effect in resolve_composer_effects(text, profile)]
 
 
-def test_no_tokens_returns_none():
-    assert _resolve("hello, just a plain message with no slashes at all") is None
+# ── resolution ──────────────────────────────────────────────────────────
 
 
-def test_bare_skill_load():
+def test_no_tokens_has_no_effects():
+    assert _loaded_ids("hello, just a plain message with no slashes at all") == []
+
+
+def test_skill_token_anywhere_in_the_message():
     _make_skill("review-code", id_="skill_review")
-    result = _resolve("/review-code please check this")
-    assert "load_skill" in result
-    assert 'load_skill with name="review-code"' in result
-    assert result.endswith("Then use it to: please check this")
-    assert "rather than spawning a subagent" in result
+    assert _loaded_ids("/review-code please check this") == ["skill_review"]
+    assert _loaded_ids("Fix the auth bug in login.py using /review-code") == ["skill_review"]
 
 
-def test_bare_skill_no_args_asks_for_output_not_a_status_report():
-    """With nothing typed after the token, the instruction must steer the
-    model toward delivering the skill's actual output, not toward reporting
-    on whether the load worked."""
+def test_bare_token():
+    _make_skill("Joke teller", id_="4dffecbf8559")
+    assert _loaded_ids("/joke-teller") == ["4dffecbf8559"]
+
+
+def test_several_tokens_in_message_order():
+    _make_skill("summarize", id_="skill_sum")
     _make_skill("review-code", id_="skill_review")
-    result = _resolve("/review-code")
-    assert "respond with what it produces, not a report on whether it loaded" in result
+    assert _loaded_ids("/review-code main.py then /summarize it") == ["skill_review", "skill_sum"]
 
 
-def test_text_before_the_token_is_kept():
+def test_repeated_token_loads_once():
     _make_skill("summarize", id_="skill_sum")
-    result = _resolve("please handle this /summarize")
-    assert result.startswith("please handle this ")
-    assert 'name="summarize"' in result
+    assert _loaded_ids("/summarize a and /summarize b") == ["skill_sum"]
 
 
-def test_multiline_args_preserved():
-    _make_skill("summarize", id_="skill_sum")
-    assert "line one\nline two" in _resolve("/summarize line one\nline two")
-
-
-def test_unresolved_skill_is_left_fully_inert():
-    assert _resolve("/does-not-exist do something") is None
-
-
-def test_path_like_text_is_left_fully_inert():
+def test_path_like_text_has_no_effect():
     """A path that parses as a token but names no skill is never a command."""
-    assert _resolve("check /etc/hosts and also /home/ron/project/file.py") is None
-
-
-def test_unresolved_token_after_a_skill_stays_in_its_task():
-    """A path in the task text must not cut the task off from the skill."""
-    _make_skill("summarize", id_="skill_sum")
-    result = _resolve("/summarize /tmp/report.txt please")
-    assert result.endswith("Then use it to: /tmp/report.txt please")
-    assert "in order" not in result
-
-
-def test_unresolved_token_before_a_skill_passes_through():
-    _make_skill("review-code", id_="skill_review")
-    result = _resolve("look at /etc/hosts then /review-code it please")
-    assert result.startswith("look at /etc/hosts then ")
-    assert result.endswith("Then use it to: it please")
+    _make_skill("hosts", id_="skill_hosts")
+    assert _loaded_ids("check /etc/hosts and also /home/ron/project/file.py") == []
 
 
 def test_whitespace_boundary_ignores_mid_word_slash():
     _make_skill("b", id_="skill_b")
-    assert _resolve("check a/b and http://example.com/b for details") is None
+    assert _loaded_ids("check a/b and http://example.com/b for details") == []
 
 
-def test_resolves_by_id_as_well_as_name():
-    _make_skill("Review Code", id_="skill_review")
-    assert 'name="Review Code"' in _resolve("/skill_review do it")
-
-
-def test_resolves_skill_by_slug_of_multiword_name():
-    _make_skill("Joke teller", id_="4dffecbf8559")
-    assert 'name="Joke teller"' in _resolve("/joke-teller tell me one")
-
-
-def test_instruction_names_the_skill_not_its_id():
-    """load_skill matches by name; an id in the instruction sends the model a
-    value its first call rejects."""
-    _make_skill("Joke teller", id_="4dffecbf8559")
-    assert "4dffecbf8559" not in _resolve("/joke-teller")
-
-
-def test_exact_case_name_wins_over_a_case_variant():
-    """Names are unique only with exact case, so `/foo` must load "foo",
-    not "Foo"."""
-    _make_skill("Foo", id_="skill_upper")
-    _make_skill("foo", id_="skill_lower")
-    assert 'name="foo"' in _resolve("/foo go")
-
-
-def test_exact_id_wins_over_another_skills_slug():
-    _make_skill("Review Code", id_="skill_a")
-    _make_skill("other", id_="review-code")
-    assert 'name="other"' in _resolve("/review-code go")
-
-
-def test_case_insensitive_match_resolves_only_when_unique():
-    _make_skill("Foo", id_="skill_upper")
-    _make_skill("foo", id_="skill_lower")
-    assert _resolve("/FOO go") is None
-
-
-def test_ambiguous_skill_slug_is_left_fully_inert():
-    _make_skill("Joke teller", id_="skill_a")
-    _make_skill("joke   TELLER!!", id_="skill_b")
-    assert _resolve("/joke-teller tell me one") is None
-
-
-def test_reserved_skill_is_left_fully_inert():
+def test_reserved_skill_has_no_effect():
     _make_skill("browser", id_="browser")
-    assert _resolve("/browser open the page") is None
+    assert _loaded_ids("/browser open the page") == []
 
 
-def test_profile_that_cannot_load_skills_gets_no_rewrite():
+def test_profile_that_cannot_load_skills_has_no_effects():
     _make_skill("review-code", id_="skill_review")
     profile = AgentProfile(id="locked", name="Locked", allow_load_skills=False)
-    assert _resolve("/review-code do it", profile) is None
-
-
-def test_chained_skills_get_sequencing_instruction():
-    _make_skill("create-draft", id_="skill_create")
-    _make_skill("review-draft", id_="skill_review_draft")
-    result = _resolve("/create-draft from mynotes.txt and then /review-draft")
-    assert result.index('name="create-draft"') < result.index('name="review-draft"')
-    assert "in order" in result
-    assert "mynotes.txt and then" in result
-    # The single space between the tokens survives.
-    assert "mynotes.txt and then Load the" in result
-
-
-def test_multiple_tokens_beyond_two():
-    for i in (1, 2, 3):
-        _make_skill(f"s{i}", id_=f"skill{i}")
-    assert _resolve("/s1 a /s2 b /s3 c").count("load_skill") == 3
+    assert _loaded_ids("/review-code do it", profile) == []
 
 
 def test_at_and_hash_are_not_tokens_yet():
-    _make_skill("review-code", id_="skill_review")
+    _make_skill("coder", id_="skill_coder")
     _make_skill("tag", id_="skill_tag")
-    result = _resolve("@coder #tag /review-code myfile.py")
-    assert result.startswith("@coder #tag Load the")
+    assert _loaded_ids("@coder #tag hello") == []
+
+
+# ── applying effects ────────────────────────────────────────────────────
+
+
+def _runtime_skill(record: SkillRecord) -> Skill:
+    return Skill(id=record.id, name=record.name, description="", prompt="p", tools=[])
+
+
+@pytest.fixture
+def published(monkeypatch):
+    events = []
+    monkeypatch.setattr("agent_runtime._composer_tokens.publish_event", lambda event: events.append(event.payload))
+    return events
+
+
+async def test_apply_loads_the_skill_and_reports_it(published):
+    record = _make_skill("Joke teller", id_="4dffecbf8559")
+
+    async def resolver(name):
+        return _runtime_skill(record) if name == record.name else None
+
+    capabilities = AgentCapabilities([], skill_resolver=resolver)
+    await apply_composer_effects([LoadSkill(record)], capabilities)
+
+    assert capabilities.loaded_skill_ids == frozenset({"4dffecbf8559"})
+    assert [(p.skill_id, p.skill_name, p.status) for p in published] == [
+        ("4dffecbf8559", "Joke teller", "loaded"),
+    ]
+
+
+async def test_apply_reports_an_already_attached_skill(published):
+    record = _make_skill("coder", id_="coder")
+    capabilities = AgentCapabilities([])
+    capabilities.add(_runtime_skill(record))
+
+    await apply_composer_effects([LoadSkill(record)], capabilities)
+
+    assert capabilities.loaded_skill_ids == frozenset()
+    assert [p.status for p in published] == ["already_loaded"]
+
+
+async def test_apply_reports_a_skill_that_no_longer_resolves(published):
+    record = _make_skill("gone", id_="gone")
+
+    async def resolver(_name):
+        return None
+
+    capabilities = AgentCapabilities([], skill_resolver=resolver)
+    await apply_composer_effects([LoadSkill(record)], capabilities)
+
+    assert capabilities.skill_ids == frozenset()
+    assert [p.status for p in published] == ["unavailable"]
+
+
+# ── shared cases, also run by the composer ──────────────────────────────
 
 
 _SHARED = json.loads((Path(__file__).parents[2] / "fixtures" / "composer_skill_matching.json").read_text())
@@ -178,11 +157,5 @@ _SHARED_SKILLS = [
 
 @pytest.mark.parametrize("case", _SHARED["cases"], ids=lambda c: c["ref"])
 def test_shared_matching_cases(case):
-    """The composer runs the same cases, keeping both sides in step."""
     match = _match_skill(case["ref"], _SHARED_SKILLS)
     assert (match.id if match else None) == case["expect"], case["why"]
-
-
-@pytest.mark.parametrize(("name", "slug"), _SHARED["slugs"])
-def test_shared_slug_cases(name, slug):
-    assert _slugify(name) == slug

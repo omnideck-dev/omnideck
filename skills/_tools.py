@@ -6,9 +6,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 
-from ._policy import is_reserved_skill_id
 from ._resolve import resolve_skill_by_name
-from ._store import list_skill_records
+from ._store import list_public_skill_records
 from agent_core.agent_capabilities import get_active_agent_capabilities
 
 logger = logging.getLogger(__name__)
@@ -74,7 +73,7 @@ def _log_skill_error(skill_name: str, error: str) -> None:
 
 
 def _available_skill_names() -> list[str]:
-    return [r.name for r in list_skill_records() if not is_reserved_skill_id(r.id)]
+    return [r.name for r in list_public_skill_records()]
 
 
 def list_available_skills() -> str:
@@ -86,7 +85,7 @@ def list_available_skills() -> str:
     Returns:
         A formatted list of skill names and descriptions.
     """
-    records = [r for r in list_skill_records() if not is_reserved_skill_id(r.id)]
+    records = list_public_skill_records()
     if not records:
         return "No skills available."
     lines = [f"  - {r.name}: {r.description}" for r in records]
@@ -110,7 +109,7 @@ async def load_skill(name: str) -> str:
         return "Error: no active skill scope (internal error)"
 
     record = next(
-        (item for item in list_skill_records() if item.name == name and not is_reserved_skill_id(item.id)),
+        (item for item in list_public_skill_records() if item.name == name),
         None,
     )
     resolver = agent_capabilities.skill_resolver or resolve_skill_by_name

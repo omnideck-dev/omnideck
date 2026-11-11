@@ -110,6 +110,18 @@ class TestAgentCapabilities:
         assert live.build_prompt_extensions() == restored.build_prompt_extensions()
         assert [t.__name__ for t in restored.tools] == ["a", "z", "y"]
 
+    def test_skill_heading_carries_the_composer_token(self):
+        """The heading names the `/token` a user types, so the model can tie a
+        typed token to the skill it invokes."""
+        ls = AgentCapabilities([])
+        ls.add(Skill(name="Joke teller", description="", prompt="Tell jokes.", tools=[]))
+        assert "### Joke teller (/joke-teller)\nTell jokes." in ls.build_prompt_extensions()
+
+    def test_skill_heading_falls_back_to_id_when_name_has_no_slug(self):
+        ls = AgentCapabilities([])
+        ls.add(Skill(id="sk_1", name="!!!", description="", prompt="p", tools=[]))
+        assert "### !!! (/sk_1)" in ls.build_prompt_extensions()
+
     def test_add_idempotent(self):
         """Adding the same skill twice is a no-op."""
         sk = _make_skill("sk", ["t"])
@@ -140,7 +152,8 @@ class TestAgentCapabilities:
         ls.add(coder)
         prompt = ls.build_prompt_extensions()
         assert "── Capabilities & Skills ──" in prompt
-        assert "### browser" in prompt
+        assert "already loaded" in prompt
+        assert "### browser (/browser)" in prompt
         assert "Browse the web." in prompt
-        assert "### coder" in prompt
+        assert "### coder (/coder)" in prompt
         assert "Edit files." in prompt

@@ -48,10 +48,9 @@ def build_llm_view(
     """The model-facing message list for one agent.
 
     Collapses the conversation at its latest compaction (first user message
-    + summary marker + the kept tail), sends each user message's resolved
-    composer shortcuts in place of its typed text, and augments user messages
-    with the [Attached files…] block, so the model knows where uploads landed
-    in the sandbox. This is the list sent to the provider.
+    + summary marker + the kept tail) and augments user messages with the
+    [Attached files…] block, so the model knows where uploads landed in the
+    sandbox. This is the list sent to the provider.
     """
     evs = events_for_agent(events, agent_filter)
     first_user = next((e for e in evs if e["type"] == "user_message"), None)
@@ -66,11 +65,15 @@ def build_llm_view(
     )
 
     # First user message: intent-summary override if a compaction set one,
-    # else the user's message as the model sees it.
+    # else the user's text with the attachment block appended.
     if latest_compaction and latest_compaction.get("user_intent_summary"):
         user_content = _INTENT_PREFIX + latest_compaction["user_intent_summary"]
+    elif first_user.get("attachments"):
+        user_content = _augment_with_attachments(
+            first_user["content"], first_user["attachments"],
+        )
     else:
-        user_content = _user_content(first_user)
+        user_content = first_user["content"]
     messages: list[dict[str, Any]] = [{"role": "user", "content": user_content}]
 
     if latest_compaction is None:
@@ -111,7 +114,10 @@ def _walk(
         if t == "compaction":
             continue
         if t == "user_message":
-            out.append({"role": "user", "content": _user_content(e)})
+            content = e["content"]
+            if e.get("attachments"):
+                content = _augment_with_attachments(content, e["attachments"])
+            out.append({"role": "user", "content": content})
         elif t == "iteration":
             # An assistant message with neither content nor tool calls (e.g.
             # a thinking-only partial captured when the user stopped
@@ -146,14 +152,6 @@ def _walk(
                 "content": e["content"],
             })
     return out
-
-
-def _user_content(event: dict[str, Any]) -> str:
-    """A user message as the model sees it: resolved shortcuts, then attachments."""
-    content = event.get("model_content") or event["content"]
-    if event.get("attachments"):
-        content = _augment_with_attachments(content, event["attachments"])
-    return content
 
 
 def _augment_with_attachments(content: str, attachments: list[dict[str, Any]]) -> str:

@@ -8,6 +8,7 @@ from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any
 
 from agent_core.capabilities import AgentCapability
+from agent_core.skills import skill_slug
 
 if TYPE_CHECKING:
     from agent_core.skills._registry import Skill
@@ -133,9 +134,12 @@ class AgentCapabilities:
             return ""
         parts = [
             *(f"### {capability.name}\n{capability.prompt}" for capability in self._capabilities.values()),
-            *(f"### {skill.name}\n{skill.prompt}" for skill in self._skills.values()),
+            *(f"### {skill.name} (/{skill_slug(skill.name) or skill.id})\n{skill.prompt}" for skill in self._skills.values()),
         ]
-        return "\n── Capabilities & Skills ──\n\n" + "\n\n".join(parts)
+        # Without this the model, prompted elsewhere to load skills on
+        # demand, re-loads a skill that is already attached.
+        preamble = "Everything below is already loaded and its tools are available now; don't call load_skill for these."
+        return "\n── Capabilities & Skills ──\n\n" + preamble + "\n\n" + "\n\n".join(parts)
 
 
 def get_active_agent_capabilities() -> "AgentCapabilities | None":

@@ -612,7 +612,7 @@ describe('ChatInput', () => {
             expect(textarea.value).toBe('/');
         });
 
-        it('does not send the raw token on Enter while skills are still loading', async () => {
+        it('sends on Enter before the skill list has loaded', async () => {
             const onSend = vi.fn();
             const user = userEvent.setup();
             skillsHook.loading = true;
@@ -620,10 +620,9 @@ describe('ChatInput', () => {
             try {
                 render(<ChatInput onSend={onSend} isStreaming={false} />);
                 const textarea = screen.getByPlaceholderText('Message Omnideck…');
-                await user.type(textarea, '/rev{Enter}');
+                await user.type(textarea, 'what is in /etc/hosts{Enter}');
 
-                expect(onSend).not.toHaveBeenCalled();
-                expect(textarea.value).toBe('/rev');
+                expect(onSend).toHaveBeenCalledWith('what is in /etc/hosts', null);
             } finally {
                 skillsHook.loading = false;
                 skillsHook.skills = [
@@ -631,6 +630,31 @@ describe('ChatInput', () => {
                     { id: 'skill_sum', name: 'summarize', description: 'Summarizes a thread.' },
                 ];
             }
+        });
+
+        it('adds a new line on Shift+Enter while the list is open', async () => {
+            const user = userEvent.setup();
+            render(<ChatInput onSend={vi.fn()} isStreaming={false} />);
+
+            const textarea = screen.getByPlaceholderText('Message Omnideck…');
+            await user.type(textarea, '/rev');
+            await screen.findByRole('listbox', { name: 'Skills' });
+            await user.keyboard('{Shift>}{Enter}{/Shift}');
+
+            expect(textarea.value).toBe('/rev\n');
+        });
+
+        it('leaves an IME-confirming Enter to the input method', () => {
+            const onSend = vi.fn();
+            render(<ChatInput onSend={onSend} isStreaming={false} />);
+            const textarea = screen.getByPlaceholderText('Message Omnideck…');
+            fireEvent.change(textarea, { target: { value: '/rev' } });
+            fireEvent.keyUp(textarea, { key: 'v' });
+
+            fireEvent.keyDown(textarea, { key: 'Enter', isComposing: true });
+
+            expect(textarea.value).toBe('/rev');
+            expect(onSend).not.toHaveBeenCalled();
         });
 
         it('inserts a slug for a multi-word skill name instead of the raw id', async () => {

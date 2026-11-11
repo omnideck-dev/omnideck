@@ -15,7 +15,6 @@ from agent_core.events import (
     ContentPayload,
     ToolCallPayload,
     TurnEndPayload,
-    UserMessagePayload,
 )
 
 
@@ -49,19 +48,6 @@ def test_to_flat_dict_emits_timezone_suffixed_timestamp():
     flat = AgentEvent(payload=ContentPayload(type="content")).to_flat_dict("c")
     ts = flat["timestamp"]
     assert ts.endswith("+00:00"), f"expected UTC suffix, got: {ts}"
-
-
-@pytest.mark.unit
-def test_user_message_record_omits_unset_model_content():
-    flat = AgentEvent(payload=UserMessagePayload(type="user_message", content="hi")).to_flat_dict("c")
-    assert "model_content" not in flat
-
-
-@pytest.mark.unit
-def test_user_message_record_keeps_set_model_content():
-    payload = UserMessagePayload(type="user_message", content="/s go", model_content="rendered")
-    flat = AgentEvent(payload=payload).to_flat_dict("c")
-    assert flat["model_content"] == "rendered"
 
 
 @pytest.mark.unit

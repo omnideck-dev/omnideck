@@ -19,20 +19,16 @@ from skills._store import (
     SkillRecord,
     delete_skill_record,
     get_skill_record,
-    list_skill_records,
+    list_public_skill_records,
     save_skill_record,
 )
 
 logger = logging.getLogger(__name__)
 
 
-def _public_skills() -> list[SkillRecord]:
-    return [record for record in list_skill_records() if not is_reserved_skill_id(record.id)]
-
-
 async def handle_list_skills(_request: web.Request) -> web.Response:
     """Return all skill records, sorted by name."""
-    return web.json_response([r.model_dump() for r in _public_skills()])
+    return web.json_response([r.model_dump() for r in list_public_skill_records()])
 
 
 async def handle_get_skill(request: web.Request) -> web.Response:

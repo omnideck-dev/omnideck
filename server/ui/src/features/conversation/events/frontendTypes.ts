@@ -202,6 +202,13 @@ export type TranscriptItem =
         keptFromId: string | null;
     }
     | { kind: 'spawn_requested'; id: string; correlationId: string | null }
+    | {
+        kind: 'skill_loaded';
+        id: string;
+        skillId: string;
+        skillName: string;
+        status: 'loaded' | 'already_loaded' | 'unavailable';
+    }
     | { kind: 'error'; id: string; message: string };
 
 export type ConversationTurn = {

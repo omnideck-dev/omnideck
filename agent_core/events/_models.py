@@ -336,18 +336,12 @@ class UserMessagePayload(BaseModel):
         is_nudge: False for the turn-opening prompt; True for queued
             user input that landed between iterations of an already-
             running turn.
-        model_content: What the model sees in place of ``content`` when
-            composer shortcut tokens were resolved; None when ``content``
-            is sent as typed.
     """
 
     type: Literal["user_message"]
     content: str
     attachments: list[UserAttachment] = Field(default_factory=list)
     is_nudge: bool = False
-    # Omitted from the record when unset, so plain messages don't each carry
-    # a null field.
-    model_content: str | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class IterationToolCall(BaseModel):
@@ -493,6 +487,24 @@ class CompactionPayload(BaseModel):
     stats: CompactionStats | None = None
 
 
+class SkillLoadedPayload(BaseModel):
+    """A skill the user invoked from the chat composer, applied before the run.
+
+    Attributes:
+        type: Discriminator; always "skill_loaded".
+        skill_id: Id of the skill the token resolved to.
+        skill_name: Display name at the time it was applied.
+        status: "loaded" when newly attached, "already_loaded" when the agent
+            already had it, or "unavailable" when it could not be resolved
+            at run time (for example, deleted since the message was typed).
+    """
+
+    type: Literal["skill_loaded"]
+    skill_id: str
+    skill_name: str
+    status: Literal["loaded", "already_loaded", "unavailable"]
+
+
 AgentEventPayload = Annotated[
     ContentPayload
     | TurnEndPayload
@@ -512,6 +524,7 @@ AgentEventPayload = Annotated[
     | IterationPayload
     | ToolResultPayload
     | CompactionPayload
+    | SkillLoadedPayload
     | ErrorPayload,
     Field(discriminator="type"),
 ]
@@ -569,6 +582,7 @@ __all__ = [
     "AudioPlaybackPayload",
     "BrowserScreenshotPayload",
     "CompactionPayload",
+    "SkillLoadedPayload",
     "CompactionScope",
     "CompactionStats",
     "ContentPayload",

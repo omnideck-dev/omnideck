@@ -61,7 +61,7 @@ describe('applyComposerToken', () => {
 
     it('preserves surrounding text on either side of the token', () => {
         const result = applyComposerToken('hi /rev do it', { triggerIndex: 3 }, '/review-code');
-        expect(result.text).toBe('hi /review-code  do it');
+        expect(result.text).toBe('hi /review-code do it');
         expect(result.cursorIndex).toBe('hi /review-code '.length);
     });
 

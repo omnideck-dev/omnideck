@@ -5,5 +5,5 @@ area: composer
 ---
 
 Typing `/` in the chat composer opens an autocomplete of available skills.
-Selecting one tells the model to load that skill and use it for the rest of
-the message.
+A selected skill shows as a chip above the input, is loaded before the agent
+starts working on the message, and is noted in the conversation.
