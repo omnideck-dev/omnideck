@@ -30,6 +30,10 @@ class RunPolicy:
     include_memory: bool = True
     conversation_lifetime: Literal["cached", "run"] = "cached"
     agent_name: str | None = None
+    # Only text a person typed into the chat composer may carry shortcut
+    # tokens. Other channels (routine tasks, spawned agents) pass messages
+    # that models wrote, which must never be read as commands.
+    resolve_composer_tokens: bool = False
 
 
 @dataclass(frozen=True, slots=True)

@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from agent_runtime import AgentRuntime, AgentRunner, AgentRunRequest, RunAttachment
+from agent_runtime import AgentRuntime, AgentRunner, AgentRunRequest, RunAttachment, RunPolicy
 from agent_runtime import _runner as runner_module
 from agent_runtime import _factory as factory_module
 from agents._agent_profiles import AgentProfile
@@ -324,6 +324,7 @@ async def test_composer_token_is_resolved_once_and_stored_beside_typed_text(
         message=raw_message,
         attachments=None,
         profile_id="profile-1",
+        policy=RunPolicy(resolve_composer_tokens=True),
     )
     manager = AgentRuntime()
     info = await manager.start(request)
@@ -373,3 +374,33 @@ async def test_spawned_child_instructions_are_never_resolved_as_shortcuts(
     _ = [record async for record in info.events(after_seq=0)]
 
     assert captured["child_history"].non_system_messages[0]["content"] == child_instructions
+
+
+async def test_shortcuts_are_not_resolved_unless_the_channel_asks(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    """A root run from another channel, such as a routine task whose message
+    embeds earlier model output, keeps a coincidental `/skill` as text."""
+    monkeypatch.setattr("skills._store._skills_dir", lambda: tmp_path / "skills")
+    save_skill_record(SkillRecord(id="skill_review", name="review-code", description="", prompt="", tool_categories=[]))
+    monkeypatch.setattr(factory_module, "get_agent_profile", lambda _pid: _profile())
+
+    async def _execute(self, **_kwargs: Any) -> ExecutionResult:
+        return ExecutionResult("success")
+
+    monkeypatch.setattr(runner_module.AgentExecutor, "execute", _execute)
+
+    conversation_id = "runner-composer-routine"
+    request = AgentRunRequest(
+        conversation_id=conversation_id,
+        message="next, run /review-code to finish",
+        attachments=None,
+        profile_id="profile-1",
+    )
+    manager = AgentRuntime()
+    info = await manager.start(request)
+    _ = [record async for record in info.events(after_seq=0)]
+
+    user_events = [e for e in load_events_jsonl(conversation_id) if e["type"] == "user_message"]
+    assert "model_content" not in user_events[0]

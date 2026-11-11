@@ -12,6 +12,7 @@ import {
     detectComposerTrigger,
     applyComposerToken,
     findComposerTokens,
+    composerTokenFor,
     resolveComposerItem,
     removeComposerTokens,
 } from '../hooks/useComposerTrigger.js';
@@ -20,6 +21,8 @@ import { useAppData } from '../contexts/AppData.jsx';
 
 // 13.5px font-size * ~1.48 line-height ≈ 20px; 8px top + 4px bottom padding = 12px.
 const LINE_HEIGHT_PX = 20;
+// Minimum time between refreshes of a shortcut source's items.
+const SOURCE_REFRESH_MS = 30_000;
 const PADDING_V_PX = 12;
 const MIN_HEIGHT_PX = 44;
 const MAX_AUTO_HEIGHT_PX = 8 * LINE_HEIGHT_PX + PADDING_V_PX; // 172px — 8 visible rows
@@ -73,7 +76,10 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
         };
     }, [skillsHook?.skills, skillsHook?.loading, skillsHook?.refresh, selectedProfile]);
     const composerTriggers = useMemo(() => Object.keys(composerSources), [composerSources]);
-    const composerSource = composerTrigger ? composerSources[composerTrigger.trigger] : null;
+    const triggerSource = composerTrigger ? composerSources[composerTrigger.trigger] : null;
+    // A source the selected agent can't use opens no list; its hint shows
+    // instead.
+    const composerSource = triggerSource?.enabled ? triggerSource : null;
 
     // Re-derive the open trigger (if any) from the textarea's own current
     // value/caret — covers typing, arrow-key caret moves, and clicks alike.
@@ -98,21 +104,25 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
         setComposerTrigger(detected);
     }, [isStreaming, composerTriggers]);
 
-    // Sources are otherwise only fetched once, at mount — so without this,
-    // commitComposerToken's slug-collision check (below) could stay stale
-    // for a whole session and miss a same-slug item created elsewhere
-    // after this tab loaded. Refreshing once per overlay-open narrows that
-    // window to "since the dropdown was last opened" instead.
-    const triggerRefreshedRef = useRef(false);
+    // A run starting while the list is open (another tab, a retry) makes the
+    // next message a nudge, which shortcuts don't apply to.
     useEffect(() => {
-        if (!composerSource) {
-            triggerRefreshedRef.current = false;
-            return;
-        }
-        if (triggerRefreshedRef.current) return;
-        triggerRefreshedRef.current = true;
-        composerSource.refresh?.();
-    }, [composerSource]);
+        if (isStreaming) setComposerTrigger(null);
+    }, [isStreaming]);
+
+    // Sources are otherwise only fetched once, at mount, so items created
+    // elsewhere would never appear. Refresh when the list opens, at most
+    // once per interval — a `/` also opens it for paths and URLs.
+    const lastRefreshRef = useRef({});
+    const openTrigger = composerSource ? composerTrigger.trigger : null;
+    const refreshOpenSource = composerSource?.refresh;
+    useEffect(() => {
+        if (!openTrigger) return;
+        const now = Date.now();
+        if (now - (lastRefreshRef.current[openTrigger] ?? 0) < SOURCE_REFRESH_MS) return;
+        lastRefreshRef.current[openTrigger] = now;
+        refreshOpenSource?.();
+    }, [openTrigger, refreshOpenSource]);
 
     // Depend on the trigger's fields, not the object itself: the keyup
     // that follows every keydown (including an arrow key the overlay already
@@ -126,7 +136,10 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
     const composerItems = useMemo(() => {
         if (!composerPool) return [];
         const query = composerQuery.toLowerCase();
-        return composerPool.filter((item) => item.name.toLowerCase().startsWith(query));
+        // Match the slug too, since that's what's inserted for multi-word names.
+        return composerPool.filter((item) => (
+            item.name.toLowerCase().startsWith(query) || slugify(item.name).startsWith(query)
+        ));
     }, [composerQuery, composerPool]);
 
     // Before the first fetch lands, an open trigger has no items through no
@@ -135,25 +148,22 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
     // doesn't block: an empty filter then really means nothing matches.
     const composerDataLoading = !!composerSource?.loading && !composerSource.items.length;
 
-    // The active row resets whenever the filtered list changes shape (new
-    // query, items added/removed) so it never points past the new end.
+    // The active row resets when the typed query changes, not when a
+    // background refresh replaces the items — that would move the highlight
+    // out from under the user. A shrunken list still can't leave it past
+    // the end.
+    const composerNavigatedRef = useRef(false);
     useEffect(() => {
         setComposerActiveIndex(0);
-    }, [composerItems]);
+        composerNavigatedRef.current = false;
+    }, [composerQuery, openTrigger]);
+    useEffect(() => {
+        setComposerActiveIndex((current) => (current < composerItems.length ? current : 0));
+    }, [composerItems.length]);
 
     const commitComposerToken = useCallback((item) => {
         if (!composerTrigger || !composerPool) return;
-        // Names may contain spaces, which the backend's whitespace-delimited
-        // token grammar can't parse — slugify then, so the token stays
-        // readable instead of falling back to the item's opaque id. Only
-        // when the slug collides with another item's (rare) do we fall back
-        // to the id, since the backend refuses to resolve an ambiguous slug.
-        let token = item.name;
-        if (/\s/.test(item.name)) {
-            const slug = slugify(item.name);
-            const collides = composerPool.some((other) => other.id !== item.id && slugify(other.name) === slug);
-            token = slug && !collides ? slug : item.id;
-        }
+        const token = composerTokenFor(item, composerPool);
         const { text, cursorIndex } = applyComposerToken(message, composerTrigger, `${composerTrigger.trigger}${token}`);
         pendingCursorRef.current = cursorIndex;
         setMessage(text);
@@ -199,7 +209,7 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
         textareaRef.current?.focus();
     }, []);
 
-    const composerHint = composerSource?.hint ?? blockedHint;
+    const composerHint = triggerSource?.hint ?? blockedHint;
 
     const profileName = selectedProfile?.name;
     const placeholder = stopRequested
@@ -353,13 +363,18 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
                 if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
                     e.preventDefault();
                     e.stopPropagation();
+                    composerNavigatedRef.current = true;
                     if (composerItems.length) {
                         const dir = e.key === 'ArrowDown' ? 1 : -1;
                         setComposerActiveIndex((current) => (current + dir + composerItems.length) % composerItems.length);
                     }
                     return;
                 }
-                if (e.key === 'Enter' || e.key === 'Tab') {
+                // A bare trigger with nothing typed after it (a message ending
+                // in " /") sends on Enter unless the user has moved into the
+                // list. Tab always picks.
+                const bareEnter = e.key === 'Enter' && !composerQuery && !composerNavigatedRef.current;
+                if ((e.key === 'Enter' || e.key === 'Tab') && !bareEnter) {
                     e.preventDefault();
                     e.stopPropagation();
                     // Still loading: swallow this keypress rather than commit

@@ -1,0 +1,33 @@
+{
+  "_comment": "Shared cases for composer skill-token matching. The server resolver and the composer's client-side copy both run these, so the two can't drift apart.",
+  "skills": [
+    {"id": "skill_review", "name": "review-code"},
+    {"id": "4dffecbf8559", "name": "Joke teller"},
+    {"id": "skill_upper", "name": "Foo"},
+    {"id": "skill_lower", "name": "foo"},
+    {"id": "skill_a", "name": "Review Code"},
+    {"id": "review-code-2", "name": "other"},
+    {"id": "skill_clash_1", "name": "Data Tool"},
+    {"id": "skill_clash_2", "name": "data   TOOL!!"}
+  ],
+  "slugs": [
+    ["review-code", "review-code"],
+    ["Joke teller", "joke-teller"],
+    ["joke   TELLER!!", "joke-teller"],
+    ["  Café: notes  ", "caf-notes"],
+    ["!!!", ""]
+  ],
+  "cases": [
+    {"ref": "review-code", "expect": "skill_review", "why": "exact name"},
+    {"ref": "4dffecbf8559", "expect": "4dffecbf8559", "why": "exact id"},
+    {"ref": "joke-teller", "expect": "4dffecbf8559", "why": "unique slug"},
+    {"ref": "JOKE TELLER", "expect": "4dffecbf8559", "why": "unique case-insensitive name"},
+    {"ref": "Joke-Teller", "expect": "4dffecbf8559", "why": "unique case-insensitive slug"},
+    {"ref": "foo", "expect": "skill_lower", "why": "exact name beats a case variant"},
+    {"ref": "Foo", "expect": "skill_upper", "why": "exact name beats a case variant"},
+    {"ref": "FOO", "expect": null, "why": "case-insensitive match is ambiguous"},
+    {"ref": "review-code-2", "expect": "review-code-2", "why": "exact id beats another skill's slug"},
+    {"ref": "data-tool", "expect": null, "why": "two names share the slug"},
+    {"ref": "etc/hosts", "expect": null, "why": "names nothing"}
+  ]
+}

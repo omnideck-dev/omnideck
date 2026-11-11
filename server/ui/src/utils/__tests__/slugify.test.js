@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { slugify } from '../slugify.js';
+import shared from '../../../../../tests/fixtures/composer_skill_matching.json';
 
 describe('slugify', () => {
     it('lowercases and hyphenates a simple multi-word name', () => {
@@ -21,5 +22,12 @@ describe('slugify', () => {
 
     it('returns an empty string for input with no alphanumeric characters', () => {
         expect(slugify('!!!')).toBe('');
+    });
+});
+
+describe('slugify shared cases', () => {
+    // The server's slug rule runs the same cases.
+    it.each(shared.slugs)('%j -> %j', (name, slug) => {
+        expect(slugify(name)).toBe(slug);
     });
 });

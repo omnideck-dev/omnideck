@@ -373,11 +373,11 @@ class TestConversationProfile:
 
 
 @pytest.mark.unit
-def test_load_loaded_skills_returns_sorted_ids(_conv_dir: Path) -> None:
-    """Restored skills come back in a fixed order so the rebuilt system
-    prompt matches across turns and restarts."""
-    save_loaded_skills("c1", frozenset({"zeta", "alpha", "mid"}))
-    assert load_loaded_skills("c1") == ["alpha", "mid", "zeta"]
+def test_loaded_skills_round_trip_in_load_order(_conv_dir: Path) -> None:
+    """Restored skills come back in the order they were loaded, so the rebuilt
+    system prompt matches across turns and restarts."""
+    save_loaded_skills("c1", ("zeta", "alpha", "mid"))
+    assert load_loaded_skills("c1") == ["zeta", "alpha", "mid"]
 
 
 @pytest.mark.unit

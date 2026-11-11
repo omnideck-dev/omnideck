@@ -1,10 +1,10 @@
 import Popover from './primitives/Popover.jsx';
-import Tooltip from './primitives/Tooltip.jsx';
 import styles from './ComposerAutocomplete.module.css';
 
 /**
- * Filtered listbox overlay for a composer shortcut trigger (`/` for skills). Anchored to the textarea itself rather than
- * caret-pixel coordinates — no caret-mirroring needed for v1.
+ * Filtered listbox overlay for a composer shortcut trigger (`/` for skills).
+ * Anchored to the textarea itself rather than caret-pixel coordinates — no
+ * caret-mirroring needed for v1.
  *
  * Purely presentational: keyboard handling (arrow-key cycling, Enter/Tab
  * commit, Escape close) lives in `ChatInput`'s own `onKeyDown`, not here —
@@ -38,21 +38,23 @@ export default function ComposerAutocomplete({ anchorRef, label, items, activeIn
                 aria-label={label}
             >
                 {items.map((item, index) => (
-                    <Tooltip key={item.id} text={item.description} placement="top">
-                        <div
-                            className={`${styles.option} ${index === activeIndex ? styles.optionActive : ''}`}
-                            role="option"
-                            aria-selected={index === activeIndex}
-                            onMouseEnter={() => onHover(index)}
-                            onMouseDown={(event) => event.preventDefault()}
-                            onClick={() => onCommit(item)}
-                        >
-                            <span className={styles.optionName}>{item.name}</span>
-                            {item.description && (
-                                <span className={styles.optionDescription}>{item.description}</span>
-                            )}
-                        </div>
-                    </Tooltip>
+                    <div
+                        key={item.id}
+                        className={`${styles.option} ${index === activeIndex ? styles.optionActive : ''}`}
+                        role="option"
+                        aria-selected={index === activeIndex}
+                        onMouseEnter={() => onHover(index)}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => onCommit(item)}
+                    >
+                        <span className={styles.optionName}>{item.name}</span>
+                        {item.description && (
+                            // The row truncates long descriptions; `title` shows the full text.
+                            <span className={styles.optionDescription} title={item.description}>
+                                {item.description}
+                            </span>
+                        )}
+                    </div>
                 ))}
             </div>
         </Popover>

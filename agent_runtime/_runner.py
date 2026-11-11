@@ -131,12 +131,7 @@ class AgentRunner:
             if history is None or session.conversation is None:
                 raise RuntimeError("RunSession has no prepared history")
             history.set_system_message(prepared.system_prompt)
-            # Only a root run's message was typed into the composer. A spawned
-            # child's message is task text the parent model wrote, so a
-            # coincidental `/name` in it must never be read as a shortcut.
-            model_content = (
-                resolve_composer_tokens(message, profile) if context.parent_execution_id is None else None
-            )
+            model_content = resolve_composer_tokens(message, profile) if policy.resolve_composer_tokens else None
             ctx_manager = ContextManager(
                 history=history,
                 agent_capabilities=prepared.capabilities,

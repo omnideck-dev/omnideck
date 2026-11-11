@@ -27,6 +27,7 @@ from agent_runtime import (
     AgentRunRequest,
     InvalidRunCursorError,
     RunAttachment,
+    RunPolicy,
 )
 from server._agent_runtime import AGENT_RUNTIME_KEY
 from server._run_activity import run_activity_handler
@@ -144,6 +145,7 @@ async def chat_handler(request: Request) -> StreamResponse:
             message=user_query,
             attachments=run_attachments,
             profile_id=payload.profile_id,
+            policy=RunPolicy(resolve_composer_tokens=True),
         ))
     except RunConflictError:
         return web.json_response(

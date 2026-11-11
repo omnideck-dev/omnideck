@@ -37,7 +37,8 @@ class AgentCapabilities:
         self._base_tools: list[Callable[..., Any]] = list(base_tools)
         self._capabilities: dict[str, AgentCapability] = {}
         self._skills: dict[str, Skill] = {}  # keyed by skill id
-        self._loaded_ids: set[str] = set()  # subset attached at runtime, not by the profile
+        # Subset attached at runtime, not by the profile, in load order.
+        self._loaded_ids: dict[str, None] = {}
 
     def add(self, skill: Skill) -> None:
         """Attach a profile-granted skill — the baseline. No-op if already attached.
@@ -60,14 +61,7 @@ class AgentCapabilities:
         ``loaded_skill_ids``).
         """
         if self._attach(skill):
-            self._loaded_ids.add(skill.id)
-            # Keep runtime-loaded skills after the profile's own and in id
-            # order, whatever order they were loaded in. The next turn restores
-            # them from storage, and it must build the same prompt section and
-            # tool list or the provider's cached prefix is invalidated.
-            baseline = {sid: s for sid, s in self._skills.items() if sid not in self._loaded_ids}
-            loaded = {sid: self._skills[sid] for sid in sorted(self._loaded_ids)}
-            self._skills = baseline | loaded
+            self._loaded_ids[skill.id] = None
 
     def _attach(self, skill: Skill) -> bool:
         """Insert the skill; return True if newly attached, False if already present."""
@@ -118,6 +112,15 @@ class AgentCapabilities:
         re-derived each turn, so they're deliberately left out.
         """
         return frozenset(self._loaded_ids)
+
+    @property
+    def loaded_skill_order(self) -> tuple[str, ...]:
+        """The runtime-loaded ids in load order.
+
+        Persisting and restoring in this order keeps the prompt section and
+        tool list identical across turns, and a later load only appends.
+        """
+        return tuple(self._loaded_ids)
 
     def build_prompt_extensions(self) -> str:
         """Format capability and skill guidance for the system prompt.

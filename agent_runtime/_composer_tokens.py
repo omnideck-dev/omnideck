@@ -80,15 +80,31 @@ class _SkillTokens:
         return [record for record in list_skill_records() if not is_reserved_skill_id(record.id)]
 
     def resolve(self, ref: str) -> TokenRenderer | None:
-        lowered = ref.lower()
-        for skill in self._skills:
-            if skill.name.lower() == lowered or skill.id.lower() == lowered:
-                return partial(_render_load, skill)
-        # Two names that slugify identically are ambiguous; resolve neither.
-        slug_matches = [skill for skill in self._skills if _slugify(skill.name) == lowered]
-        if len(slug_matches) == 1:
-            return partial(_render_load, slug_matches[0])
-        return None
+        skill = _match_skill(ref, self._skills)
+        return partial(_render_load, skill) if skill is not None else None
+
+
+def _match_skill(ref: str, skills: list[SkillRecord]) -> SkillRecord | None:
+    """Exact id, then exact name, then a case-insensitive name, id, or slug
+    match that fits exactly one skill.
+
+    Names are unique only with exact case, and one skill's slug can equal
+    another's id, so looser matches resolve only when unambiguous. The
+    composer applies the same order when it picks a token to insert.
+    """
+    for skill in skills:
+        if skill.id == ref:
+            return skill
+    for skill in skills:
+        if skill.name == ref:
+            return skill
+    lowered = ref.lower()
+    matches = {
+        skill.id: skill
+        for skill in skills
+        if lowered in (skill.name.lower(), skill.id.lower(), _slugify(skill.name))
+    }
+    return next(iter(matches.values())) if len(matches) == 1 else None
 
 
 def _handlers_for(profile: AgentProfile) -> list[_TokenHandler]:

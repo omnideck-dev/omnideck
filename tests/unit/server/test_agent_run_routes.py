@@ -51,3 +51,10 @@ async def test_composer_token_text_reaches_the_run_request_verbatim():
     await routes.chat_handler(req)
     sent = manager.start.call_args[0][0]
     assert sent.message == "/does-not-exist do something"
+
+
+@pytest.mark.unit
+async def test_chat_requests_composer_token_resolution():
+    req, manager = _make_request({"message": "/x", "conversation_id": "conv-1"})
+    await routes.chat_handler(req)
+    assert manager.start.call_args[0][0].policy.resolve_composer_tokens is True

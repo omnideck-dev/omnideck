@@ -98,19 +98,37 @@ export function findComposerTokens(text, triggers) {
 }
 
 /**
- * Resolve a token's name the way the server does: exact name or id
- * (case-insensitive), else a slug that matches exactly one item.
+ * Resolve a token's name the way the server does: exact id, then exact name,
+ * then a case-insensitive name, id, or slug match that fits exactly one item.
  *
  * @param {string} ref
  * @param {Array<{id: string, name: string}>} items
  * @returns {object | null}
  */
 export function resolveComposerItem(ref, items) {
+    const byId = items.find((item) => item.id === ref);
+    if (byId) return byId;
+    const byName = items.find((item) => item.name === ref);
+    if (byName) return byName;
     const lowered = ref.toLowerCase();
-    const exact = items.find((item) => item.name.toLowerCase() === lowered || item.id.toLowerCase() === lowered);
-    if (exact) return exact;
-    const slugMatches = items.filter((item) => slugify(item.name) === lowered);
-    return slugMatches.length === 1 ? slugMatches[0] : null;
+    const matches = items.filter((item) => (
+        item.name.toLowerCase() === lowered || item.id.toLowerCase() === lowered || slugify(item.name) === lowered
+    ));
+    return matches.length === 1 ? matches[0] : null;
+}
+
+/**
+ * The token to insert for `item`: its name when that has no whitespace,
+ * else its slug, else its id — the first that resolves back to `item`.
+ * The id always does, so the inserted token can never name another item.
+ *
+ * @param {{id: string, name: string}} item
+ * @param {Array<{id: string, name: string}>} items
+ * @returns {string}
+ */
+export function composerTokenFor(item, items) {
+    const candidates = [!/\s/.test(item.name) && item.name, slugify(item.name), item.id];
+    return candidates.find((candidate) => candidate && resolveComposerItem(candidate, items)?.id === item.id) ?? item.id;
 }
 
 /**

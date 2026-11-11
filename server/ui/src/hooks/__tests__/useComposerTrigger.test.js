@@ -5,7 +5,9 @@ import {
     findComposerTokens,
     resolveComposerItem,
     removeComposerTokens,
+    composerTokenFor,
 } from '../useComposerTrigger.js';
+import shared from '../../../../../tests/fixtures/composer_skill_matching.json';
 
 const TRIGGERS = ['/'];
 
@@ -86,21 +88,24 @@ describe('findComposerTokens', () => {
 });
 
 describe('resolveComposerItem', () => {
-    const items = [
-        { id: 'skill_review', name: 'review-code' },
-        { id: '4dffecbf8559', name: 'Joke teller' },
-    ];
+    // The server's resolver runs the same cases, keeping both sides in step.
+    it.each(shared.cases)('resolves $ref ($why)', ({ ref, expect: expected }) => {
+        expect(resolveComposerItem(ref, shared.skills)?.id ?? null).toBe(expected);
+    });
+});
 
-    it('resolves by name, id, or slug, ignoring case', () => {
-        expect(resolveComposerItem('REVIEW-CODE', items).id).toBe('skill_review');
-        expect(resolveComposerItem('4dffecbf8559', items).name).toBe('Joke teller');
-        expect(resolveComposerItem('joke-teller', items).id).toBe('4dffecbf8559');
+describe('composerTokenFor', () => {
+    it('inserts a token that resolves back to the chosen skill', () => {
+        for (const item of shared.skills) {
+            expect(resolveComposerItem(composerTokenFor(item, shared.skills), shared.skills).id).toBe(item.id);
+        }
     });
 
-    it('returns null for unknown names and ambiguous slugs', () => {
-        expect(resolveComposerItem('etc', items)).toBeNull();
-        const clashing = [...items, { id: 'other', name: 'joke   TELLER!!' }];
-        expect(resolveComposerItem('joke-teller', clashing)).toBeNull();
+    it('prefers the name, then the slug, then the id', () => {
+        const byId = (id) => shared.skills.find((s) => s.id === id);
+        expect(composerTokenFor(byId('skill_review'), shared.skills)).toBe('review-code');
+        expect(composerTokenFor(byId('4dffecbf8559'), shared.skills)).toBe('joke-teller');
+        expect(composerTokenFor(byId('skill_clash_1'), shared.skills)).toBe('skill_clash_1');
     });
 });
 

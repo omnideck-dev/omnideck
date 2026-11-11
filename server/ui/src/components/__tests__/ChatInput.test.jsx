@@ -474,18 +474,92 @@ describe('ChatInput', () => {
             expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
         });
 
-        it('selects with the keyboard and commits on Enter without sending', async () => {
+        it('commits the highlighted skill on Enter once something is typed', async () => {
             const onSend = vi.fn();
             const user = userEvent.setup();
             render(<ChatInput onSend={onSend} isStreaming={false} />);
 
             const textarea = screen.getByPlaceholderText('Message Omnideck…');
-            await user.type(textarea, '/');
+            await user.type(textarea, '/r');
             await screen.findByRole('listbox', { name: 'Skills' });
             await user.keyboard('{Enter}');
 
             expect(onSend).not.toHaveBeenCalled();
             expect(textarea.value).toBe('/review-code ');
+        });
+
+        it('sends on Enter after a bare trigger the user has not moved into', async () => {
+            const onSend = vi.fn();
+            const user = userEvent.setup();
+            render(<ChatInput onSend={onSend} isStreaming={false} />);
+
+            const textarea = screen.getByPlaceholderText('Message Omnideck…');
+            await user.type(textarea, 'a or /');
+            await screen.findByRole('listbox', { name: 'Skills' });
+            await user.keyboard('{Enter}');
+
+            expect(onSend).toHaveBeenCalledWith('a or /', null);
+        });
+
+        it('commits from a bare trigger with Tab or after arrowing into the list', async () => {
+            const user = userEvent.setup();
+            render(<ChatInput onSend={vi.fn()} isStreaming={false} />);
+
+            const textarea = screen.getByPlaceholderText('Message Omnideck…');
+            await user.type(textarea, '/');
+            await screen.findByRole('listbox', { name: 'Skills' });
+            await user.keyboard('{Tab}');
+            expect(textarea.value).toBe('/review-code ');
+
+            await user.type(textarea, '/');
+            await screen.findByRole('listbox', { name: 'Skills' });
+            await user.keyboard('{ArrowDown}{Enter}');
+            expect(textarea.value).toBe('/review-code /summarize ');
+        });
+
+        it('finds a multi-word skill by typing its slug', async () => {
+            const user = userEvent.setup();
+            skillsHook.skills = [{ id: '4dffecbf8559', name: 'Joke teller', description: '' }];
+            try {
+                render(<ChatInput onSend={vi.fn()} isStreaming={false} />);
+                await user.type(screen.getByPlaceholderText('Message Omnideck…'), '/joke-t');
+
+                expect(await screen.findByText('Joke teller')).toBeInTheDocument();
+            } finally {
+                skillsHook.skills = [
+                    { id: 'skill_review', name: 'review-code', description: 'Reviews a diff for bugs.' },
+                    { id: 'skill_sum', name: 'summarize', description: 'Summarizes a thread.' },
+                ];
+            }
+        });
+
+        it('keeps the highlighted row when a refresh replaces the skills', async () => {
+            const user = userEvent.setup();
+            const { rerender } = render(<ChatInput onSend={vi.fn()} isStreaming={false} />);
+
+            await user.type(screen.getByPlaceholderText('Message Omnideck…'), '/');
+            await screen.findByRole('listbox', { name: 'Skills' });
+            await user.keyboard('{ArrowDown}');
+
+            const original = skillsHook.skills;
+            skillsHook.skills = [...original];
+            try {
+                rerender(<ChatInput onSend={vi.fn()} isStreaming={false} />);
+                expect(screen.getAllByRole('option')[1]).toHaveAttribute('aria-selected', 'true');
+            } finally {
+                skillsHook.skills = original;
+            }
+        });
+
+        it('closes the list when a run starts', async () => {
+            const user = userEvent.setup();
+            const { rerender } = render(<ChatInput onSend={vi.fn()} isStreaming={false} />);
+
+            await user.type(screen.getByPlaceholderText('Message Omnideck…'), '/');
+            await screen.findByRole('listbox', { name: 'Skills' });
+            rerender(<ChatInput onSend={vi.fn()} isStreaming />);
+
+            expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
         });
 
         it('keeps the arrow-key selection after the keyup that follows it', async () => {
@@ -667,7 +741,7 @@ describe('ChatInput', () => {
             expect(screen.getAllByRole('button', { name: 'Remove skill summarize' })).toHaveLength(1);
         });
 
-        it('refreshes the skill list once per overlay-open, not on every keystroke', async () => {
+        it('refreshes the skill list when the list opens, at most once per interval', async () => {
             const user = userEvent.setup();
             skillsHook.refresh.mockClear();
             render(<ChatInput onSend={vi.fn()} isStreaming={false} />);
@@ -678,7 +752,7 @@ describe('ChatInput', () => {
 
             await user.keyboard('{Escape}');
             await user.type(textarea, ' /sum');
-            expect(skillsHook.refresh).toHaveBeenCalledTimes(2);
+            expect(skillsHook.refresh).toHaveBeenCalledTimes(1);
         });
     });
 });

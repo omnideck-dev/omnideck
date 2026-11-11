@@ -1,8 +1,11 @@
 """Tests for agent_runtime._composer_tokens shortcut resolution."""
 
+import json
+from pathlib import Path
+
 import pytest
 
-from agent_runtime._composer_tokens import resolve_composer_tokens
+from agent_runtime._composer_tokens import _match_skill, _slugify, resolve_composer_tokens
 from agents._agent_profiles import AgentProfile
 from skills._store import SkillRecord, save_skill_record
 
@@ -105,6 +108,26 @@ def test_instruction_names_the_skill_not_its_id():
     assert "4dffecbf8559" not in _resolve("/joke-teller")
 
 
+def test_exact_case_name_wins_over_a_case_variant():
+    """Names are unique only with exact case, so `/foo` must load "foo",
+    not "Foo"."""
+    _make_skill("Foo", id_="skill_upper")
+    _make_skill("foo", id_="skill_lower")
+    assert 'name="foo"' in _resolve("/foo go")
+
+
+def test_exact_id_wins_over_another_skills_slug():
+    _make_skill("Review Code", id_="skill_a")
+    _make_skill("other", id_="review-code")
+    assert 'name="other"' in _resolve("/review-code go")
+
+
+def test_case_insensitive_match_resolves_only_when_unique():
+    _make_skill("Foo", id_="skill_upper")
+    _make_skill("foo", id_="skill_lower")
+    assert _resolve("/FOO go") is None
+
+
 def test_ambiguous_skill_slug_is_left_fully_inert():
     _make_skill("Joke teller", id_="skill_a")
     _make_skill("joke   TELLER!!", id_="skill_b")
@@ -144,3 +167,22 @@ def test_at_and_hash_are_not_tokens_yet():
     _make_skill("tag", id_="skill_tag")
     result = _resolve("@coder #tag /review-code myfile.py")
     assert result.startswith("@coder #tag Load the")
+
+
+_SHARED = json.loads((Path(__file__).parents[2] / "fixtures" / "composer_skill_matching.json").read_text())
+_SHARED_SKILLS = [
+    SkillRecord(id=s["id"], name=s["name"], description="", prompt="", tool_categories=[])
+    for s in _SHARED["skills"]
+]
+
+
+@pytest.mark.parametrize("case", _SHARED["cases"], ids=lambda c: c["ref"])
+def test_shared_matching_cases(case):
+    """The composer runs the same cases, keeping both sides in step."""
+    match = _match_skill(case["ref"], _SHARED_SKILLS)
+    assert (match.id if match else None) == case["expect"], case["why"]
+
+
+@pytest.mark.parametrize(("name", "slug"), _SHARED["slugs"])
+def test_shared_slug_cases(name, slug):
+    assert _slugify(name) == slug
