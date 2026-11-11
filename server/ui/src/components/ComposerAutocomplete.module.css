@@ -1,0 +1,47 @@
+.popover {
+    overflow: hidden;
+    background: var(--elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+}
+
+.listbox {
+    max-height: inherit;
+    overflow-y: auto;
+    padding: 3px;
+    background: var(--elevated);
+}
+
+.option {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    min-height: 40px;
+    padding: 0 10px;
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.optionActive {
+    background: var(--surface);
+    box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.optionName {
+    flex: 0 0 auto;
+    font-weight: 600;
+}
+
+.optionDescription {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text-tertiary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

@@ -623,7 +623,7 @@ export default function useConversationSessionController({
         setStopRequested,
     ]);
 
-    const sendMessage = useCallback(async (message, attachments, profileId) => {
+    const sendMessage = useCallback(async (message, attachments, profileId, context) => {
         if (
             (!message && !attachments?.length)
             || isStreamingRef.current
@@ -650,6 +650,7 @@ export default function useConversationSessionController({
                 id: pendingUserId,
                 content: message || '',
                 attachments: pendingAttachments,
+                context: context || [],
             },
         });
 
@@ -658,7 +659,7 @@ export default function useConversationSessionController({
         await runConnection({
             conversationId: conversationIdRef.current,
             controller,
-            initialRequest: { message, attachments, profileId },
+            initialRequest: { message, attachments, profileId, context },
             persistedEvents: eventsRef.current,
         });
     }, [runConnection]);
@@ -806,6 +807,7 @@ export default function useConversationSessionController({
                     id: pendingUserPrompt.id || '_pending_user',
                     content: pendingUserPrompt.content || '',
                     attachments: pendingUserPrompt.attachments || [],
+                    context: pendingUserPrompt.context || [],
                     isNudge: false,
                 }],
             }];

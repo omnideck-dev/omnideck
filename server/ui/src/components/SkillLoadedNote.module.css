@@ -1,0 +1,47 @@
+.note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin: 4px 0 8px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.note > .bi {
+  color: var(--accent);
+}
+
+.label {
+  color: var(--text-secondary);
+}
+
+.skill {
+  padding: 1px 7px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--accent-muted);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.status {
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+.unavailable {
+  border-color: var(--danger);
+  background: transparent;
+}
+
+.failed > .bi {
+  color: var(--danger);
+}
+
+.currentName {
+  color: var(--text-primary);
+  font-style: italic;
+  font-weight: 600;
+}

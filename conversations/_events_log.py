@@ -38,6 +38,7 @@ _PERSISTED_TYPES: frozenset[str] = frozenset({
     "iteration",
     "tool_result",
     "compaction",
+    "skill_loaded",
     "agent_started",
     "agent_completed",
     "spawn_requested",

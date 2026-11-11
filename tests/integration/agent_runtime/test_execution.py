@@ -204,7 +204,7 @@ async def test_child_loading_skill_does_not_grant_parent_its_tools(harness):
     assert all("child_only" not in r["tools"] for r in root_requests)
     assert all("guidance:child-only" not in r["messages"][0]["content"] for r in root_requests)
     assert "child secret" not in json.dumps(root_requests[-1]["messages"])
-    assert load_loaded_skills("contract") == set()
+    assert load_loaded_skills("contract") == []
 
 
 @pytest.mark.parametrize("source", ["root", "child"])

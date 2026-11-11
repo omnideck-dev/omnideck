@@ -8,6 +8,7 @@ from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any
 
 from agent_core.capabilities import AgentCapability
+from agent_core.skills import skill_slug
 
 if TYPE_CHECKING:
     from agent_core.skills._registry import Skill
@@ -37,7 +38,8 @@ class AgentCapabilities:
         self._base_tools: list[Callable[..., Any]] = list(base_tools)
         self._capabilities: dict[str, AgentCapability] = {}
         self._skills: dict[str, Skill] = {}  # keyed by skill id
-        self._loaded_ids: set[str] = set()  # subset attached at runtime, not by the profile
+        # Subset attached at runtime, not by the profile, in load order.
+        self._loaded_ids: dict[str, None] = {}
 
     def add(self, skill: Skill) -> None:
         """Attach a profile-granted skill — the baseline. No-op if already attached.
@@ -60,7 +62,7 @@ class AgentCapabilities:
         ``loaded_skill_ids``).
         """
         if self._attach(skill):
-            self._loaded_ids.add(skill.id)
+            self._loaded_ids[skill.id] = None
 
     def _attach(self, skill: Skill) -> bool:
         """Insert the skill; return True if newly attached, False if already present."""
@@ -112,6 +114,15 @@ class AgentCapabilities:
         """
         return frozenset(self._loaded_ids)
 
+    @property
+    def loaded_skill_order(self) -> tuple[str, ...]:
+        """The runtime-loaded ids in load order.
+
+        Persisting and restoring in this order keeps the prompt section and
+        tool list identical across turns, and a later load only appends.
+        """
+        return tuple(self._loaded_ids)
+
     def build_prompt_extensions(self) -> str:
         """Format capability and skill guidance for the system prompt.
 
@@ -123,9 +134,14 @@ class AgentCapabilities:
             return ""
         parts = [
             *(f"### {capability.name}\n{capability.prompt}" for capability in self._capabilities.values()),
-            *(f"### {skill.name}\n{skill.prompt}" for skill in self._skills.values()),
+            *(f"### {skill.name} (/{skill_slug(skill.name) or skill.id})\n{skill.prompt}" for skill in self._skills.values()),
         ]
-        return "\n── Capabilities & Skills ──\n\n" + "\n\n".join(parts)
+        header = "\n── Capabilities & Skills ──\n\n"
+        if self._skills:
+            # Without this the model, prompted elsewhere to load skills on
+            # demand, re-loads a skill that is already attached.
+            header += "Everything below is already loaded and its tools are available now; don't call load_skill for these.\n\n"
+        return header + "\n\n".join(parts)
 
 
 def get_active_agent_capabilities() -> "AgentCapabilities | None":

@@ -88,6 +88,7 @@ export function projectTurns(events) {
                 id: ev.id,
                 content: ev.content || '',
                 attachments: ev.attachments || [],
+                context: ev.context || [],
                 isNudge: !!ev.is_nudge,
             });
         } else if (t === EVENT.ITERATION) {
@@ -130,6 +131,14 @@ export function projectTurns(events) {
                 agentId: ev.agent_id || null,
                 timestamp: ev.timestamp || null,
                 keptFromId: ev.kept_from_id || null,
+            });
+        } else if (t === EVENT.SKILL_LOADED) {
+            currentTurn.children.push({
+                kind: ITEM.SKILL_LOADED,
+                id: ev.id,
+                skillId: ev.skill_id,
+                skillName: ev.skill_name,
+                status: ev.status,
             });
         } else if (t === EVENT.SPAWN_REQUESTED) {
             currentTurn.children.push({
