@@ -27,7 +27,7 @@
 }
 
 .status {
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
   font-weight: 400;
 }
 
