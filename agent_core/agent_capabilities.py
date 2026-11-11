@@ -61,6 +61,13 @@ class AgentCapabilities:
         """
         if self._attach(skill):
             self._loaded_ids.add(skill.id)
+            # Keep runtime-loaded skills after the profile's own and in id
+            # order, whatever order they were loaded in. The next turn restores
+            # them from storage, and it must build the same prompt section and
+            # tool list or the provider's cached prefix is invalidated.
+            baseline = {sid: s for sid, s in self._skills.items() if sid not in self._loaded_ids}
+            loaded = {sid: self._skills[sid] for sid in sorted(self._loaded_ids)}
+            self._skills = baseline | loaded
 
     def _attach(self, skill: Skill) -> bool:
         """Insert the skill; return True if newly attached, False if already present."""

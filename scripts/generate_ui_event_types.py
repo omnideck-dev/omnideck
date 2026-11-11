@@ -89,8 +89,10 @@ def _interface(model: type[BaseModel]) -> str:
     for name, field in model.model_fields.items():
         # AgentEvent.to_flat_dict serializes Pydantic defaults, so the current
         # wire record contains every payload field even when callers omitted a
-        # defaulted value while constructing the model.
-        lines.append(f"    {name}: {_typescript_type(field.annotation)};")
+        # defaulted value while constructing the model — except fields marked
+        # `exclude_if`, which can be absent.
+        optional = "?" if field.exclude_if is not None else ""
+        lines.append(f"    {name}{optional}: {_typescript_type(field.annotation)};")
     lines.append("}")
     return "\n".join(lines)
 

@@ -345,7 +345,9 @@ class UserMessagePayload(BaseModel):
     content: str
     attachments: list[UserAttachment] = Field(default_factory=list)
     is_nudge: bool = False
-    model_content: str | None = None
+    # Omitted from the record when unset, so plain messages don't each carry
+    # a null field.
+    model_content: str | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class IterationToolCall(BaseModel):

@@ -165,7 +165,7 @@ export interface UserMessagePayload {
     content: string;
     attachments: Array<UserAttachment>;
     is_nudge: boolean;
-    model_content: string | null;
+    model_content?: string | null;
 }
 
 export interface IterationPayload {

@@ -69,11 +69,11 @@ def save_loaded_skills(conversation_id: str, skills: frozenset[str]) -> None:
     tmp.replace(metadata_path)
 
 
-def load_loaded_skills(conversation_id: str) -> set[str]:
-    """Load persisted skill names from conversation metadata."""
+def load_loaded_skills(conversation_id: str) -> list[str]:
+    """Load persisted skill ids from conversation metadata, sorted."""
     metadata = load_conversation_metadata(conversation_id)
     raw = metadata.get("loaded_skills", [])
-    return set(raw) if isinstance(raw, list) else set()
+    return sorted(set(raw)) if isinstance(raw, list) else []
 
 
 def save_conversation_title(conversation_id: str, title: str) -> None:

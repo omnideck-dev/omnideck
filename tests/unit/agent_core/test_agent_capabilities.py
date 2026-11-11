@@ -90,6 +90,25 @@ class TestAgentCapabilities:
         assert ls.skill_ids == frozenset({"base", "extra"})
         assert ls.loaded_skill_ids == frozenset({"extra"})
 
+    def test_loaded_skills_order_is_independent_of_load_order(self):
+        """A turn that loads skills in any order must build the same prompt
+        section and tool list as the next turn, which restores them sorted —
+        otherwise the provider's cached prefix is invalidated."""
+        base = _make_skill("base", ["a"])
+        live = AgentCapabilities([])
+        live.add(base)
+        live.load(_make_skill("zeta", ["z"]))
+        live.load(_make_skill("alpha", ["y"]))
+
+        restored = AgentCapabilities([])
+        restored.add(base)
+        for name, tool in (("alpha", "y"), ("zeta", "z")):
+            restored.load(_make_skill(name, [tool]))
+
+        assert live.build_prompt_extensions() == restored.build_prompt_extensions()
+        assert [t.__name__ for t in live.tools] == ["a", "y", "z"]
+        assert [t.__name__ for t in restored.tools] == ["a", "y", "z"]
+
     def test_add_idempotent(self):
         """Adding the same skill twice is a no-op."""
         sk = _make_skill("sk", ["t"])
