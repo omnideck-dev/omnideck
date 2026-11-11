@@ -330,7 +330,7 @@ async def test_composer_token_is_resolved_once_and_stored_beside_typed_text(
     _ = [record async for record in info.events(after_seq=0)]
 
     llm_view = captured["history"].non_system_messages
-    assert 'skill "review-code" (id: skill_review)' in llm_view[0]["content"]
+    assert 'load_skill with name="review-code"' in llm_view[0]["content"]
 
     persisted = load_events_jsonl(conversation_id)
     user_events = [event for event in persisted if event["type"] == "user_message"]

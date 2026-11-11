@@ -59,12 +59,13 @@ _NO_ARGS_DIRECTIVE = "use it — respond with what it produces, not a report on 
 
 
 def _render_load(skill: SkillRecord, args: str) -> str:
-    skill_desc = f'skill "{skill.name}" (id: {skill.id})'
-    action = f'then use it to: {args}' if args else f'then {_NO_ARGS_DIRECTIVE}'
+    # load_skill matches by name, not id. The user's task goes last so its own
+    # punctuation ends the instruction.
+    action = f'Then use it to: {args}' if args else f'Then {_NO_ARGS_DIRECTIVE}.'
     return (
-        f'Load {skill_desc} into your own current session using the load_skill tool, '
-        f'{action}. Do not spawn a subagent for this — handle it yourself in this '
-        f'conversation.'
+        f'Load the "{skill.name}" skill into your own current session by calling '
+        f'load_skill with name="{skill.name}", and handle this yourself in this '
+        f'conversation rather than spawning a subagent. {action}'
     )
 
 

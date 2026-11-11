@@ -33,9 +33,9 @@ def test_bare_skill_load():
     _make_skill("review-code", id_="skill_review")
     result = _resolve("/review-code please check this")
     assert "load_skill" in result
-    assert 'skill "review-code" (id: skill_review)' in result
-    assert "please check this" in result
-    assert "Do not spawn a subagent" in result
+    assert 'load_skill with name="review-code"' in result
+    assert result.endswith("Then use it to: please check this")
+    assert "rather than spawning a subagent" in result
 
 
 def test_bare_skill_no_args_asks_for_output_not_a_status_report():
@@ -51,7 +51,7 @@ def test_text_before_the_token_is_kept():
     _make_skill("summarize", id_="skill_sum")
     result = _resolve("please handle this /summarize")
     assert result.startswith("please handle this ")
-    assert 'skill "summarize" (id: skill_sum)' in result
+    assert 'name="summarize"' in result
 
 
 def test_multiline_args_preserved():
@@ -72,7 +72,7 @@ def test_unresolved_token_after_a_skill_stays_in_its_task():
     """A path in the task text must not cut the task off from the skill."""
     _make_skill("summarize", id_="skill_sum")
     result = _resolve("/summarize /tmp/report.txt please")
-    assert "then use it to: /tmp/report.txt please." in result
+    assert result.endswith("Then use it to: /tmp/report.txt please")
     assert "in order" not in result
 
 
@@ -80,7 +80,7 @@ def test_unresolved_token_before_a_skill_passes_through():
     _make_skill("review-code", id_="skill_review")
     result = _resolve("look at /etc/hosts then /review-code it please")
     assert result.startswith("look at /etc/hosts then ")
-    assert "then use it to: it please." in result
+    assert result.endswith("Then use it to: it please")
 
 
 def test_whitespace_boundary_ignores_mid_word_slash():
@@ -90,12 +90,19 @@ def test_whitespace_boundary_ignores_mid_word_slash():
 
 def test_resolves_by_id_as_well_as_name():
     _make_skill("Review Code", id_="skill_review")
-    assert 'skill "Review Code" (id: skill_review)' in _resolve("/skill_review do it")
+    assert 'name="Review Code"' in _resolve("/skill_review do it")
 
 
 def test_resolves_skill_by_slug_of_multiword_name():
     _make_skill("Joke teller", id_="4dffecbf8559")
-    assert 'skill "Joke teller" (id: 4dffecbf8559)' in _resolve("/joke-teller tell me one")
+    assert 'name="Joke teller"' in _resolve("/joke-teller tell me one")
+
+
+def test_instruction_names_the_skill_not_its_id():
+    """load_skill matches by name; an id in the instruction sends the model a
+    value its first call rejects."""
+    _make_skill("Joke teller", id_="4dffecbf8559")
+    assert "4dffecbf8559" not in _resolve("/joke-teller")
 
 
 def test_ambiguous_skill_slug_is_left_fully_inert():
@@ -119,12 +126,11 @@ def test_chained_skills_get_sequencing_instruction():
     _make_skill("create-draft", id_="skill_create")
     _make_skill("review-draft", id_="skill_review_draft")
     result = _resolve("/create-draft from mynotes.txt and then /review-draft")
-    assert result.index("skill_create") < result.index("skill_review_draft")
+    assert result.index('name="create-draft"') < result.index('name="review-draft"')
     assert "in order" in result
     assert "mynotes.txt and then" in result
-    # The single space between the tokens survives, so the two rendered
-    # instructions don't run together.
-    assert "in this conversation. Load skill" in result
+    # The single space between the tokens survives.
+    assert "mynotes.txt and then Load the" in result
 
 
 def test_multiple_tokens_beyond_two():
@@ -137,4 +143,4 @@ def test_at_and_hash_are_not_tokens_yet():
     _make_skill("review-code", id_="skill_review")
     _make_skill("tag", id_="skill_tag")
     result = _resolve("@coder #tag /review-code myfile.py")
-    assert result.startswith("@coder #tag Load skill")
+    assert result.startswith("@coder #tag Load the")
