@@ -346,3 +346,95 @@ describe('projectTurns with inflight iteration appended (live streaming)', () =>
         expect(iter.content).toBe('partial');
     });
 });
+
+describe('projectTurns — goal chats', () => {
+    // Local times, so the day boundary does not depend on the machine's zone.
+    const at = (day, hour) => new Date(2026, 9, day, hour).toISOString();
+    const root = (n, timestamp) => ({ ..._agentStarted(n), depth: 0, timestamp });
+    const wakeup = (id, reason, step, timestamp) => ({
+        id, type: 'goal', goal_id: 'g1', agent_id: 'root.test.1', depth: 0, timestamp,
+        data: { kind: 'wakeup', wake_id: `w-${id}`, reason, step },
+    });
+    const transition = (id, kind, timestamp, extra = {}) => ({
+        id, type: 'goal', goal_id: 'g1', timestamp,
+        data: { kind, objective: 'Book the pavilion', resume_at: null, question_count: 0, ...extra },
+    });
+    const completed = (n) => ({ id: `evt_done_${n}`, type: 'agent_completed', agent_id: `root.test.${n}`, depth: 0, status: 'success' });
+    const reply = (id, n) => ({ ..._iter(id, { content: id }), agent_id: `root.test.${n}`, depth: 0 });
+    const dividers = (turns) => turns.flatMap((turn) => turn.children).filter((child) => child.kind === 'goal_transition');
+
+    it('gives every wakeup a run divider with its step, whatever started it', () => {
+        const turns = projectTurns([
+            root(1, at(23, 9)),
+            wakeup('planned', 'planned', 'Call the parks office', at(23, 9)),
+            root(2, at(23, 10)),
+            wakeup('now', 'run_now', 'Call the parks office', at(23, 10)),
+            root(3, at(23, 11)),
+            wakeup('retry', 'retry', 'Book the pavilion', at(23, 11)),
+            root(4, at(23, 12)),
+            wakeup('restart', 'interrupted', '', at(23, 12)),
+        ]);
+        expect(dividers(turns).map((divider) => [divider.transition, divider.step])).toEqual([
+            ['run', 'Call the parks office'], ['run', 'Call the parks office'], ['run', 'Book the pavilion'], ['run', ''],
+        ]);
+    });
+
+    it('keeps state notices out of the transcript', () => {
+        const turns = projectTurns([
+            root(1, at(23, 9)),
+            { id: 'notice', type: 'goal', goal_id: 'g1', timestamp: at(23, 9), data: { kind: 'state_notice', revision: 3, reason: 'state_changed' } },
+        ]);
+        expect(turns[0].children.filter((child) => child.kind !== 'day_header')).toEqual([]);
+    });
+
+    it('adds a day header before the first message or divider of each new day', () => {
+        const turns = projectTurns([
+            transition('started', 'started', at(23, 9)),
+            root(1, at(23, 9)),
+            { ..._userMsg('Find a Saturday', { id: 'ask' }), agent_id: 'root.test.1', depth: 0, timestamp: at(23, 9) },
+            transition('scheduled', 'scheduled', at(23, 10), { resume_at: at(24, 9) }),
+            root(2, at(24, 9)),
+            wakeup('next-day', 'planned', 'Call the parks office', at(24, 9)),
+            transition('done', 'completed', at(24, 10)),
+            completed(2),
+        ]);
+        const children = turns.flatMap((turn) => turn.children);
+        expect(children.map((child) => child.kind === 'day_header' ? `day:${new Date(child.timestamp).getDate()}` : child.id)).toEqual([
+            'day:23', 'started', 'ask', 'scheduled', 'day:24', 'next-day', 'done',
+        ]);
+    });
+
+    it('marks a turn finished when its root agent completes, not when a sub-agent does', () => {
+        const turns = projectTurns([
+            root(1, at(23, 9)),
+            _subAgentStarted(1, 'root.test.1'),
+            { id: 'sub_done', type: 'agent_completed', agent_id: 'root.test.1.sub.1', parent_agent_id: 'root.test.1', depth: 1, status: 'success' },
+        ]);
+        expect(turns[0].finished).toBe(false);
+        expect(projectTurns([root(1, at(23, 9)), completed(1)])[0].finished).toBe(true);
+    });
+
+    it('shows a new goal as start, the agent\'s reply, then done', () => {
+        const events = [
+            transition('started', 'started', at(23, 9)),
+            root(1, at(23, 9)),
+            wakeup('run', 'planned', '', at(23, 9)),
+            reply('tools', 1),
+            transition('done', 'completed', at(23, 9)),
+            reply('reply', 1),
+        ];
+        const visible = (turns) => turns.flatMap((turn) => turn.children).filter((child) => child.kind !== 'day_header').map((child) => child.id);
+        expect(visible(projectTurns(events))).toEqual(['started', 'tools', 'reply']);
+        expect(visible(projectTurns([...events, completed(1)]))).toEqual(['started', 'tools', 'reply', 'done']);
+    });
+
+    it('adds no day headers to a chat without a goal', () => {
+        const turns = projectTurns([
+            root(1, at(23, 9)),
+            { ..._userMsg('Hello', { id: 'hi' }), agent_id: 'root.test.1', depth: 0, timestamp: at(23, 9) },
+            root(2, at(24, 9)),
+            { ..._userMsg('Again', { id: 'again' }), agent_id: 'root.test.2', depth: 0, timestamp: at(24, 9) },
+        ]);
+        expect(turns.flatMap((turn) => turn.children).some((child) => child.kind === 'day_header')).toBe(false);
+    });
+});

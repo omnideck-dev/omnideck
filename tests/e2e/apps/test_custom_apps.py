@@ -134,7 +134,7 @@ def _open_custom_apps_library(page: Page) -> None:
 
 def _expect_app_beside_chat(page: Page) -> None:
     """Assert Chat and the Custom App are active in left and right tab groups."""
-    expect(page.get_by_test_id("chat-title-bar")).to_be_visible()
+    expect(page.get_by_test_id("chat-panel")).to_be_visible()
     expect(page.get_by_test_id("desktop-layout")).to_have_attribute(
         "data-split", "true"
     )
@@ -318,7 +318,7 @@ def test_custom_app_moves_left_to_right_and_back_without_losing_state(
     expect(page.get_by_test_id("custom-app-chat")).to_have_count(0)
     expect(page.get_by_test_id("custom-app-close")).to_have_count(0)
     expect(page.get_by_test_id("custom-app-home-toggle")).to_have_count(0)
-    expect(page.get_by_test_id("chat-title-bar")).not_to_be_visible()
+    expect(page.get_by_test_id("chat-panel")).not_to_be_visible()
     expect(page.get_by_test_id("view-tab-custom-app:text-lab")).to_be_visible()
     expect(
         page.locator("[data-view-id='custom-app:text-lab']")
@@ -340,7 +340,7 @@ def test_custom_app_moves_left_to_right_and_back_without_losing_state(
         page.locator("[data-view-id='custom-app:text-lab']")
     ).to_have_attribute("data-tab-group-id", "left")
     expect(page.get_by_test_id("desktop-tab-group-right")).to_have_count(0)
-    expect(page.get_by_test_id("chat-title-bar")).not_to_be_visible()
+    expect(page.get_by_test_id("chat-panel")).not_to_be_visible()
     expect(frame.locator("#text")).to_have_value(working_text)
 
     desktop.float("custom-app:text-lab")
@@ -420,7 +420,7 @@ def test_custom_app_bridge_selects_chat_without_moving_the_app(
     frame = page.frame_locator('[data-testid="custom-app-frame"]')
 
     frame.get_by_role("button", name="Open chat").click()
-    expect(page.get_by_test_id("chat-title-bar")).to_be_visible()
+    expect(page.get_by_test_id("chat-panel")).to_be_visible()
     expect(
         page.locator("[data-view-id='custom-app:text-lab']")
     ).to_have_attribute("data-tab-group-id", "left")
@@ -432,7 +432,7 @@ def test_custom_app_bridge_selects_chat_without_moving_the_app(
     working_text = "Bridge compose state"
     frame.locator("#text").fill(working_text)
     frame.get_by_role("button", name="Ask agent about this").click()
-    expect(page.get_by_test_id("chat-title-bar")).to_be_visible()
+    expect(page.get_by_test_id("chat-panel")).to_be_visible()
     expect(
         page.locator("[data-view-id='custom-app:text-lab']")
     ).to_have_attribute("data-tab-group-id", "left")
@@ -569,7 +569,7 @@ def test_right_pane_custom_app_survives_new_conversation_and_closes(
 
     desktop.choose_tab_action("custom-app:text-lab", "close")
     expect(page.get_by_test_id("view-tab-custom-app:text-lab")).not_to_be_visible()
-    expect(page.get_by_test_id("chat-title-bar")).to_be_visible()
+    expect(page.get_by_test_id("chat-panel")).to_be_visible()
 
 
 def test_disabling_custom_apps_closes_the_open_app(
@@ -597,7 +597,7 @@ def test_legacy_home_setting_is_ignored_by_the_tabbed_shell(
     assert page.request.put("/api/custom-apps/home", data={"slug": "text-lab"}).ok
 
     ChatView(page).goto()
-    expect(page.get_by_test_id("chat-title-bar")).to_be_visible()
+    expect(page.get_by_test_id("chat-panel")).to_be_visible()
     expect(page.get_by_test_id("sidebar-nav-home")).to_have_count(0)
     expect(page.get_by_test_id("custom-app-frame")).to_have_count(0)
 
@@ -606,7 +606,7 @@ def test_legacy_home_setting_is_ignored_by_the_tabbed_shell(
     frame = page.frame_locator('[data-testid="custom-app-frame"]')
     expect(frame.get_by_role("heading", name="Text Lab")).to_be_visible()
     expect(page.get_by_test_id("custom-app-home-toggle")).to_have_count(0)
-    expect(page.get_by_test_id("chat-title-bar")).not_to_be_visible()
+    expect(page.get_by_test_id("chat-panel")).not_to_be_visible()
     expect(page.get_by_test_id("view-tab-custom-app:text-lab")).to_be_visible()
 
 
@@ -707,7 +707,7 @@ def test_custom_app_opens_and_invokes_python(page: Page, installed_custom_app) -
     # Closing the app removes its view tab and leaves Chat active.
     DesktopLayout(page).choose_tab_action("custom-app:text-lab", "close")
     expect(page.get_by_test_id("view-tab-custom-app:text-lab")).not_to_be_visible()
-    expect(page.get_by_test_id("chat-title-bar")).to_be_visible()
+    expect(page.get_by_test_id("chat-panel")).to_be_visible()
 
     # Reopen as a normal tab and maximize the same iframe view.
     page.get_by_test_id("sidebar-nav-apps").click()

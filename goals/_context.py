@@ -1,56 +1,66 @@
-"""Model-facing working state; older evidence is available through goal history."""
+"""The agent's view of a goal, in the words of its tools."""
 
-from ._models import Goal
+from datetime import datetime, timezone
 
-_RECENT_PROGRESS_LIMIT = 3
+from ._models import Goal, GoalQuestion, local_time
 
 
-def goal_context(goal: Goal) -> dict:
-    """Expose actionable state without storage metadata or replaying the journal."""
-    recent = goal.progress[-_RECENT_PROGRESS_LIMIT:]
-    snapshot = {
+def _now() -> str:
+    now = datetime.now(timezone.utc)
+    return f"{now.astimezone().isoformat(timespec='minutes')} ({local_time(now)})"
+
+
+def _question(question: GoalQuestion) -> dict:
+    view: dict = {"id": question.id, "question": question.question, "status": question.status}
+    if question.choices:
+        view["choices"] = question.choices
+    answers = [
+        {"answer": answer.answer, **({"new": True} if index >= question.reviewed_answer_count else {})}
+        for index, answer in enumerate(question.answers)
+    ]
+    if answers:
+        view["answers"] = answers
+    return view
+
+
+def next_action_view(goal: Goal) -> dict | None:
+    """What happens next, in choose_next_action's words."""
+    following = goal.next
+    if following.kind == "wake":
+        if datetime.fromisoformat(following.at) <= datetime.now(timezone.utc):
+            return {"action": "continue"}
+        return {"action": "schedule", "at": local_time(following.at)}
+    if following.kind == "wait":
+        return {"action": "wait_for_input", "question_ids": following.question_ids} if following.question_ids else None
+    if following.kind == "done":
+        return {"action": "complete", "outcome": following.outcome}
+    return None
+
+
+def goal_context(goal: Goal, *, held_wake_id: str | None = None) -> dict:
+    """The whole goal without storage words.
+
+    ``held_wake_id`` is the wake the reader's own run took. While it is still
+    the next action, the next action is left out: the run has not chosen yet.
+    """
+    view: dict = {
         "objective": goal.objective,
-        "kind": goal.kind,
-        "status": goal.status,
-        "revision": goal.revision,
-        # Preserve the complete replacement inputs, including dependencies and answers.
+        "now": _now(),
         "plan": [step.model_dump(mode="json", exclude_defaults=True) for step in goal.plan],
-        "questions": [question.model_dump(mode="json", exclude={"updated_at"}) for question in goal.questions],
-        "history_count": goal.history_count,
-        "earlier_progress_entries": max(0, goal.progress_count - len(recent)),
+        "questions": [_question(question) for question in goal.questions],
     }
-    for name in (
-        "summary", "known_facts", "blocking_question_ids",
-        "next_action", "status_reason", "outcome", "resume_at", "wake_reason",
-    ):
-        value = getattr(goal, name)
-        if value:
-            snapshot[name] = value
-    if goal.claimed_wake_reason:
-        snapshot["current_run_reason"] = goal.claimed_wake_reason
-    if recent:
-        # Past next_action values are superseded by the current next_action above.
-        snapshot["progress"] = [{"created_at": entry.created_at, "summary": entry.summary} for entry in recent]
-    return snapshot
-
-
-def goal_brief(goal: Goal) -> dict:
-    """Default per-call view; full working details are available through read_goal."""
-    brief: dict = {"objective": goal.objective, "kind": goal.kind, "status": goal.status, "revision": goal.revision}
-    for name in ("summary", "known_facts", "next_action", "blocking_question_ids", "resume_at", "wake_reason", "outcome"):
-        value = getattr(goal, name)
-        if value:
-            brief[name] = value
-    if goal.plan:
-        brief["plan_steps"] = len(goal.plan)
-    if goal.progress:
-        brief["latest_progress"] = goal.progress[-1].summary
-    if goal.questions:
-        brief["questions"] = []
-        for question in goal.questions:
-            item: dict = {"id": question.id, "question": question.question}
-            pending = question.answers[question.reviewed_answer_count:]
-            if pending:
-                item["answers"] = [answer.answer for answer in pending]
-            brief["questions"].append(item)
-    return brief
+    if goal.summary:
+        view["summary"] = goal.summary
+    if goal.note:
+        view["note"] = goal.note
+    if goal.paused:
+        view["paused"] = True
+    if goal.next.kind == "error":
+        view["error"] = goal.next.message
+    if goal.next.kind == "cancelled":
+        view["cancelled"] = True
+    holding = held_wake_id is not None and goal.next.kind == "wake" and goal.next.id == held_wake_id
+    following = None if holding else next_action_view(goal)
+    if following is not None:
+        view["next_action"] = following
+    return view

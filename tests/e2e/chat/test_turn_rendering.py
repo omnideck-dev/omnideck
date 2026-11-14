@@ -125,7 +125,7 @@ def test_resume_sub_agent_renders_spawn_card_and_network(page: Page):
         expect(page.get_by_test_id("message-user")).to_contain_text("delegate this")
         expect(page.get_by_test_id("spawn-card")).to_be_visible()
         expect(page.get_by_test_id("spawn-card")).to_contain_text("ALPHA")
-        expect(page.get_by_test_id("network-indicator")).to_contain_text("2 agents")
+        expect(page.get_by_test_id("network-indicator")).to_have_accessible_name("Open sub-agents (2)")
         page.get_by_test_id("spawn-card-row").first.click()
         expect(page.get_by_test_id("agent-activity-title")).to_contain_text("ALPHA")
         expect(page.get_by_test_id("instruction-toggle")).to_contain_text("Compute 7*6 and report")

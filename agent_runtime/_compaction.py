@@ -20,7 +20,7 @@ from agent_core.events import (
 )
 from settings import load_settings
 
-from agent_core.context import ContextStats, ConversationHistory, TriggerPoint
+from agent_core.context import SYSTEM_ACTIVITY_PREFIX, ContextStats, ConversationHistory, TriggerPoint
 
 logger = logging.getLogger(__name__)
 _console = Console(stderr=True)
@@ -275,7 +275,8 @@ class LLMCompactionStrategy:
         for m in non_system:
             if m.get("role") == "user":
                 content = m.get("content") or ""
-                if content and not content.startswith(_SUMMARY_PREFIX):
+                # App notes, such as goal wakeups, are not something the user asked for.
+                if content and not content.startswith((_SUMMARY_PREFIX, SYSTEM_ACTIVITY_PREFIX)):
                     all_user_contents.append(content)
 
         prior_summary = _extract_prior_summary(compactable)

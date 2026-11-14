@@ -277,7 +277,7 @@ def _convert_messages_for_openai(messages: list[dict[str, Any]]) -> list[dict[st
     """
     converted = []
     for msg in messages:
-        msg = {key: value for key, value in msg.items() if key != "_runtime_context"}
+        msg = dict(msg)
         if msg.get("role") == "assistant" and msg.get("tool_calls"):
             openai_tcs = []
             for tc in msg["tool_calls"]:

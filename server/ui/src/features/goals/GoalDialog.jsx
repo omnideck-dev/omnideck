@@ -46,7 +46,7 @@ export default function GoalDialog({ conversationId, profileId, initialObjective
     if (!snapshot) {
         return <Modal onClose={close} labelledBy={headingId}>
             <div className={styles.fields}>
-                <h2 id={headingId}>Goal</h2>
+                <h2 id={headingId}>{isGoalOpen(goalsByConversation[conversationId]) ? 'Edit' : 'Start a goal'}</h2>
                 {error ? <>
                     <Callout tone="warning" title="Could not load this chat's goal" description={error} />
                     <Button variant="ghost" onClick={() => setAttempt((value) => value + 1)}>Retry</Button>

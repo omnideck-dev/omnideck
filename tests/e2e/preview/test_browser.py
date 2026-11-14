@@ -27,7 +27,7 @@ def test_browser_snapshot_appears(page: Page):
     # beyond the default turn budget.
     chat.send(open_url("https://example.com")).wait_streaming(timeout=30_000)
     expect(chat.preview.browser_tab).to_be_visible(timeout=10_000)
-    expect(page.get_by_test_id("chat-title-bar")).to_be_visible()
+    expect(page.get_by_test_id("chat-panel")).to_be_visible()
 
     desktop = DesktopLayout(page)
     browser_view = page.locator("[data-view-resource-id='browser']")

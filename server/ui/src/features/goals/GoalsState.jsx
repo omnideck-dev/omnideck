@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { isGoalOpen } from './goalStatus.js';
 
 export const GOAL_POLL_MS = 3000;
 const GoalsContext = createContext(null);
@@ -10,20 +11,32 @@ function newestGoal(current, incoming) {
     return incoming;
 }
 
-export function isGoalOpen(goal) {
-    return Boolean(goal && !['completed', 'cancelled'].includes(goal.status));
+export { goalNeedsAnswer, goalStatus, isGoalOpen } from './goalStatus.js';
+
+const DRAFT_PREFIX = 'omnideck_goal_answers:';
+
+/** Answer drafts belong to one open goal. Drop drafts of ended goals and deleted chats. */
+function pruneAnswerDrafts(goals) {
+    try {
+        const keep = new Set(goals.filter(isGoalOpen).map((goal) => `${DRAFT_PREFIX}${goal.conversation_id}:${goal.id}`));
+        for (let index = localStorage.length - 1; index >= 0; index -= 1) {
+            const key = localStorage.key(index);
+            if (key?.startsWith(DRAFT_PREFIX) && !keep.has(key)) localStorage.removeItem(key);
+        }
+    } catch { /* Storage can be unavailable. */ }
 }
 
-export function goalStatusLabel(goal) {
-    if (!goal) return '';
-    if (goal.status === 'paused') return goal.running ? 'Pausing' : 'Paused';
-    if (goal.status === 'cancelled') return goal.running ? 'Cancelling' : 'Cancelled';
-    if (goal.status === 'completed') return 'Finished';
-    const open = (goal.questions || []).filter((q) => q.status === 'open');
-    const unanswered = open.filter((q) => q.answers.length <= q.reviewed_answer_count).length;
-    if (goal.status === 'needs_input') return 'Waiting for your answer';
-    if (goal.running) return unanswered ? `Working · ${unanswered} question${unanswered === 1 ? '' : 's'} for you` : open.length ? 'Reviewing your answers' : 'Working on it';
-    return ({ active: 'Getting started', scheduled: 'Returning later' })[goal.status] || goal.status;
+/** Keep the previous object when no goal changed, so a poll does not re-render every consumer. */
+function mergePolledGoals(current, goals) {
+    const next = Object.fromEntries(goals.map((goal) => [goal.conversation_id, newestGoal(current[goal.conversation_id], goal)]));
+    const keys = Object.keys(next);
+    const unchanged = keys.length === Object.keys(current).length && keys.every((key) => {
+        const before = current[key];
+        const after = next[key];
+        return before && before.id === after.id && before.revision === after.revision
+            && before.running === after.running && before.run_id === after.run_id && before.last_run_id === after.last_run_id;
+    });
+    return unchanged ? current : next;
 }
 
 async function requestJson(url, options) {
@@ -54,7 +67,8 @@ export function GoalsProvider({ children, enabled = false }) {
         try {
             const data = await requestJson('/api/goals');
             if (startedGeneration !== generation.current) return;
-            setGoals((current) => Object.fromEntries((data.goals || []).map((goal) => [goal.conversation_id, newestGoal(current[goal.conversation_id], goal)])));
+            setGoals((current) => mergePolledGoals(current, data.goals || []));
+            pruneAnswerDrafts(data.goals || []);
             setPollVersion((current) => current + 1);
             setError('');
         } catch {
@@ -108,7 +122,7 @@ export function GoalsProvider({ children, enabled = false }) {
     const mutateGoal = useCallback(async (conversationId, action, body) => {
         generation.current += 1;
         detailRequests.current[conversationId] = (detailRequests.current[conversationId] || 0) + 1;
-        const suffix = ['pause', 'resume', 'cancel'].includes(action) ? `/${action}` : '';
+        const suffix = ['pause', 'resume', 'run', 'cancel', 'reopen'].includes(action) ? `/${action}` : '';
         try {
             const data = await requestJson(`/api/conversations/sessions/${encodeURIComponent(conversationId)}/goal${suffix}`, {
                 method: action === 'edit' ? 'PATCH' : 'POST',

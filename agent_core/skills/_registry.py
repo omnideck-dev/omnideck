@@ -10,8 +10,8 @@ from pydantic import BaseModel, model_validator
 
 
 class Skill(BaseModel):
-    """A loadable bundle of tools and a prompt fragment — the resolved
-    counterpart of a persisted SkillRecord.
+    """A bundle of tools and a prompt fragment, resolved from a SkillRecord or
+    supplied internally by the application for an individual run.
 
     Attributes:
         id: Stable identifier (the SkillRecord id). Defaults to ``name`` when

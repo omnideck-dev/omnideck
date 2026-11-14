@@ -33,9 +33,11 @@ logger = logging.getLogger(__name__)
 # commands, so those live in bounded overwrite-in-place sidecars
 # (browser_tabs.json, terminal.json) instead of growing the append-only
 # log forever (real logs were >90% screenshots before the split).
+# Queued-message events (nudge_queued, nudge_removed) live only in the run's
+# replay; the message itself is saved once the agent reads it.
 _PERSISTED_TYPES: frozenset[str] = frozenset({
     "user_message",
-    "goal_wakeup",
+    "goal",
     "iteration",
     "tool_result",
     "compaction",

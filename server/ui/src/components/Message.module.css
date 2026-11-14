@@ -214,3 +214,15 @@
 .turnError {
   margin-bottom: var(--sp-3);
 }
+
+.replyReference {
+  color: var(--text-secondary);
+  font-size: var(--font-size-small);
+  margin-bottom: var(--sp-2);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.goalReply + .goalReply {
+  margin-top: var(--sp-4);
+}

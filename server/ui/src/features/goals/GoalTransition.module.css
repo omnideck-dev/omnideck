@@ -1,0 +1,50 @@
+.row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-4);
+    margin: var(--sp-4) 0;
+    color: var(--text-secondary);
+    font-size: var(--font-size-small);
+    line-height: 1.6;
+}
+.row::before,
+.row::after {
+    content: '';
+    flex: 1 0 var(--sp-4);
+    height: 1px;
+    background: var(--border-subtle);
+}
+.content {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-1);
+    min-width: 0;
+    max-width: 80%;
+    white-space: nowrap;
+}
+/* An invisible copy of the time on the left balances the time on the right,
+   so the label stays centered while the time is hidden. */
+.content::before {
+    content: attr(data-time);
+    flex-shrink: 0;
+    visibility: hidden;
+    font-variant-numeric: tabular-nums;
+}
+.label { flex-shrink: 0; }
+.detail { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-primary); }
+.icon { flex-shrink: 0; }
+.time { flex-shrink: 0; color: var(--text-tertiary); font-variant-numeric: tabular-nums; opacity: 0; transition: opacity 120ms var(--ease); }
+.row:hover .time { opacity: 1; }
+.neutral { color: var(--text-secondary); }
+.accent { color: var(--accent); }
+.success { color: var(--success); }
+.warning { color: var(--warning); }
+.danger { color: var(--danger); }
+.day {
+    margin: var(--sp-6) 0 var(--sp-2);
+    text-align: center;
+    color: var(--text-tertiary);
+    font-size: var(--font-size-caption);
+    font-weight: 600;
+}
+@media (prefers-reduced-motion: reduce) { .time { transition: none; } }

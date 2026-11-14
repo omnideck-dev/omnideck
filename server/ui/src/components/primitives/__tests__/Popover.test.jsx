@@ -63,6 +63,36 @@ describe('Popover', () => {
         fireEvent(window, new Event('resize'));
         expect(onOpen).toHaveBeenCalledTimes(1);
     });
+
+    it('caps anchor-sized overlays and follows pane resizing', () => {
+        let rect = { left: 20, right: 920, top: 20, bottom: 64, width: 900, height: 44 };
+        const anchor = document.createElement('div');
+        anchor.getBoundingClientRect = () => rect;
+        render(<Popover anchorRef={{ current: anchor }} maxWidth={760} placement="bottom" testId="responsive-popover">Goal details</Popover>);
+        expect(screen.getByTestId('responsive-popover')).toHaveStyle({ width: '760px', top: '70px' });
+        rect = { ...rect, right: 340, width: 320 };
+        fireEvent(window, new Event('resize'));
+        expect(screen.getByTestId('responsive-popover')).toHaveStyle({ width: '320px', top: '70px' });
+    });
+
+    it('positions against a composer but dismisses when another composer control is clicked', async () => {
+        const user = userEvent.setup();
+        function Composer() {
+            const anchorRef = useRef(null);
+            const triggerRef = useRef(null);
+            const [open, setOpen] = useState(false);
+            return <div ref={anchorRef}>
+                <button ref={triggerRef} onClick={() => setOpen(!open)}>Goal</button>
+                <button>Artifacts</button>
+                {open && <Popover anchorRef={anchorRef} triggerRef={triggerRef} onClose={() => setOpen(false)} role="region" ariaLabel="Goal details"><p>Plan</p></Popover>}
+            </div>;
+        }
+        render(<Composer />);
+        await user.click(screen.getByRole('button', { name: 'Goal' }));
+        expect(screen.getByRole('region', { name: 'Goal details' })).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: 'Artifacts' }));
+        expect(screen.queryByRole('region', { name: 'Goal details' })).not.toBeInTheDocument();
+    });
     it('portals outside a clipping pane and flips above a low trigger', async () => {
         const user = userEvent.setup();
         Object.defineProperty(window, 'innerWidth', { configurable: true, value: 880 });

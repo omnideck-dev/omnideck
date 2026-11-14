@@ -313,3 +313,46 @@ def test_llm_view_augments_first_user_message_with_attachments():
             "look at this\n\n[Attached files written to virtual computer]\n"
             "  - a.txt (text/plain) -> /home/computron/uploads/a.txt"},
     ]
+
+
+@pytest.mark.parametrize("first", [True, False])
+def test_goal_reply_context_is_model_only_and_survives_serialization(first):
+    import json
+    from agent_core.events import UserMessagePayload
+
+    payload = UserMessagePayload(type="user_message", content="Saturday at 9 AM", context=[{
+        "type": "goal_question", "goal_id": "goal_123", "question_id": "start_time",
+        "question_revision": 1, "question": "When should the cleanup start?", "answer": "Saturday at 9 AM",
+    }])
+    event = {**_user(ROOT, ""), **payload.model_dump()}
+    events = [] if first else [_user(ROOT, "Plan a cleanup", evt_id="earlier")]
+    events.append(event)
+    replay = json.loads(json.dumps(events))
+    assert build_llm_view(replay)[-1]["content"] == (
+        "[Answers to your goal questions]\n"
+        'Question start_time: "When should the cleanup start?"\n'
+        "Answer: Saturday at 9 AM"
+    )
+    assert replay[-1]["content"] == "Saturday at 9 AM"
+    assert event["content"] == "Saturday at 9 AM"
+
+
+def test_goal_answers_render_under_one_header_with_labels_and_no_revision():
+    from agent_core.events import UserMessagePayload
+
+    context = [
+        {"type": "goal_question", "goal_id": "g", "question_id": "stubhub", "question_revision": 3,
+         "question": "Unsubscribe from StubHub?", "answer": "Yes"},
+        {"type": "goal_question", "goal_id": "g", "question_id": "wells_fargo", "question_revision": 1,
+         "question": "Keep Wells Fargo alerts?", "answer": "Only fraud alerts"},
+    ]
+    payload = UserMessagePayload(type="user_message", content="Yes\n\nOnly fraud alerts", context=context)
+    event = {**_user(ROOT, ""), **payload.model_dump()}
+    assert build_llm_view([event])[-1]["content"] == (
+        "[Answers to your goal questions]\n"
+        'Question stubhub: "Unsubscribe from StubHub?"\n'
+        "Answer: Yes\n"
+        "\n"
+        'Question wells_fargo: "Keep Wells Fargo alerts?"\n'
+        "Answer: Only fraud alerts"
+    )

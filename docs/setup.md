@@ -1,6 +1,6 @@
 # Setup Readiness Gate
 
-Some subsystems (like the task runner) need user-driven setup to complete
+Some subsystems (like scheduled goals and routines) need user-driven setup to complete
 before they can do real work.  The setup module provides a readiness gate
 that lets these subsystems wait without knowing what "setup" actually
 involves.
@@ -26,8 +26,8 @@ During `app.on_startup` (before the server begins accepting requests):
 2. _init_ready_signal creates app["ready"] and checks setup.is_ready()
    - If True:  app["ready"] is set immediately
    - If False: app["ready"] stays unset
-3. Per-subsystem startup hooks (e.g. _start_task_runner) spawn a
-   background task that awaits app["ready"] before initializing
+3. _start_deferred_subsystems waits for app["ready"], then starts
+   the shared Scheduler with goal and routine work sources
 ```
 
 Then the server begins accepting requests. If `ready` wasn't set, the
@@ -46,8 +46,8 @@ step 2 sets the event immediately and subsystems start without waiting.
 
 Add a startup hook in `server/aiohttp_app.py` that spawns a background
 task and waits on `app["ready"]` before initializing the subsystem, plus
-a cleanup hook that cancels the init task. See `_start_task_runner` /
-`_stop_task_runner` in `server/aiohttp_app.py` for the reference
+a cleanup hook that cancels the init task. See `_start_deferred_subsystems` /
+`_stop_deferred_subsystems` in `server/aiohttp_app.py` for the reference
 implementation.
 
 ## The setup module

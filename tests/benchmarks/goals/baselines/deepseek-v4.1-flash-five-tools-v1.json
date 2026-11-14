@@ -1,0 +1,2604 @@
+{
+  "manifest": {
+    "version": "goal-following-v1",
+    "suite_hash": "248e38501f8422b56340ec70dc7f4bde938b8f3c66c847ee97b7fd2121d66aee",
+    "started_at": "2026-10-26T02:04:55.064231+00:00",
+    "python": "3.12.15",
+    "provider_libraries": {
+      "ollama": "0.6.1",
+      "openai": "1.109.1",
+      "anthropic": "0.84.0"
+    },
+    "workers": 3,
+    "runtime_hash": "bb38b9a7feb8173dbd164a21d1f93e071079bca53dd4ee9a65a9047ee852be1e",
+    "commit": "52f0dfec",
+    "provider": "ollama",
+    "model": "deepseek-v4.1-flash:cloud",
+    "options": {
+      "temperature": 0.2,
+      "num_predict": 2500
+    },
+    "split": "development",
+    "scenarios": [
+      "verified_delivery",
+      "revise_approach",
+      "blocking_question",
+      "partial_answers",
+      "corrected_answer",
+      "external_edit",
+      "scheduled_return",
+      "history_recall",
+      "interrupted_action",
+      "compaction",
+      "pause_cancel",
+      "ongoing_campaign"
+    ],
+    "repeats": 5,
+    "budgets": {
+      "max_calls": 80,
+      "max_iterations": 16,
+      "context_window": 32000,
+      "run_timeout": 180
+    },
+    "scenario_specs": [
+      {
+        "id": "verified_delivery",
+        "family": "completion",
+        "objective": "Send the neighborhood newsletter announcement to the library and confirm delivery. Send it only once.",
+        "answers": [],
+        "ongoing": false,
+        "max_runs": 8,
+        "horizon_hours": 72
+      },
+      {
+        "id": "revise_approach",
+        "family": "planning",
+        "objective": "Arrange distribution of our newsletter through a local organization. Find an available partner and confirm delivery of the announcement. Do not send duplicate requests.",
+        "answers": [],
+        "ongoing": false,
+        "max_runs": 8,
+        "horizon_hours": 72
+      },
+      {
+        "id": "blocking_question",
+        "family": "questions",
+        "objective": "Book a dental appointment covered by my insurance. I have not told you my insurance plan yet. Any available afternoon works. You may book once coverage is confirmed.",
+        "answers": [
+          "My insurance is Cedar Dental."
+        ],
+        "ongoing": false,
+        "max_runs": 8,
+        "horizon_hours": 72
+      },
+      {
+        "id": "partial_answers",
+        "family": "questions",
+        "objective": "Book a dental appointment covered by my insurance, at my preferred time. You do not know my insurance or preferred time yet. Research available offices while waiting for those details; do not book until both are known.",
+        "answers": [
+          "I can confirm only my insurance so far: Cedar Dental.",
+          "My preferred time is Tuesday afternoon. My insurance is Cedar Dental."
+        ],
+        "ongoing": false,
+        "max_runs": 8,
+        "horizon_hours": 72
+      },
+      {
+        "id": "corrected_answer",
+        "family": "questions",
+        "objective": "Run one community newsletter campaign within my latest budget, then check its results and report the verified outcome. My budget answers are in the saved goal questions.",
+        "answers": [],
+        "ongoing": false,
+        "max_runs": 8,
+        "horizon_hours": 72
+      },
+      {
+        "id": "external_edit",
+        "family": "direction",
+        "objective": "Arrange newsletter distribution through a local organization and confirm delivery. You may contact an available organization.",
+        "answers": [],
+        "ongoing": false,
+        "max_runs": 8,
+        "horizon_hours": 72
+      },
+      {
+        "id": "scheduled_return",
+        "family": "scheduling",
+        "objective": "Send the newsletter announcement to the library, then confirm delivery. Their delivery report will not be available until tomorrow. Do not send duplicate requests.",
+        "answers": [],
+        "ongoing": false,
+        "max_runs": 8,
+        "horizon_hours": 72
+      },
+      {
+        "id": "history_recall",
+        "family": "memory",
+        "objective": "Confirm delivery of the library announcement sent in an earlier run. The receipt was recorded in older goal progress. Do not send another announcement.",
+        "answers": [],
+        "ongoing": false,
+        "max_runs": 8,
+        "horizon_hours": 72
+      },
+      {
+        "id": "interrupted_action",
+        "family": "recovery",
+        "objective": "Send the newsletter announcement to the library and confirm delivery. An interrupted request may have succeeded; check its status before repeating it.",
+        "answers": [],
+        "ongoing": false,
+        "max_runs": 8,
+        "horizon_hours": 72
+      },
+      {
+        "id": "compaction",
+        "family": "memory",
+        "objective": "Send the newsletter announcement to the library and confirm delivery. Preserve the receipt and verified outcome for future reference. Send only once.",
+        "answers": [],
+        "ongoing": false,
+        "max_runs": 8,
+        "horizon_hours": 72
+      },
+      {
+        "id": "pause_cancel",
+        "family": "direction",
+        "objective": "Arrange newsletter distribution through the library. You may contact them and check delivery.",
+        "answers": [],
+        "ongoing": false,
+        "max_runs": 8,
+        "horizon_hours": 72
+      },
+      {
+        "id": "ongoing_campaign",
+        "family": "ongoing",
+        "objective": "Keep growing the neighborhood newsletter through daily community campaigns. Check results when available and adapt the next campaign to the evidence. Use free channels only. Keep working until I pause or cancel.",
+        "answers": [],
+        "ongoing": true,
+        "max_runs": 8,
+        "horizon_hours": 192
+      }
+    ],
+    "clock_start": "2027-01-04T09:00:00+00:00",
+    "provider_seed": null,
+    "cache_policy": "Normal provider behavior; no cache flushing or claimed cold-cache isolation."
+  },
+  "summary": {
+    "episodes": 60,
+    "passed": 59,
+    "success_rate": 0.9833333333333333,
+    "macro_scenario_success": 0.9833333333333334,
+    "descriptive_95pct_interval": [
+      0.9114,
+      0.9971
+    ],
+    "interval_note": "Wilson interval describes these trials; repeated scenarios are related and this is not a general capability confidence bound.",
+    "infrastructure_errors": 0,
+    "critical_failures": {},
+    "by_scenario": {
+      "blocking_question": {
+        "passed": 4,
+        "episodes": 5
+      },
+      "compaction": {
+        "passed": 5,
+        "episodes": 5
+      },
+      "corrected_answer": {
+        "passed": 5,
+        "episodes": 5
+      },
+      "external_edit": {
+        "passed": 5,
+        "episodes": 5
+      },
+      "history_recall": {
+        "passed": 5,
+        "episodes": 5
+      },
+      "interrupted_action": {
+        "passed": 5,
+        "episodes": 5
+      },
+      "ongoing_campaign": {
+        "passed": 5,
+        "episodes": 5
+      },
+      "partial_answers": {
+        "passed": 5,
+        "episodes": 5
+      },
+      "pause_cancel": {
+        "passed": 5,
+        "episodes": 5
+      },
+      "revise_approach": {
+        "passed": 5,
+        "episodes": 5
+      },
+      "scheduled_return": {
+        "passed": 5,
+        "episodes": 5
+      },
+      "verified_delivery": {
+        "passed": 5,
+        "episodes": 5
+      }
+    },
+    "total_model_calls": 782,
+    "total_prompt_tokens": 4937136,
+    "total_completion_tokens": 133599,
+    "cost_usd": null
+  },
+  "results": [
+    {
+      "scenario": "blocking_question",
+      "family": "questions",
+      "repeat": 0,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "questions_resolved": true,
+        "late_answer_delivered": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 2,
+        "history_reads": 0,
+        "tool_calls": 13,
+        "question_updates": 4,
+        "user_interventions": 1,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 11,
+        "prompt_tokens": 48650,
+        "completion_tokens": 1699,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 8.222
+      },
+      "artifact": "/results/candidate/blocking_question-0",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "blocking_question",
+      "family": "questions",
+      "repeat": 1,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "questions_resolved": true,
+        "late_answer_delivered": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 2,
+        "history_reads": 0,
+        "tool_calls": 14,
+        "question_updates": 4,
+        "user_interventions": 1,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 11,
+        "prompt_tokens": 50441,
+        "completion_tokens": 2003,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 11.012
+      },
+      "artifact": "/results/candidate/blocking_question-1",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "blocking_question",
+      "family": "questions",
+      "repeat": 2,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "questions_resolved": true,
+        "late_answer_delivered": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 2,
+        "history_reads": 0,
+        "tool_calls": 12,
+        "question_updates": 4,
+        "user_interventions": 1,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 11,
+        "prompt_tokens": 48734,
+        "completion_tokens": 1728,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 10.03
+      },
+      "artifact": "/results/candidate/blocking_question-2",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "blocking_question",
+      "family": "questions",
+      "repeat": 3,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "questions_resolved": true,
+        "late_answer_delivered": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 2,
+        "history_reads": 0,
+        "tool_calls": 13,
+        "question_updates": 4,
+        "user_interventions": 1,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 11,
+        "prompt_tokens": 51066,
+        "completion_tokens": 2020,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 9.611
+      },
+      "artifact": "/results/candidate/blocking_question-3",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "blocking_question",
+      "family": "questions",
+      "repeat": 4,
+      "passed": false,
+      "status": "failed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "questions_resolved": false,
+        "late_answer_delivered": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 2,
+        "history_reads": 0,
+        "tool_calls": 12,
+        "question_updates": 2,
+        "user_interventions": 1,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 11,
+        "prompt_tokens": 48306,
+        "completion_tokens": 1577,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 7.938
+      },
+      "artifact": "/results/candidate/blocking_question-4",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "compaction",
+      "family": "memory",
+      "repeat": 0,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "compaction_exercised": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 2,
+        "history_reads": 0,
+        "tool_calls": 13,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 0,
+        "compactions": 1,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 14,
+        "prompt_tokens": 60424,
+        "completion_tokens": 2268,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 13.676
+      },
+      "artifact": "/results/candidate/compaction-0",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "compaction",
+      "family": "memory",
+      "repeat": 1,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "compaction_exercised": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 2,
+        "history_reads": 0,
+        "tool_calls": 12,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 0,
+        "compactions": 1,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 12,
+        "prompt_tokens": 50193,
+        "completion_tokens": 2035,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 10.998
+      },
+      "artifact": "/results/candidate/compaction-1",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "compaction",
+      "family": "memory",
+      "repeat": 2,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "compaction_exercised": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 2,
+        "history_reads": 0,
+        "tool_calls": 13,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 0,
+        "compactions": 1,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 13,
+        "prompt_tokens": 55189,
+        "completion_tokens": 2049,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 16.534
+      },
+      "artifact": "/results/candidate/compaction-2",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "compaction",
+      "family": "memory",
+      "repeat": 3,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "compaction_exercised": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 2,
+        "history_reads": 0,
+        "tool_calls": 12,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 0,
+        "compactions": 1,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 13,
+        "prompt_tokens": 53320,
+        "completion_tokens": 1927,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 11.233
+      },
+      "artifact": "/results/candidate/compaction-3",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "compaction",
+      "family": "memory",
+      "repeat": 4,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "compaction_exercised": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 2,
+        "history_reads": 0,
+        "tool_calls": 11,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 0,
+        "compactions": 1,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 12,
+        "prompt_tokens": 47839,
+        "completion_tokens": 1802,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 13.468
+      },
+      "artifact": "/results/candidate/compaction-4",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "corrected_answer",
+      "family": "questions",
+      "repeat": 0,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "questions_resolved": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 2,
+        "history_reads": 1,
+        "tool_calls": 17,
+        "question_updates": 1,
+        "user_interventions": 0,
+        "wakeups": 1,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": false
+      },
+      "metrics": {
+        "model_calls": 14,
+        "prompt_tokens": 79061,
+        "completion_tokens": 2452,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 22.654
+      },
+      "artifact": "/results/candidate/corrected_answer-0",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "corrected_answer",
+      "family": "questions",
+      "repeat": 1,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "questions_resolved": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 2,
+        "history_reads": 1,
+        "tool_calls": 19,
+        "question_updates": 1,
+        "user_interventions": 0,
+        "wakeups": 1,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": false
+      },
+      "metrics": {
+        "model_calls": 15,
+        "prompt_tokens": 88665,
+        "completion_tokens": 2796,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 15.199
+      },
+      "artifact": "/results/candidate/corrected_answer-1",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "corrected_answer",
+      "family": "questions",
+      "repeat": 2,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "questions_resolved": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 2,
+        "history_reads": 1,
+        "tool_calls": 19,
+        "question_updates": 2,
+        "user_interventions": 0,
+        "wakeups": 1,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": false
+      },
+      "metrics": {
+        "model_calls": 14,
+        "prompt_tokens": 80659,
+        "completion_tokens": 2630,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 14.065
+      },
+      "artifact": "/results/candidate/corrected_answer-2",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "corrected_answer",
+      "family": "questions",
+      "repeat": 3,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "questions_resolved": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 2,
+        "history_reads": 1,
+        "tool_calls": 18,
+        "question_updates": 1,
+        "user_interventions": 0,
+        "wakeups": 1,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": false
+      },
+      "metrics": {
+        "model_calls": 15,
+        "prompt_tokens": 87725,
+        "completion_tokens": 2617,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 14.843
+      },
+      "artifact": "/results/candidate/corrected_answer-3",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "corrected_answer",
+      "family": "questions",
+      "repeat": 4,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "questions_resolved": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 2,
+        "history_reads": 1,
+        "tool_calls": 18,
+        "question_updates": 1,
+        "user_interventions": 0,
+        "wakeups": 1,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": false
+      },
+      "metrics": {
+        "model_calls": 14,
+        "prompt_tokens": 82965,
+        "completion_tokens": 2837,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 15.514
+      },
+      "artifact": "/results/candidate/corrected_answer-4",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "external_edit",
+      "family": "direction",
+      "repeat": 0,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 2,
+        "history_reads": 0,
+        "tool_calls": 7,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 7,
+        "prompt_tokens": 24659,
+        "completion_tokens": 763,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 6.037
+      },
+      "artifact": "/results/candidate/external_edit-0",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "external_edit",
+      "family": "direction",
+      "repeat": 1,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 2,
+        "history_reads": 0,
+        "tool_calls": 8,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 8,
+        "prompt_tokens": 29043,
+        "completion_tokens": 882,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 6.543
+      },
+      "artifact": "/results/candidate/external_edit-1",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "external_edit",
+      "family": "direction",
+      "repeat": 2,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 2,
+        "history_reads": 0,
+        "tool_calls": 7,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 7,
+        "prompt_tokens": 24532,
+        "completion_tokens": 661,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 5.777
+      },
+      "artifact": "/results/candidate/external_edit-2",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "external_edit",
+      "family": "direction",
+      "repeat": 3,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 2,
+        "history_reads": 0,
+        "tool_calls": 7,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 7,
+        "prompt_tokens": 24580,
+        "completion_tokens": 706,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 4.852
+      },
+      "artifact": "/results/candidate/external_edit-3",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "external_edit",
+      "family": "direction",
+      "repeat": 4,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 2,
+        "history_reads": 0,
+        "tool_calls": 7,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 7,
+        "prompt_tokens": 24589,
+        "completion_tokens": 650,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 11.092
+      },
+      "artifact": "/results/candidate/external_edit-4",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "history_recall",
+      "family": "memory",
+      "repeat": 0,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 1,
+        "history_reads": 2,
+        "tool_calls": 7,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 6,
+        "prompt_tokens": 22267,
+        "completion_tokens": 937,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 12.579
+      },
+      "artifact": "/results/candidate/history_recall-0",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "history_recall",
+      "family": "memory",
+      "repeat": 1,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 1,
+        "history_reads": 1,
+        "tool_calls": 6,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 6,
+        "prompt_tokens": 21086,
+        "completion_tokens": 700,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 11.849
+      },
+      "artifact": "/results/candidate/history_recall-1",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "history_recall",
+      "family": "memory",
+      "repeat": 2,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 1,
+        "history_reads": 1,
+        "tool_calls": 6,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 6,
+        "prompt_tokens": 21282,
+        "completion_tokens": 830,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 11.599
+      },
+      "artifact": "/results/candidate/history_recall-2",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "history_recall",
+      "family": "memory",
+      "repeat": 3,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 1,
+        "history_reads": 2,
+        "tool_calls": 7,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 6,
+        "prompt_tokens": 22017,
+        "completion_tokens": 764,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 11.96
+      },
+      "artifact": "/results/candidate/history_recall-3",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "history_recall",
+      "family": "memory",
+      "repeat": 4,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 1,
+        "history_reads": 2,
+        "tool_calls": 6,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 6,
+        "prompt_tokens": 21823,
+        "completion_tokens": 766,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 12.23
+      },
+      "artifact": "/results/candidate/history_recall-4",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "interrupted_action",
+      "family": "recovery",
+      "repeat": 0,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "recovered_after_restart": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 2,
+        "history_reads": 1,
+        "tool_calls": 11,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 1,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 10,
+        "prompt_tokens": 41161,
+        "completion_tokens": 1250,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 8.189
+      },
+      "artifact": "/results/candidate/interrupted_action-0",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "interrupted_action",
+      "family": "recovery",
+      "repeat": 1,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "recovered_after_restart": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 2,
+        "history_reads": 1,
+        "tool_calls": 11,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 1,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 10,
+        "prompt_tokens": 41411,
+        "completion_tokens": 1301,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 8.421
+      },
+      "artifact": "/results/candidate/interrupted_action-1",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "interrupted_action",
+      "family": "recovery",
+      "repeat": 2,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "recovered_after_restart": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 2,
+        "history_reads": 1,
+        "tool_calls": 11,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 1,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 10,
+        "prompt_tokens": 41135,
+        "completion_tokens": 1298,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 7.915
+      },
+      "artifact": "/results/candidate/interrupted_action-2",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "interrupted_action",
+      "family": "recovery",
+      "repeat": 3,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "recovered_after_restart": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 2,
+        "history_reads": 1,
+        "tool_calls": 11,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 1,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 10,
+        "prompt_tokens": 41347,
+        "completion_tokens": 1286,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 8.177
+      },
+      "artifact": "/results/candidate/interrupted_action-3",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "interrupted_action",
+      "family": "recovery",
+      "repeat": 4,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "recovered_after_restart": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 2,
+        "history_reads": 1,
+        "tool_calls": 11,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 1,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 10,
+        "prompt_tokens": 41146,
+        "completion_tokens": 1267,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 8.007
+      },
+      "artifact": "/results/candidate/interrupted_action-4",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "ongoing_campaign",
+      "family": "ongoing",
+      "repeat": 0,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "next_wake_saved": true,
+        "handoff_saved": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 6,
+        "history_reads": 0,
+        "tool_calls": 50,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 5,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 45,
+        "prompt_tokens": 554053,
+        "completion_tokens": 11332,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 50.327
+      },
+      "artifact": "/results/candidate/ongoing_campaign-0",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "ongoing_campaign",
+      "family": "ongoing",
+      "repeat": 1,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "next_wake_saved": true,
+        "handoff_saved": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 6,
+        "history_reads": 0,
+        "tool_calls": 53,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 5,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 38,
+        "prompt_tokens": 442030,
+        "completion_tokens": 10620,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 43.5
+      },
+      "artifact": "/results/candidate/ongoing_campaign-1",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "ongoing_campaign",
+      "family": "ongoing",
+      "repeat": 2,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "next_wake_saved": true,
+        "handoff_saved": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 6,
+        "history_reads": 0,
+        "tool_calls": 49,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 5,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 37,
+        "prompt_tokens": 369790,
+        "completion_tokens": 8272,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 37.32
+      },
+      "artifact": "/results/candidate/ongoing_campaign-2",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "ongoing_campaign",
+      "family": "ongoing",
+      "repeat": 3,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "next_wake_saved": true,
+        "handoff_saved": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 6,
+        "history_reads": 0,
+        "tool_calls": 45,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 5,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 42,
+        "prompt_tokens": 464504,
+        "completion_tokens": 9557,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 42.469
+      },
+      "artifact": "/results/candidate/ongoing_campaign-3",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "ongoing_campaign",
+      "family": "ongoing",
+      "repeat": 4,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "next_wake_saved": true,
+        "handoff_saved": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 6,
+        "history_reads": 0,
+        "tool_calls": 55,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 5,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 40,
+        "prompt_tokens": 488832,
+        "completion_tokens": 11688,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 52.974
+      },
+      "artifact": "/results/candidate/ongoing_campaign-4",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "partial_answers",
+      "family": "questions",
+      "repeat": 0,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "questions_resolved": true,
+        "independent_work_before_waiting": true,
+        "both_answers_used": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 3,
+        "history_reads": 0,
+        "tool_calls": 18,
+        "question_updates": 3,
+        "user_interventions": 2,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 20,
+        "prompt_tokens": 133056,
+        "completion_tokens": 4001,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 22.985
+      },
+      "artifact": "/results/candidate/partial_answers-0",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "partial_answers",
+      "family": "questions",
+      "repeat": 1,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "questions_resolved": true,
+        "independent_work_before_waiting": true,
+        "both_answers_used": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 3,
+        "history_reads": 0,
+        "tool_calls": 16,
+        "question_updates": 3,
+        "user_interventions": 2,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 18,
+        "prompt_tokens": 106899,
+        "completion_tokens": 3030,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 15.643
+      },
+      "artifact": "/results/candidate/partial_answers-1",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "partial_answers",
+      "family": "questions",
+      "repeat": 2,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "questions_resolved": true,
+        "independent_work_before_waiting": true,
+        "both_answers_used": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 3,
+        "history_reads": 0,
+        "tool_calls": 18,
+        "question_updates": 4,
+        "user_interventions": 2,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 18,
+        "prompt_tokens": 101457,
+        "completion_tokens": 2758,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 14.765
+      },
+      "artifact": "/results/candidate/partial_answers-2",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "partial_answers",
+      "family": "questions",
+      "repeat": 3,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "questions_resolved": true,
+        "independent_work_before_waiting": true,
+        "both_answers_used": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 3,
+        "history_reads": 0,
+        "tool_calls": 18,
+        "question_updates": 5,
+        "user_interventions": 2,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 17,
+        "prompt_tokens": 92541,
+        "completion_tokens": 2523,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 21.337
+      },
+      "artifact": "/results/candidate/partial_answers-3",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "partial_answers",
+      "family": "questions",
+      "repeat": 4,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "questions_resolved": true,
+        "independent_work_before_waiting": true,
+        "both_answers_used": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 3,
+        "history_reads": 0,
+        "tool_calls": 18,
+        "question_updates": 4,
+        "user_interventions": 2,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 18,
+        "prompt_tokens": 102033,
+        "completion_tokens": 2788,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 24.986
+      },
+      "artifact": "/results/candidate/partial_answers-4",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "pause_cancel",
+      "family": "direction",
+      "repeat": 0,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 2,
+        "history_reads": 1,
+        "tool_calls": 8,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 6,
+        "prompt_tokens": 22072,
+        "completion_tokens": 507,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 4.566
+      },
+      "artifact": "/results/candidate/pause_cancel-0",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "pause_cancel",
+      "family": "direction",
+      "repeat": 1,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 2,
+        "history_reads": 1,
+        "tool_calls": 9,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 7,
+        "prompt_tokens": 26608,
+        "completion_tokens": 562,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 4.518
+      },
+      "artifact": "/results/candidate/pause_cancel-1",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "pause_cancel",
+      "family": "direction",
+      "repeat": 2,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 2,
+        "history_reads": 1,
+        "tool_calls": 9,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 6,
+        "prompt_tokens": 22233,
+        "completion_tokens": 598,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 4.55
+      },
+      "artifact": "/results/candidate/pause_cancel-2",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "pause_cancel",
+      "family": "direction",
+      "repeat": 3,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 2,
+        "history_reads": 1,
+        "tool_calls": 8,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 6,
+        "prompt_tokens": 22116,
+        "completion_tokens": 551,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 4.552
+      },
+      "artifact": "/results/candidate/pause_cancel-3",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "pause_cancel",
+      "family": "direction",
+      "repeat": 4,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 2,
+        "history_reads": 0,
+        "tool_calls": 9,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 6,
+        "prompt_tokens": 20693,
+        "completion_tokens": 598,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 4.753
+      },
+      "artifact": "/results/candidate/pause_cancel-4",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "revise_approach",
+      "family": "planning",
+      "repeat": 0,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "alternative_partner": true,
+        "plan_updated": true,
+        "completed_work_preserved": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 1,
+        "history_reads": 0,
+        "tool_calls": 10,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 9,
+        "prompt_tokens": 33367,
+        "completion_tokens": 956,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 8.452
+      },
+      "artifact": "/results/candidate/revise_approach-0",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "revise_approach",
+      "family": "planning",
+      "repeat": 1,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "alternative_partner": true,
+        "plan_updated": true,
+        "completed_work_preserved": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 1,
+        "history_reads": 0,
+        "tool_calls": 10,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 10,
+        "prompt_tokens": 40936,
+        "completion_tokens": 1543,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 8.99
+      },
+      "artifact": "/results/candidate/revise_approach-1",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "revise_approach",
+      "family": "planning",
+      "repeat": 2,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "alternative_partner": true,
+        "plan_updated": true,
+        "completed_work_preserved": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 1,
+        "history_reads": 0,
+        "tool_calls": 8,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 8,
+        "prompt_tokens": 29052,
+        "completion_tokens": 787,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 6.284
+      },
+      "artifact": "/results/candidate/revise_approach-2",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "revise_approach",
+      "family": "planning",
+      "repeat": 3,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "alternative_partner": true,
+        "plan_updated": true,
+        "completed_work_preserved": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 1,
+        "history_reads": 0,
+        "tool_calls": 9,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 9,
+        "prompt_tokens": 33242,
+        "completion_tokens": 964,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 7.267
+      },
+      "artifact": "/results/candidate/revise_approach-3",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "revise_approach",
+      "family": "planning",
+      "repeat": 4,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "alternative_partner": true,
+        "plan_updated": true,
+        "completed_work_preserved": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 1,
+        "history_reads": 0,
+        "tool_calls": 8,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 8,
+        "prompt_tokens": 29042,
+        "completion_tokens": 808,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 6.133
+      },
+      "artifact": "/results/candidate/revise_approach-4",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "scheduled_return",
+      "family": "scheduling",
+      "repeat": 0,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "resumed_on_schedule": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 2,
+        "history_reads": 0,
+        "tool_calls": 12,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 1,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 12,
+        "prompt_tokens": 49690,
+        "completion_tokens": 1412,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 16.007
+      },
+      "artifact": "/results/candidate/scheduled_return-0",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "scheduled_return",
+      "family": "scheduling",
+      "repeat": 1,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "resumed_on_schedule": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 2,
+        "history_reads": 0,
+        "tool_calls": 12,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 1,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 12,
+        "prompt_tokens": 49727,
+        "completion_tokens": 1405,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 11.193
+      },
+      "artifact": "/results/candidate/scheduled_return-1",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "scheduled_return",
+      "family": "scheduling",
+      "repeat": 2,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "resumed_on_schedule": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 2,
+        "history_reads": 0,
+        "tool_calls": 12,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 1,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 12,
+        "prompt_tokens": 49152,
+        "completion_tokens": 1369,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 9.917
+      },
+      "artifact": "/results/candidate/scheduled_return-2",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "scheduled_return",
+      "family": "scheduling",
+      "repeat": 3,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "resumed_on_schedule": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 2,
+        "history_reads": 0,
+        "tool_calls": 12,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 1,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 12,
+        "prompt_tokens": 49197,
+        "completion_tokens": 1329,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 9.398
+      },
+      "artifact": "/results/candidate/scheduled_return-3",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "scheduled_return",
+      "family": "scheduling",
+      "repeat": 4,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true,
+        "resumed_on_schedule": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 2,
+        "history_reads": 0,
+        "tool_calls": 13,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 1,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 13,
+        "prompt_tokens": 54470,
+        "completion_tokens": 1503,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 10.523
+      },
+      "artifact": "/results/candidate/scheduled_return-4",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "verified_delivery",
+      "family": "completion",
+      "repeat": 0,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 1,
+        "history_reads": 0,
+        "tool_calls": 9,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 9,
+        "prompt_tokens": 34079,
+        "completion_tokens": 1185,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 7.326
+      },
+      "artifact": "/results/candidate/verified_delivery-0",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "verified_delivery",
+      "family": "completion",
+      "repeat": 1,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 1,
+        "history_reads": 1,
+        "tool_calls": 10,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 10,
+        "prompt_tokens": 39777,
+        "completion_tokens": 1209,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 7.513
+      },
+      "artifact": "/results/candidate/verified_delivery-1",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "verified_delivery",
+      "family": "completion",
+      "repeat": 2,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 1,
+        "history_reads": 0,
+        "tool_calls": 9,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 9,
+        "prompt_tokens": 33747,
+        "completion_tokens": 1098,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 7.135
+      },
+      "artifact": "/results/candidate/verified_delivery-2",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "verified_delivery",
+      "family": "completion",
+      "repeat": 3,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 1,
+        "history_reads": 0,
+        "tool_calls": 9,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 9,
+        "prompt_tokens": 34083,
+        "completion_tokens": 1156,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 9.092
+      },
+      "artifact": "/results/candidate/verified_delivery-3",
+      "harness_error": null,
+      "transport_errors": []
+    },
+    {
+      "scenario": "verified_delivery",
+      "family": "completion",
+      "repeat": 4,
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "outcome_achieved": true,
+        "correct_disposition": true,
+        "within_budget": true,
+        "no_stranded_work": true
+      },
+      "critical_failures": [],
+      "diagnostics": {
+        "goal_reads": 1,
+        "history_reads": 0,
+        "tool_calls": 9,
+        "question_updates": 0,
+        "user_interventions": 0,
+        "wakeups": 0,
+        "compactions": 0,
+        "reported_tool_errors": 0,
+        "handoff_present": true,
+        "corrected_fact_current": null
+      },
+      "metrics": {
+        "model_calls": 9,
+        "prompt_tokens": 33343,
+        "completion_tokens": 989,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "seconds": 7.832
+      },
+      "artifact": "/results/candidate/verified_delivery-4",
+      "harness_error": null,
+      "transport_errors": []
+    }
+  ],
+  "analysis": {
+    "decision": "Five-tool design accepted by Larry on 2026-10-25.",
+    "tools": [
+      "read_goal",
+      "update_goal",
+      "read_goal_history",
+      "update_goal_questions",
+      "set_goal_state"
+    ],
+    "comparison": {
+      "ten_tools_passed": 57,
+      "five_tools_passed": 59,
+      "episodes_per_configuration": 60
+    },
+    "known_limitations": [
+      "One trial booked correctly but left an answered question unresolved.",
+      "Unsupported known_facts arguments were silently ignored by the existing generic callable dispatcher in 10 calls across 7 episodes.",
+      "The live suite exercised schedule, wait_for_input and complete; continue is covered by deterministic tests.",
+      "Single-model simulated-service evaluation; no claim of general superiority or billed-cost savings."
+    ],
+    "trace_location": ".scratch/goal-benchmark/five-tools-20261025/candidate",
+    "comparison_report": ".scratch/goal-benchmark/five-tools-20261025/report.md"
+  }
+}

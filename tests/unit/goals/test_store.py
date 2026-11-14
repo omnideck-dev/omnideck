@@ -1,12 +1,14 @@
-"""Durable goal scheduling, plan revisions, and execution ownership."""
+"""Goal creation, user edits, revisions and the in-memory index of unfinished goals."""
 
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta, timezone
+from pathlib import Path
+import json
 
 import pytest
-from pydantic import ValidationError
 
-from goals import GoalConflictError, GoalQuestionChange, GoalStateError, GoalStore
+from goals import GoalConflictError, GoalRevisionError, GoalStateError, GoalStep, GoalStepChange, GoalStore
+
+from tests.unit.goals.support import completed, create, failed, future, scheduled, waiting, with_plan
 
 
 @pytest.fixture
@@ -14,38 +16,26 @@ def store(tmp_path):
     return GoalStore(tmp_path / "session-goals")
 
 
-def create(store, conversation="chat"):
-    return store.create(conversation, "Prepare the household schedule", "assistant")
-
-
-def future():
-    return (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
-
-
-def claim(store, goal):
-    claimed = store.claim(goal.id, goal.wake_id, "claim-1")
-    assert claimed is not None
-    return claimed
-
-
-def test_constructor_initializes_transactional_database_without_creating_goals(tmp_path):
+def test_constructor_initializes_file_store_without_creating_goals(tmp_path):
     path = tmp_path / "goals"
     store = GoalStore(path)
     assert store.list() == []
-    assert (path / "goals.sqlite3").exists()
+    assert path.is_dir()
+    assert list(path.iterdir()) == []
 
 
-def test_assignment_is_durable_and_queues_one_immediate_wake(store):
+def test_new_goal_is_saved_with_a_planned_wake_due_now(store):
     goal = create(store)
+    saved = json.loads((store._base / goal.id / "goal.json").read_text())
+    assert saved["next"]["kind"] == "wake"
+    assert saved["next"]["reason"] == "planned"
+    assert saved["paused"] is False and saved["claim"] is None and saved["note"] == ""
+    assert not {"status", "status_reason", "next_action", "resume_at", "wake_id", "known_facts"} & saved.keys()
     fresh = GoalStore(store._base)
     assert fresh.current("chat") == goal
     assert fresh.due() == [goal]
     with pytest.raises(GoalConflictError):
         create(fresh)
-    claimed = claim(fresh, goal)
-    assert claimed.wake_id is None
-    assert fresh.due() == []
-    assert fresh.claim(goal.id, goal.wake_id, "duplicate") is None
 
 
 def test_paused_goal_still_occupies_its_conversation_but_ended_goals_are_retained(store):
@@ -60,26 +50,28 @@ def test_paused_goal_still_occupies_its_conversation_but_ended_goals_are_retaine
     assert store.latest("chat").id == second.id
 
 
-def test_checklist_revision_and_dependency_validation_preserve_saved_plan(store):
+def test_user_plan_edit_and_dependency_validation_keep_saved_plan(store):
     goal = create(store)
     plan = [
-        {"id": "gather", "title": "Gather household commitments"},
-        {"id": "draft", "title": "Draft the weekly calendar", "depends_on": ["gather"]},
+        GoalStep(id="guests", title="Collect the guest list"),
+        GoalStep(id="venue", title="Book the park pavilion", depends_on=["guests"]),
     ]
     updated = store.update(goal.id, goal.revision, plan=plan)
-    assert [step.id for step in updated.plan] == ["gather", "draft"]
-    with pytest.raises(GoalConflictError):
+    assert [step.id for step in updated.plan] == ["guests", "venue"]
+    with pytest.raises(GoalRevisionError):
         store.update(goal.id, goal.revision, plan=[])
     for invalid in (
-        [{"id": "one", "title": "One", "depends_on": ["missing"]}],
-        [{"id": "one", "title": "One", "depends_on": ["one"]}],
-        [{"id": "one", "title": "One"}, {"id": "one", "title": "Two"}],
-        [{"id": "one", "title": "One", "depends_on": ["two"]},
-         {"id": "two", "title": "Two", "depends_on": ["one"]}],
+        [GoalStep(id="one", title="One", depends_on=["missing"])],
+        [GoalStep(id="one", title="One", depends_on=["one"])],
+        [GoalStep(id="one", title="One"), GoalStep(id="one", title="Two")],
     ):
-        with pytest.raises(ValidationError):
+        with pytest.raises(ValueError):
             store.update(goal.id, updated.revision, plan=invalid)
-        assert store.get(goal.id) == updated
+    assert store.get(goal.id) == updated
+
+
+def test_revision_error_is_a_conflict_error():
+    assert issubclass(GoalRevisionError, GoalConflictError)
 
 
 def test_revision_conflict_is_atomic_between_store_instances(store):
@@ -98,144 +90,104 @@ def test_revision_conflict_is_atomic_between_store_instances(store):
     assert store.get(goal.id).revision == goal.revision + 1
 
 
-def test_schedule_replaces_wake_atomically_and_requires_zoned_future_time(store):
-    goal = claim(store, create(store))
-    with pytest.raises(ValueError, match="timezone"):
-        store.schedule(goal.id, "2099-01-01T12:00:00", "Wait", "Check")
-    with pytest.raises(ValueError, match="future"):
-        store.schedule(goal.id, "2000-01-01T12:00:00Z", "Wait", "Check")
-    first = store.schedule(goal.id, future(), "Calendar update due", "Read calendar", claim_id="claim-1")
-    second = store.schedule(goal.id, "2099-01-01T12:00:00-06:00", "Wait longer", "Read calendar", claim_id="claim-1")
-    assert second.resume_at == "2099-01-01T18:00:00+00:00"
-    assert second.wake_id != first.wake_id
-    assert second.claimed_run_id == "claim-1"
-    assert store.due("2100-01-01T00:00:00Z") == []
-    store.release(goal.id, "claim-1")
-    assert len(store.due("2100-01-01T00:00:00Z")) == 1
-    assert store.claim(goal.id, first.wake_id, "stale", now="2100-01-01T00:00:00Z") is None
-
-
-def test_pause_invalidates_pending_and_claimed_wakes_and_late_owner_writes(store):
-    original = create(store)
-    claimed = claim(store, original)
-    store.pause(claimed.id)
-    with pytest.raises(GoalConflictError):
-        store.record_progress(claimed.id, "Late write", claim_id="claim-1")
-    assert store.release(claimed.id, "claim-1") is None
-    assert store.claim(claimed.id, original.wake_id, "late") is None
-    assert store.due() == []
-    resumed = store.resume(claimed.id)
-    assert resumed.wake_id != original.wake_id
-    assert len(store.due()) == 1
-
-
-def test_manual_turn_preserves_future_schedule_without_changing_paused_goals(store):
+def test_update_needs_a_change_and_one_kind_of_plan_input(store):
     goal = create(store)
-    scheduled = store.schedule(goal.id, future(), "Wait", "Check calendar")
-    manual = store.claim_for_turn(goal.id, "manual")
-    assert manual.status == "scheduled"
-    assert manual.claimed_wake_id == scheduled.wake_id
-    assert manual.wake_id == scheduled.wake_id
-    assert store.due("2100-01-01T00:00:00Z") == []
-    finished = store.finish_run(goal.id, "manual", "manual-run", "success")
-    assert finished.wake_id == scheduled.wake_id
-    assert finished.resume_at == scheduled.resume_at
-    assert finished.status == "scheduled"
-    assert len(store.due("2100-01-01T00:00:00Z")) == 1
-    store.pause(goal.id)
-    assert store.claim_for_turn(goal.id, "other") is None
-
-
-def test_manual_turn_consumes_initial_due_wake(store):
-    goal = create(store)
-    manual = store.claim_for_turn(goal.id, "manual")
-    assert manual.status == "active"
-    assert manual.wake_id is None
-    assert manual.claimed_wake_id == goal.wake_id
-
-
-def test_manual_turn_can_explicitly_replace_preserved_future_wake(store):
-    goal = create(store)
-    scheduled = store.schedule(goal.id, future(), "Wait", "Check calendar")
-    store.claim_for_turn(goal.id, "manual")
-    replacement = store.schedule(goal.id, future(), "Updated timing", "Check new calendar", claim_id="manual")
-    assert replacement.wake_id != scheduled.wake_id
-    store.update_questions(goal.id, [GoalQuestionChange(id="calendar", question="Which calendar?", status="open")], "", store.get(goal.id).revision, claim_id="manual")
-    store.wait_for_input(goal.id, ["calendar"], claim_id="manual")
-    assert store.get(goal.id).wake_id is None
-
-
-def test_aborted_dispatch_requeues_only_unmodified_claim(store):
-    original = create(store)
-    claim(store, original)
-    store.bind_run(original.id, "claim-1", "runtime-1")
-    restored = store.requeue_claim(original.id, "claim-1")
-    assert restored.wake_id == original.wake_id
-    assert restored.claimed_run_id is None
-    claimed = store.claim(restored.id, restored.wake_id, "claim-2")
-    store.record_progress(claimed.id, "An external action occurred", claim_id="claim-2")
-    assert store.requeue_claim(claimed.id, "claim-2") is None
-
-
-def test_finish_without_disposition_does_not_infer_continuation(store):
-    goal = claim(store, create(store))
-    result = store.finish_run(goal.id, "claim-1", "runtime-1", "success")
-    assert result.status == "active"
-    assert result.wake_id is None
-    assert result.last_run_id == "runtime-1"
-    assert result.claimed_run_id is None
-    assert result.revision > goal.revision
-    assert store.due() == []
-    assert store.finish_run(goal.id, "claim-1", "runtime-1", "success") is None
-
-
-def test_error_needs_input_but_preserves_explicit_agent_wake(store):
-    first = claim(store, create(store))
-    failed = store.finish_run(first.id, "claim-1", "run-1", "error", "Provider unavailable")
-    assert failed.status == "needs_input"
-    assert failed.status_reason == "Provider unavailable"
-    second = claim(store, create(store, "second"))
-    scheduled = store.schedule(second.id, future(), "Wait", "Check", claim_id="claim-1")
-    result = store.finish_run(second.id, "claim-1", "run-2", "error", "Provider unavailable")
-    assert result.status == "scheduled"
-    assert result.wake_id == scheduled.wake_id
-
-
-def test_restart_reconciles_interrupted_execution_once_without_overriding_agent_decisions(store):
-    interrupted = claim(store, create(store, "interrupted"))
-    scheduled = claim(store, create(store, "scheduled"))
-    future_goal = store.schedule(scheduled.id, future(), "Wait for response", "Read the response", claim_id="claim-1")
-    waiting = claim(store, create(store, "waiting"))
-    store.update_questions(waiting.id, [GoalQuestionChange(id="calendar", question="Which calendar?", status="open")], "", waiting.revision, claim_id="claim-1")
-    store.wait_for_input(waiting.id, ["calendar"], claim_id="claim-1")
-    completed = claim(store, create(store, "completed"))
-    store.complete(completed.id, "Delivered the calendar", claim_id="claim-1")
-    recovered = GoalStore(store._base)
-    assert len(recovered.recover_claims()) == 4
-    resumed = recovered.get(interrupted.id)
-    assert resumed.wake_id is not None
-    assert "external state" in resumed.next_action
-    assert recovered.get(scheduled.id).wake_id == future_goal.wake_id
-    assert recovered.get(waiting.id).status == "needs_input"
-    assert recovered.get(completed.id).status == "completed"
-    assert recovered.recover_claims() == []
-    assert len(recovered.due()) == 1
-
-
-def test_generic_update_cannot_forge_status_or_ownership(store):
-    goal = create(store)
-    with pytest.raises(ValueError):
-        store.update(goal.id, goal.revision, status="completed", claimed_run_id="forged")
+    with pytest.raises(ValueError, match="Change"):
+        store.update(goal.id, goal.revision)
+    with pytest.raises(ValueError, match="either"):
+        store.update(goal.id, goal.revision, plan=[], step_changes=[])
     assert store.get(goal.id) == goal
 
 
-def test_cancelled_goal_cannot_resume_and_deletion_removes_history(store):
+def test_update_cannot_forge_ownership(store):
+    goal = create(store)
+    with pytest.raises(GoalConflictError):
+        store.update(goal.id, goal.revision, claim_id="forged", summary="Unauthorized change")
+    with pytest.raises(TypeError):
+        store.update(goal.id, goal.revision, next={"kind": "done", "outcome": "Forged"})
+    assert store.get(goal.id) == goal
+
+
+def test_step_changes_merge_into_the_saved_plan(store):
+    goal = with_plan(store, create(store),
+                     GoalStep(id="guests", title="Collect the guest list", notes="12 replies so far"),
+                     GoalStep(id="venue", title="Book the park pavilion", depends_on=["guests"]))
+    updated = store.update(goal.id, goal.revision, step_changes=[
+        GoalStepChange(id="guests", status="done"),
+        GoalStepChange(id="food", title="Order the food", before="venue"),
+    ])
+    assert [step.id for step in updated.plan] == ["guests", "food", "venue"]
+    assert updated.plan[0].notes == "12 replies so far"
+    assert updated.plan[0].status == "done"
+    with pytest.raises(ValueError, match="needs a title"):
+        store.update(goal.id, updated.revision, step_changes=[GoalStepChange(id="music")])
+    assert store.get(goal.id) == updated
+
+
+def test_ended_goal_refuses_edits_and_resume(store):
     goal = create(store)
     store.cancel(goal.id)
     with pytest.raises(GoalStateError):
+        store.update(goal.id, store.get(goal.id).revision, summary="Late progress")
+    with pytest.raises(GoalStateError):
         store.resume(goal.id)
+    with pytest.raises(GoalStateError):
+        store.pause(goal.id)
+
+
+def test_deleting_a_conversation_removes_only_its_goals(store):
+    goal = create(store)
+    store.cancel(goal.id)
     create(store)
     unrelated = create(store, "other")
     store.delete_for_conversation("chat")
     assert store.history("chat") == []
     assert store.list() == [unrelated]
+    assert store.current("chat") is None
+    assert [item.id for item in store.wakes()] == [unrelated.id]
+
+
+def test_due_and_wakes_list_only_unpaused_unclaimed_wakes(store):
+    due = create(store, "due")
+    later = scheduled(store, create(store, "later"))
+    paused = create(store, "paused")
+    store.pause(paused.id)
+    asking = waiting(store, create(store, "asking"))
+    broken = failed(store, create(store, "broken"))
+    done = completed(store, create(store, "done"))
+    assert [goal.id for goal in store.due()] == [due.id]
+    assert {goal.id for goal in store.wakes()} == {due.id, later.id}
+    assert {goal.id for goal in store.due(future(days=2))} == {due.id, later.id}
+    assert not {paused.id, asking.id, broken.id, done.id} & {goal.id for goal in store.due(future(days=2))}
+
+
+def test_due_does_not_read_ended_goals(store, monkeypatch):
+    for index in range(5):
+        completed(store, create(store, f"done-{index}"))
+    open_goal = create(store, "open")
+    fresh = GoalStore(store._base)
+    reads: list[Path] = []
+    original = Path.read_text
+
+    def counted(path, *args, **kwargs):
+        reads.append(path)
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", counted)
+    fresh.load()
+    # Startup reads each saved goal once to find the unfinished ones.
+    assert len(reads) == 6
+    reads.clear()
+    for _ in range(20):
+        assert [goal.id for goal in fresh.due()] == [open_goal.id]
+        assert [goal.id for goal in fresh.wakes()] == [open_goal.id]
+    assert reads == []
+
+
+def test_index_follows_changes_from_another_store_on_the_same_folder(store):
+    goal = create(store)
+    other = GoalStore(store._base)
+    other.pause(goal.id)
+    assert store.due() == []
+    other.resume(goal.id)
+    assert [item.id for item in store.due()] == [goal.id]

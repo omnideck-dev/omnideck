@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Protocol
 
 from tasks._models import Routine, Run, Task, TaskResult
@@ -135,7 +136,7 @@ class TaskStore(Protocol):
         """Returns (task.description, result_text) for completed deps in a run."""
         ...
 
-    def get_due_recurring_routines(self) -> list[Routine]:
+    def get_due_recurring_routines(self, now: datetime) -> list[Routine]:
         """Active routines with cron, no in-progress run, and cron due since the schedule anchor.
 
         The anchor is the later of the routine's last completed run and its last

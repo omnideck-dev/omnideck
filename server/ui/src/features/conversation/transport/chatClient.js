@@ -1,19 +1,33 @@
 /**
- * Build the wire request for one streamed conversation turn.
+ * Build the URL and body for one user turn: a message from the composer or
+ * answers from the goal question card.
  *
  * Attachments may carry a browser-local preview used by the composer. That
  * value is not part of the backend contract and must not cross the transport
  * boundary.
  */
-function buildTurnRequest(message, attachments, profileId, conversationId, goalAnswers) {
+function buildTurnRequest(request, conversationId) {
+    if (request.kind === 'answers') {
+        return {
+            url: `/api/conversations/sessions/${encodeURIComponent(conversationId)}/goal/answers`,
+            body: {
+                goal_id: request.goalId,
+                // The question text is for the optimistic chat turn only.
+                answers: request.answers.map(({ question_id, question_revision, answer }) => ({
+                    question_id, question_revision, answer,
+                })),
+                ...(request.profileId ? { profile_id: request.profileId } : {}),
+            },
+        };
+    }
+    const { message, attachments, profileId } = request;
     const body = { message: message || '(uploaded file)' };
-    if (goalAnswers) body.goal_answers = goalAnswers;
     if (conversationId) body.conversation_id = conversationId;
     if (attachments?.length) {
         body.data = attachments.map(({ preview: _preview, ...rest }) => rest);
     }
     if (profileId) body.profile_id = profileId;
-    return body;
+    return { url: '/api/chat', body };
 }
 
 /** HTTP failure from either the initial stream or a resumed run stream. */
@@ -67,34 +81,54 @@ async function* streamJsonLines(response) {
 }
 
 /**
+ * Send one user turn. The server either starts a run and streams it, or,
+ * while the agent works, queues the turn and replies 202 with
+ * `{nudge: {id, run_id}}`.
+ */
+export async function openChatTurn({ request, conversationId, signal }) {
+    const { url, body } = buildTurnRequest(request, conversationId);
+    return fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal,
+    });
+}
+
+/** Read the queued-message reply, or null when the server started a run. */
+export async function readQueuedReply(response) {
+    if (response.status !== 202) return null;
+    const body = await response.json().catch(() => ({}));
+    return body?.nudge || {};
+}
+
+/**
  * Start one conversation turn and yield the raw JSONL stream envelopes.
  *
  * This module owns only the wire protocol. Consumers decide how envelopes are
  * normalized and applied to frontend state. Records are yielded in arrival
  * order; blank and malformed complete lines are ignored, matching the existing
- * stream behavior.
+ * stream behavior. A queued turn yields one `{nudge}` record and ends.
  */
-export async function* streamChatTurn({
-    message,
-    attachments,
-    profileId,
-    conversationId,
-    goalAnswers,
-    signal,
-}) {
-    const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(buildTurnRequest(
-            message,
-            attachments,
-            profileId,
-            conversationId,
-            goalAnswers,
-        )),
-        signal,
-    });
+export async function* streamChatTurn({ request, conversationId, signal }) {
+    const response = await openChatTurn({ request, conversationId, signal });
+    const nudge = await readQueuedReply(response);
+    if (nudge) {
+        yield { nudge };
+        return;
+    }
     yield* streamJsonLines(response);
+}
+
+/** Remove a queued message before the agent reads it. */
+export async function removeQueuedTurn({ nudgeId, conversationId }) {
+    const response = await fetch(
+        `/api/chat/nudges/${encodeURIComponent(nudgeId)}?conversation_id=${encodeURIComponent(conversationId)}`,
+        { method: 'DELETE' },
+    );
+    if (response.ok) return { ok: true };
+    const body = await response.json().catch(() => ({}));
+    return { ok: false, status: response.status, error: body?.error };
 }
 
 /** Replay records after a processed sequence, then follow the active run. */

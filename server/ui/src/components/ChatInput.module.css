@@ -1,5 +1,6 @@
 .inputAreaWrapper {
   --composer-max-width: 760px;
+  container: composer / inline-size;
   padding: 14px 18px 18px;
 }
 
@@ -10,8 +11,6 @@
 
 /* ── Composer card ───────────────────────────────────── */
 .inputArea {
-  /* Positioning context for the corner expand button, so the button stays
-     pinned to the card's top-right corner regardless of the attachment tray. */
   position: relative;
   display: flex;
   flex-direction: column;
@@ -31,9 +30,10 @@
   box-shadow: var(--shadow-md), var(--shadow-glow);
 }
 
-/* Groups the textarea with the corner expand button. In expanded mode this is
-   the flex child that stretches to fill the card. */
+/* Keep the expand control with the text field, below any goal questions.
+   In expanded mode this flex child stretches to fill the card. */
 .textareaWrapper {
+  position: relative;
   min-width: 0;
 }
 
@@ -103,12 +103,15 @@
 /* ── Controls row ────────────────────────────────────── */
 .inputAreaButtons {
   display: flex;
-  flex-wrap: wrap;
   gap: var(--sp-2);
   align-items: center;
   justify-content: space-between;
   padding-right: var(--sp-1);
 }
+
+.leftActions { display: flex; flex: 1; align-items: center; gap: var(--sp-1); min-width: 0; }
+.leftActions > button { flex-shrink: 0; }
+.sendActions { display: flex; gap: var(--sp-1); margin-left: var(--sp-2); }
 
 .actionButtons {
   display: flex;
@@ -148,27 +151,8 @@
   overflow-y: auto;
 }
 
-.menuItem {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  width: 100%;
-  height: 32px;
-  padding: 0 var(--sp-2);
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-secondary);
-  font-family: var(--font-body);
-  font-size: var(--font-size-body);
-  text-align: left;
-  cursor: pointer;
-}
-.menuItem svg { width: var(--sp-4); height: var(--sp-4); }
-.menuItem > i { width: var(--sp-4); font-size: var(--font-size-small); }
-.menuItem:hover:not(:disabled), .menuItem:focus-visible { background: var(--accent-muted); color: var(--text-primary); }
-.menuItem:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.menuItem:disabled { color: var(--text-tertiary); cursor: not-allowed; }
+.addMenuItems { display: flex; flex-direction: column; }
+.composerNote { margin: 0; padding: var(--sp-2) var(--sp-2) 0 0; color: var(--text-secondary); font-size: var(--font-size-small); }
 .menuShortcut { margin-left: auto; font-family: var(--font-code); font-size: var(--font-size-caption); color: var(--text-tertiary); }
 
 /* Filled circular send button */
@@ -217,14 +201,12 @@
    The composer grows tall and floats over the chat transcript rather than
    taking over the whole panel — same width and horizontal position as the
    collapsed composer (.inputArea keeps its own max-width/margin), just
-   anchored to the bottom of the panel at roughly 80% of its height. `top`
-   is clamped to at least --titlebar-height so this can never creep above
-   the title bar on a very short panel. The wrapper itself stays transparent
+   anchored to the bottom of the panel at roughly 80% of its height. The wrapper itself stays transparent
    and click-through outside the card so the transcript underneath is still
    visible and scrollable. */
 .expandedWrapper {
   position: absolute;
-  top: max(var(--titlebar-height), 20%);
+  top: 20%;
   left: 0;
   right: 0;
   bottom: 0;
@@ -256,12 +238,4 @@
 .customInput.expandedInput {
   flex: 1;
   overflow-y: auto;
-}
-
-.goalDock {
-  width: 100%;
-  max-width: var(--composer-max-width);
-  margin: 0 auto;
-  flex-shrink: 0;
-  pointer-events: auto;
 }

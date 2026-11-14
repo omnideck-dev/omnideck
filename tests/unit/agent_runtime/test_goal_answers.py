@@ -1,110 +1,163 @@
-"""Answers enter the normal root run without competing with active goal work."""
+"""Goal answers are an ordinary user message, saved when the agent receives it."""
 
 import asyncio
+import logging
 
 import pytest
 
+from agent_core.events import AgentEvent, UserMessagePayload
 from agent_core.turn import ExecutionResult
-from agent_runtime import AgentRunRequest, AgentRuntime, RunConflictError
-from goals import GoalAnswerSubmission, GoalQuestionChange, GoalStore
+from agent_runtime import AgentRunRequest, AgentRuntime, QueuedMessage
+from goals import GoalAnswerRecorder, GoalAnswerSubmission, GoalConflictError, GoalQuestionChange, GoalStore, answer_message
+
+from tests.unit.goals.support import waiting
 
 
 class AnswerRunner:
+    """Publishes the opening message and reads queued messages when told to, like the real runner."""
+
     def __init__(self):
         self.started = asyncio.Event()
+        self.read = asyncio.Event()
         self.release = asyncio.Event()
-        self.requests = []
         self.session = None
 
     async def run(self, request, session):
-        self.requests.append(request)
         self.session = session
+        session.add_event(AgentEvent(payload=UserMessagePayload(
+            type="user_message", content=request.message, context=list(request.context),
+        )))
         self.started.set()
+        await self.read.wait()
+        for message in session.root_context.control.drain_nudges():
+            session.add_event(AgentEvent(payload=message))
         await self.release.wait()
         return ExecutionResult("success")
 
 
 def setup_goal(tmp_path):
     store = GoalStore(tmp_path / "goals")
-    goal = store.create("chat", "Find a dentist", "assistant")
-    goal = store.claim(goal.id, goal.wake_id, "setup")
-    goal = store.update_questions(goal.id, [GoalQuestionChange(id="insurance", question="Which insurance plan?", status="open")], "", goal.revision, claim_id="setup")
-    store.wait_for_input(goal.id, ["insurance"], claim_id="setup")
-    store.release(goal.id, "setup")
-    answers = GoalAnswerSubmission(goal_id=goal.id, answers=[{"question_id": "insurance", "question_revision": 1, "answer": "Aetna Dental PPO"}])
+    goal = waiting(store, store.create("chat", "Find a dentist", "assistant"), "insurance",
+                   "Which insurance plan?")
+    answers = GoalAnswerSubmission(goal_id=goal.id, answers=[
+        {"question_id": "insurance", "question_revision": 1, "answer": "Aetna Dental PPO"},
+    ])
     return store, goal, answers
 
 
-async def test_answer_submission_resumes_waiting_goal_with_canonical_question_and_answer(tmp_path):
+def answer_request(store, answers):
+    message, context = answer_message(answers.goal_id, store.check_answers("chat", answers))
+    return AgentRunRequest("chat", message, None, "assistant", context=context)
+
+
+def runtime_for(store, runner):
+    runtime = AgentRuntime(runner, goal_store=store)
+    runtime.observe_events(GoalAnswerRecorder(store).handle_event)
+    return runtime
+
+
+async def test_answers_are_saved_when_they_open_a_run_and_not_before(tmp_path):
     store, goal, answers = setup_goal(tmp_path)
     runner = AnswerRunner()
-    runtime = AgentRuntime(runner, goal_store=store)
+    runtime = runtime_for(store, runner)
     try:
-        handle = await runtime.start(AgentRunRequest("chat", "client display text", None, "assistant", goal_answers=answers))
-        await runner.started.wait()
-        assert "[insurance] Which insurance plan?\nAetna Dental PPO" in runner.requests[0].message
-        assert store.get(goal.id).status == "active"
-        assert store.get(goal.id).questions[0].status == "open"
-        assert len(store.get(goal.id).questions[0].answers) == 1
-        runner.release.set()
-        await handle.wait()
-    finally:
-        runner.release.set()
-        await runtime.close()
-
-
-async def test_live_answers_nudge_the_existing_root_and_conflicting_start_does_not_save_twice(tmp_path):
-    store, goal, answers = setup_goal(tmp_path)
-    runner = AnswerRunner()
-    runtime = AgentRuntime(runner, goal_store=store)
-    try:
-        handle = await runtime.start(AgentRunRequest("chat", "Continue useful work", None, "assistant"))
-        await runner.started.wait()
-        runtime.answer_goal_during_run("chat", answers)
-        assert runtime.active_for_conversation("chat").run_id == handle.run_id
-        assert len(runner.requests) == 1
-        assert "Aetna Dental PPO" in runner.session.root_context.control.drain_nudges()[0]
-        with pytest.raises(RunConflictError):
-            await runtime.start(AgentRunRequest("chat", "answer", None, "assistant", goal_answers=answers))
-        assert len(store.get(goal.id).questions[0].answers) == 1
-        runner.release.set()
-        await handle.wait()
-    finally:
-        runner.release.set()
-        await runtime.close()
-
-
-async def test_answering_explicitly_paused_goal_does_not_acquire_it(tmp_path):
-    store, goal, answers = setup_goal(tmp_path)
-    store.pause(goal.id)
-    runner = AnswerRunner()
-    runtime = AgentRuntime(runner, goal_store=store)
-    try:
-        handle = await runtime.start(AgentRunRequest("chat", "answer", None, "assistant", goal_answers=answers))
-        await runner.started.wait()
-        assert store.get(goal.id).status == "paused"
-        assert store.get(goal.id).claimed_run_id is None
-        assert not store.due()
-        runner.release.set()
-        await handle.wait()
-    finally:
-        runner.release.set()
-        await runtime.close()
-
-
-async def test_answers_rejected_during_execution_cleanup_are_not_saved(tmp_path):
-    store, goal, answers = setup_goal(tmp_path)
-    runner = AnswerRunner()
-    runtime = AgentRuntime(runner, goal_store=store)
-    try:
-        handle = await runtime.start(AgentRunRequest("chat", "Continue", None, "assistant"))
-        await runner.started.wait()
-        runner.session.root_context.control.accepting_nudges = False
-        with pytest.raises(ValueError, match="no longer running"):
-            runtime.answer_goal_during_run("chat", answers)
+        request = answer_request(store, answers)
         assert store.get(goal.id).questions[0].answers == []
+        assert request.message == "Aetna Dental PPO"
+        assert request.context[0].question == "Which insurance plan?"
+        handle = await runtime.send(request)
+        await runner.started.wait()
+        saved = store.get(goal.id).questions[0]
+        assert [answer.answer for answer in saved.answers] == ["Aetna Dental PPO"]
+        assert saved.status == "open"
+        runner.read.set()
         runner.release.set()
         await handle.wait()
     finally:
+        runner.read.set()
         runner.release.set()
         await runtime.close()
+
+
+async def test_queued_answers_are_saved_only_when_the_agent_reads_them(tmp_path):
+    store, goal, answers = setup_goal(tmp_path)
+    runner = AnswerRunner()
+    runtime = runtime_for(store, runner)
+    try:
+        handle = await runtime.send(AgentRunRequest("chat", "Continue useful work", None, "assistant"))
+        await runner.started.wait()
+        queued = await runtime.send(answer_request(store, answers))
+        assert isinstance(queued, QueuedMessage)
+        assert store.get(goal.id).questions[0].answers == []
+        runner.read.set()
+        await asyncio.sleep(0)
+        assert [answer.answer for answer in store.get(goal.id).questions[0].answers] == ["Aetna Dental PPO"]
+        read = [r.event.payload for r in handle._session.records
+                if isinstance(r.event.payload, UserMessagePayload) and r.event.payload.nudge_id == queued.nudge_id]
+        assert len(read) == 1 and read[0].context[0].question_id == "insurance"
+        with pytest.raises(GoalConflictError, match="already sent"):
+            store.check_answers("chat", answers)
+        runner.release.set()
+        await handle.wait()
+    finally:
+        runner.read.set()
+        runner.release.set()
+        await runtime.close()
+
+
+async def test_answers_returned_by_stop_are_never_saved(tmp_path):
+    store, goal, answers = setup_goal(tmp_path)
+    runner = AnswerRunner()
+    runtime = runtime_for(store, runner)
+    try:
+        handle = await runtime.send(AgentRunRequest("chat", "Continue", None, "assistant"))
+        await runner.started.wait()
+        await runtime.send(answer_request(store, answers))
+        handle.cancel()
+        await handle.wait()
+        assert store.get(goal.id).questions[0].answers == []
+        assert store.check_answers("chat", answers)
+    finally:
+        runner.read.set()
+        runner.release.set()
+        await runtime.close()
+
+
+async def test_refused_answer_save_is_logged_and_the_run_continues(tmp_path, caplog):
+    store, goal, answers = setup_goal(tmp_path)
+    runner = AnswerRunner()
+    runtime = runtime_for(store, runner)
+    try:
+        handle = await runtime.send(AgentRunRequest("chat", "Continue", None, "assistant"))
+        await runner.started.wait()
+        await runtime.send(answer_request(store, answers))
+        # The agent withdraws the question while the answer waits.
+        current = store.get(goal.id)
+        store.update_questions(goal.id, [GoalQuestionChange(id="insurance", status="withdrawn")],
+                               current.revision, claim_id=current.claim.id)
+        with caplog.at_level(logging.WARNING, logger="goals._answers"):
+            runner.read.set()
+            await asyncio.sleep(0)
+        assert "were not saved" in caplog.text
+        assert all(not question.answers for question in store.get(goal.id).questions)
+        runner.release.set()
+        assert (await handle.wait()).status == "success"
+    finally:
+        runner.read.set()
+        runner.release.set()
+        await runtime.close()
+
+
+def test_check_answers_refuses_changed_questions_without_saving(tmp_path):
+    store, goal, answers = setup_goal(tmp_path)
+    answers.answers[0].question_revision = 2
+    with pytest.raises(GoalConflictError, match="question changed"):
+        store.check_answers("chat", answers)
+    assert store.get(goal.id).questions[0].answers == []
+
+
+def test_save_answers_skips_answers_already_saved(tmp_path):
+    store, goal, answers = setup_goal(tmp_path)
+    assert len(store.save_answers("chat", answers)) == 1
+    assert store.save_answers("chat", answers) == []
+    assert len(store.get(goal.id).questions[0].answers) == 1

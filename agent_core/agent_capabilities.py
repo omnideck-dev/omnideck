@@ -40,11 +40,10 @@ class AgentCapabilities:
         self._loaded_ids: set[str] = set()  # subset attached at runtime, not by the profile
 
     def add(self, skill: Skill) -> None:
-        """Attach a profile-granted skill — the baseline. No-op if already attached.
+        """Attach a profile or runtime-granted skill for this run only.
 
-        Baseline skills are re-derived from the profile each turn, so they're left
-        out of the persisted delta and a profile edit takes effect rather than being
-        pinned to old conversations.
+        These skills are re-derived from the profile and runtime each turn, so
+        they're left out of the persisted delta. No-op if already attached.
         """
         self._attach(skill)
 
@@ -105,7 +104,7 @@ class AgentCapabilities:
 
     @property
     def loaded_skill_ids(self) -> frozenset[str]:
-        """Ids attached at runtime (loaded or restored), excluding the profile's own.
+        """Dynamically loaded/restored IDs, excluding profile and internal grants.
 
         This is the delta a conversation persists across turns — profile skills are
         re-derived each turn, so they're deliberately left out.

@@ -5,11 +5,15 @@ from __future__ import annotations
 import re
 
 from aiohttp import web
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from agents import get_agent_profile, get_default_profile
 from conversations import conversation_exists, ensure_conversation, load_conversation_profile
-from goals import Goal, GoalConflictError, GoalKind, GoalNotFoundError, GoalStateError, GoalStep
+from agent_runtime import AgentRunRequest, RunConflictError
+from goals import (
+    Goal, GoalAnswerSubmission, GoalConflictError, GoalNotFoundError, GoalStateError, GoalStep, answer_message, next_step,
+)
+from server._agent_run_routes import send_and_reply
 from server._agent_runtime import AGENT_RUNTIME_KEY
 from server._goals import GOAL_STORE_KEY
 from settings import goals_enabled
@@ -20,7 +24,6 @@ class GoalAssignment(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     objective: str = Field(min_length=1, max_length=20000)
-    kind: GoalKind = "finite"
     profile_id: str | None = None
 
 
@@ -30,7 +33,6 @@ class GoalEdit(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_revision: int = Field(ge=1)
     objective: str = Field(default="", min_length=1, max_length=20000)
-    kind: GoalKind = "finite"
     plan: list[GoalStep] = Field(default_factory=list, max_length=500)
 
 
@@ -42,11 +44,43 @@ class GoalControl(BaseModel):
     goal_id: str | None = None
 
 
+class GoalReopen(BaseModel):
+    """What still needs doing, sent into the chat as the user's message."""
+
+    model_config = ConfigDict(extra="forbid")
+    goal_id: str | None = None
+    text: str = Field(min_length=1, max_length=20000)
+    profile_id: str | None = None
+
+    @field_validator("text")
+    @classmethod
+    def text_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Say what still needs doing")
+        return value.strip()
+
+
+class GoalAnswers(GoalAnswerSubmission):
+    """Answers to a goal's questions, sent as the user's chat message."""
+
+    profile_id: str | None = None
+
+
 class GoalView(Goal):
-    """A goal with the live activity of its owning conversation."""
+    """A goal with the live activity of its owning conversation.
+
+    ``next_step`` is the title of the plan step the next run works on.
+    """
 
     running: bool = False
     run_id: str | None = None
+    next_step: str | None = None
+
+
+def _user_plan(saved: list[GoalStep], edited: list[GoalStep]) -> list[GoalStep]:
+    """Keep step progress as the agent saved it; the user edits only the steps' text."""
+    progress = {step.id: step.status for step in saved}
+    return [step.model_copy(update={"status": progress.get(step.id, "pending")}) for step in edited]
 
 
 def _require_enabled() -> None:
@@ -64,10 +98,12 @@ def _conversation_id(request: web.Request) -> str:
 def _view(request: web.Request, goal: Goal) -> GoalView:
     handle = request.app[AGENT_RUNTIME_KEY].active_for_conversation(goal.conversation_id)
     running = handle is not None and handle.run_id == goal.last_run_id
+    step = next_step(goal.plan)
     return GoalView(
         **goal.model_dump(),
         running=running,
         run_id=handle.run_id if handle is not None and running else None,
+        next_step=step.title if step is not None else None,
     )
 
 
@@ -77,7 +113,7 @@ def _snapshot(request: web.Request, conversation_id: str, *, status: int = 200) 
     view = _view(request, goal) if goal is not None else None
     return web.json_response({
         "goal": view.model_dump(mode="json") if view else None,
-        "history": [item.model_dump(mode="json", include={"id", "objective", "status", "outcome", "created_at"})
+        "history": [item.model_dump(mode="json", include={"id", "objective", "next", "created_at"})
                     for item in store.history(conversation_id) if goal is None or item.id != goal.id],
         "running": view.running if view else False,
     }, status=status)
@@ -136,11 +172,10 @@ async def assign_goal_handler(request: web.Request) -> web.Response:
         # Validate the goal before creating its conversation or its pending wake.
         Goal(
             conversation_id=conversation_id, objective=payload.objective, profile_id=profile.id,
-            kind=payload.kind,
         )
         ensure_conversation(conversation_id, title=payload.objective.strip(), profile_id=profile.id)
         request.app[GOAL_STORE_KEY].create(
-            conversation_id, payload.objective, profile.id, kind=payload.kind,
+            conversation_id, payload.objective, profile.id,
         )
     except GoalConflictError as exc:
         return web.json_response({"error": str(exc)}, status=409)
@@ -160,9 +195,11 @@ async def edit_goal_handler(request: web.Request) -> web.Response:
         goal = store.current(conversation_id)
         if goal is None:
             return web.json_response({"error": "No unfinished goal in this conversation."}, status=404)
+        fields = payload.model_dump(exclude_unset=True, exclude={"expected_revision"})
         store.update(
-            goal.id, payload.expected_revision,
-            **payload.model_dump(exclude_unset=True, exclude={"expected_revision"}),
+            goal.id, payload.expected_revision, actor="user",
+            objective=payload.objective if "objective" in fields else None,
+            plan=_user_plan(goal.plan, payload.plan) if "plan" in fields else None,
         )
     except (GoalConflictError, GoalStateError) as exc:
         return web.json_response({"error": str(exc)}, status=409)
@@ -172,7 +209,7 @@ async def edit_goal_handler(request: web.Request) -> web.Response:
 
 
 async def control_goal_handler(request: web.Request) -> web.Response:
-    """Pause, resume now, or cancel the conversation's current goal."""
+    """Pause, resume, run now, or cancel the conversation's current goal."""
     _require_enabled()
     try:
         conversation_id = _conversation_id(request)
@@ -182,17 +219,22 @@ async def control_goal_handler(request: web.Request) -> web.Response:
         store = request.app[GOAL_STORE_KEY]
         goal = store.current(conversation_id)
         if goal is None:
+            if store.latest(conversation_id) is not None:
+                return web.json_response({"error": "This goal has ended. Reopen it first."}, status=409)
             return web.json_response({"error": "No unfinished goal in this conversation."}, status=404)
         if payload.goal_id is not None and payload.goal_id != goal.id:
             return web.json_response({"error": "This chat has a different goal. Refresh before changing it."}, status=409)
-        if not conversation_exists(conversation_id):
+        if action in {"resume", "run"} and not conversation_exists(conversation_id):
             return web.json_response({"error": "Restore this conversation before resuming its goal."}, status=409)
         handle = request.app[AGENT_RUNTIME_KEY].active_for_conversation(conversation_id)
         if action == "resume":
-            if handle is not None:
-                return web.json_response({"error": "Wait for the current response to stop before resuming."}, status=409)
             store.resume(goal.id, expected_revision=payload.expected_revision)
+        elif action == "run":
+            if handle is not None:
+                return web.json_response({"error": "Wait for the current response to finish before running the goal."}, status=409)
+            store.run(goal.id, expected_revision=payload.expected_revision)
         elif action == "pause":
+            # Pause first: it releases the run's claim and keeps its wake for after Resume.
             store.pause(goal.id, expected_revision=payload.expected_revision)
             if handle is not None:
                 handle.stop()
@@ -209,6 +251,66 @@ async def control_goal_handler(request: web.Request) -> web.Response:
     return _snapshot(request, conversation_id)
 
 
+async def reopen_goal_handler(request: web.Request) -> web.Response:
+    """Reopen the chat's ended goal and send what still needs doing as the user's message."""
+    _require_enabled()
+    try:
+        conversation_id = _conversation_id(request)
+        payload = GoalReopen.model_validate_json(await request.text())
+        _require_enabled()
+        store = request.app[GOAL_STORE_KEY]
+        runtime = request.app[AGENT_RUNTIME_KEY]
+        goal = store.latest(conversation_id)
+        if goal is None or not goal.ended:
+            return web.json_response({"error": "This chat has no ended goal to reopen."}, status=409)
+        if payload.goal_id is not None and payload.goal_id != goal.id:
+            return web.json_response({"error": "This chat has a newer goal. Refresh before reopening."}, status=409)
+        if not conversation_exists(conversation_id):
+            return web.json_response({"error": "Restore this conversation before reopening its goal."}, status=409)
+        if runtime.active_for_conversation(conversation_id) is not None:
+            return web.json_response({"error": "Wait for the current response to finish before reopening."}, status=409)
+        store.reopen(goal.id)
+        # The user's message is the run: a chat turn owns the goal and chooses what happens next.
+        try:
+            await runtime.start(AgentRunRequest(
+                conversation_id=conversation_id, message=payload.text, attachments=None,
+                profile_id=payload.profile_id or goal.profile_id,
+            ))
+        except RunConflictError:
+            return web.json_response({"error": "Another message is already being processed for this conversation."}, status=409)
+    except (GoalConflictError, GoalStateError) as exc:
+        return web.json_response({"error": str(exc)}, status=409)
+    except (ValueError, ValidationError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+    return _snapshot(request, conversation_id)
+
+
+async def answer_goal_handler(request: web.Request) -> web.StreamResponse:
+    """Send answers to the goal's questions as the user's message.
+
+    The answers are saved on the goal when the agent receives the message.
+    """
+    _require_enabled()
+    try:
+        conversation_id = _conversation_id(request)
+        payload = GoalAnswers.model_validate_json(await request.text())
+        store = request.app[GOAL_STORE_KEY]
+        submission = GoalAnswerSubmission(goal_id=payload.goal_id, answers=payload.answers)
+        accepted = store.check_answers(conversation_id, submission)
+        goal = store.get(payload.goal_id)
+    except (GoalConflictError, GoalStateError) as exc:
+        return web.json_response({"error": str(exc)}, status=409)
+    except GoalNotFoundError as exc:
+        return web.json_response({"error": str(exc)}, status=404)
+    except (ValueError, ValidationError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+    message, context = answer_message(payload.goal_id, accepted)
+    return await send_and_reply(request, AgentRunRequest(
+        conversation_id=conversation_id, message=message, attachments=None,
+        profile_id=payload.profile_id or (goal.profile_id if goal is not None else None), context=context,
+    ))
+
+
 def register_goal_routes(app: web.Application) -> None:
     """Register experimental goal assignment, editing, and controls."""
     base = "/api/conversations/sessions/{conversation_id}/goal"
@@ -217,4 +319,6 @@ def register_goal_routes(app: web.Application) -> None:
     app.router.add_get(base + "/history", goal_history_handler)
     app.router.add_post(base, assign_goal_handler)
     app.router.add_patch(base, edit_goal_handler)
-    app.router.add_post(base + "/{action:pause|resume|cancel}", control_goal_handler)
+    app.router.add_post(base + "/reopen", reopen_goal_handler)
+    app.router.add_post(base + "/answers", answer_goal_handler)
+    app.router.add_post(base + "/{action:pause|resume|run|cancel}", control_goal_handler)

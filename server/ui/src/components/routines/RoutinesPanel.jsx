@@ -10,7 +10,7 @@ export default function RoutinesPanel({ routines, runnerStatus, onSelectRoutine 
                         Runner: {runnerStatus.paused ? 'paused' : runnerStatus.running ? 'active' : 'stopped'}
                     </span>
                     <span className={styles.runnerMeta}>
-                        {runnerStatus.active_tasks}/{runnerStatus.max_concurrent} slots
+                        {runnerStatus.active_tasks} running
                     </span>
                 </div>
             )}

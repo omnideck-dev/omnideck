@@ -7,8 +7,9 @@ translates their chat-shaped wire contract into the channel-neutral
 Endpoints:
     POST /api/chat                              — start and follow an agent run
     GET  /api/chat/runs/{run_id}/events         — replay and follow an active run
+    DELETE /api/chat/nudges/{nudge_id}          — remove a queued message
     POST /api/chat/stop                         — request cooperative run stop
-    POST /api/nudge                             — nudge the active root-agent turn
+    POST /api/nudge                             — nudge any agent in the active run
 """
 
 from __future__ import annotations
@@ -22,15 +23,14 @@ from aiohttp import web
 from pydantic import BaseModel, ValidationError
 
 from agent_runtime import (
-    RunConflictError,
     AgentRuntimeClosedError,
     AgentRunRequest,
+    AttachmentsWhileRunningError,
     InvalidRunCursorError,
+    QueuedMessage,
     RunAttachment,
 )
 from server._agent_runtime import AGENT_RUNTIME_KEY
-from server._goals import pause_conversation_goal
-from goals import GoalAnswerSubmission, GoalConflictError, GoalStateError
 from server._run_activity import run_activity_handler
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -59,7 +59,6 @@ class ChatRequest(BaseModel):
     data: list[Attachment] | None = None
     profile_id: str | None = None
     conversation_id: str | None = None
-    goal_answers: GoalAnswerSubmission | None = None
 
 
 class NudgeRequest(BaseModel):
@@ -68,7 +67,6 @@ class NudgeRequest(BaseModel):
     message: str
     conversation_id: str
     agent_id: str
-    goal_answers: GoalAnswerSubmission | None = None
 
 
 async def stream_events(
@@ -139,41 +137,35 @@ async def chat_handler(request: Request) -> StreamResponse:
             for attachment in payload.data
         ]
 
-    manager = request.app[AGENT_RUNTIME_KEY]
+    return await send_and_reply(request, AgentRunRequest(
+        conversation_id=payload.conversation_id,
+        message=user_query,
+        attachments=run_attachments,
+        profile_id=payload.profile_id,
+    ))
+
+
+async def send_and_reply(request: Request, run_request: AgentRunRequest) -> StreamResponse:
+    """Send a user message and reply with 202 when queued or the run's stream when started."""
+    runtime = request.app[AGENT_RUNTIME_KEY]
     try:
-        # HTTP "chat" is now only one channel vocabulary. Translate it here so
-        # run ownership and execution do not depend on chat-specific semantics.
-        info = await manager.start(AgentRunRequest(
-            conversation_id=payload.conversation_id,
-            message=user_query,
-            attachments=run_attachments,
-            profile_id=payload.profile_id,
-            goal_answers=payload.goal_answers,
-        ))
-    except (GoalConflictError, GoalStateError) as exc:
+        result = await runtime.send(run_request)
+    except AttachmentsWhileRunningError as exc:
         return web.json_response({"error": str(exc)}, status=409)
     except (ValueError, KeyError) as exc:
         return web.json_response({"error": str(exc)}, status=400)
-    except RunConflictError:
-        return web.json_response(
-            {
-                "error": (
-                    "Another message is already being processed for this conversation, "
-                    "possibly in another tab or window. Wait for it to finish, then try again."
-                ),
-            },
-            status=409,
-        )
     except AgentRuntimeClosedError:
         return web.json_response(
             {"error": "Agent runtime is shutting down."},
             status=503,
         )
+    if isinstance(result, QueuedMessage):
+        return web.json_response({"nudge": {"id": result.nudge_id, "run_id": result.run_id}}, status=202)
 
     # Subscribe immediately after start, without another await. Even a runner
     # that completes in one event-loop turn cannot be pruned before the initial
     # response captures its run.
-    records = info.events()
+    records = result.events()
     return await stream_events(request, records)
 
 
@@ -206,7 +198,8 @@ async def stop_handler(request: Request) -> Response:
             status=400,
         )
     handle = request.app[AGENT_RUNTIME_KEY].active_for_conversation(conversation_id)
-    pause_conversation_goal(request.app, conversation_id)
+    # Stop ends this run only. The goal keeps its schedule; a wake run that
+    # chose nothing waits for the user when it finishes.
     if handle is not None:
         handle.stop()
     return web.json_response({"ok": True})
@@ -230,12 +223,22 @@ async def nudge_handler(request: Request) -> Response:
             status=409,
         )
     try:
-        if payload.goal_answers is not None:
-            request.app[AGENT_RUNTIME_KEY].answer_goal_during_run(payload.conversation_id, payload.goal_answers)
-        else:
-            handle.nudge(text, execution_id=payload.agent_id)
+        handle.nudge(text, execution_id=payload.agent_id)
     except (ValueError, KeyError) as exc:
         return web.json_response({"error": str(exc)}, status=409)
+    return web.json_response({"ok": True})
+
+
+async def remove_nudge_handler(request: Request) -> Response:
+    """Remove a queued message before the agent reads it."""
+    conversation_id = request.query.get("conversation_id")
+    if not conversation_id:
+        return web.json_response({"error": "conversation_id is required."}, status=400)
+    handle = request.app[AGENT_RUNTIME_KEY].active_for_conversation(conversation_id)
+    if handle is None:
+        return web.json_response({"error": "No active run for this conversation."}, status=404)
+    if not handle.remove_nudge(request.match_info["nudge_id"]):
+        return web.json_response({"error": "The agent already read this message."}, status=409)
     return web.json_response({"ok": True})
 
 
@@ -248,8 +251,9 @@ def register_agent_run_routes(app: web.Application) -> None:
         "/api/chat/runs/{run_id}/events",
         chat_run_events_handler,
     )
+    app.router.add_route("DELETE", "/api/chat/nudges/{nudge_id}", remove_nudge_handler)
     app.router.add_route("POST", "/api/chat/stop", stop_handler)
     app.router.add_route("POST", "/api/nudge", nudge_handler)
 
 
-__all__ = ["register_agent_run_routes"]
+__all__ = ["register_agent_run_routes", "send_and_reply"]

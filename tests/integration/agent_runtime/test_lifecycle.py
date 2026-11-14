@@ -58,8 +58,11 @@ async def test_http_disconnect_replay_control_and_next_turn(harness, aiohttp_cli
     cursor = record["seq"]
     initial.close()
     assert h.manager.active_for_conversation("contract").run_id == run_id
-    conflict = await client.post("/api/chat", json=request)
-    assert conflict.status == 409
+    queued = await client.post("/api/chat", json=request)
+    assert queued.status == 202
+    nudge_id = (await queued.json())["nudge"]["id"]
+    removed = await client.delete(f"/api/chat/nudges/{nudge_id}?conversation_id=contract")
+    assert removed.status == 200
     invalid = await client.get(f"/api/chat/runs/{run_id}/events?after=999999")
     assert invalid.status == 400
 

@@ -26,7 +26,9 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 from agent_runtime import AgentRuntime
 from config import load_config
 from goals import GOALS_SUBDIR, GoalStore
-from goals._scheduler import GoalScheduler
+from goals._scheduling import GoalWorkSource
+from scheduling import Scheduler
+from server._scheduling import SCHEDULER_KEY
 from server._agent_run_routes import register_agent_run_routes
 from server._agent_runtime import AGENT_RUNTIME_KEY
 from server._artifacts_routes import register_artifacts_routes
@@ -39,7 +41,7 @@ from server._custom_tool_routes import register_custom_tool_routes
 from server._desktop_routes import register_desktop_routes
 from server._feature_routes import register_feature_routes
 from server._goal_routes import register_goal_routes
-from server._goals import GOAL_SCHEDULER_KEY, GOAL_STORE_KEY
+from server._goals import GOAL_STORE_KEY, save_goal_answers_when_read
 from server.oauth_setup.routes import register_oauth_routes
 from server._integrations_routes import register_integrations_routes
 from server._memory_routes import register_memory_routes
@@ -134,7 +136,11 @@ def create_app(
         integration_cache=integration_cache,
         goal_store=goal_store, goals_enabled=goals_enabled,
     )
-    app[GOAL_SCHEDULER_KEY] = GoalScheduler(goal_store, app[AGENT_RUNTIME_KEY], enabled=goals_enabled)
+    save_goal_answers_when_read(app)
+    app[SCHEDULER_KEY] = Scheduler(**load_config().scheduling.model_dump())
+    app[SCHEDULER_KEY].register(GoalWorkSource(
+        goal_store, app[AGENT_RUNTIME_KEY], enabled=goals_enabled, on_change=app[SCHEDULER_KEY].wake,
+    ))
 
     # Agent-run HTTP channel adapter
     register_agent_run_routes(app)
@@ -343,10 +349,9 @@ async def _start_deferred_subsystems(app: web.Application) -> None:
                 logger.info("Deferred subsystems waiting for readiness")
             await app["ready"].wait()
             logger.info("Ready — starting deferred subsystems")
-            runner = app.get("task_runner")
-            if runner:
-                await runner.start()
-            await app[GOAL_SCHEDULER_KEY].start()
+            # Read saved goals off the event loop before the scheduler first asks for due work.
+            await asyncio.to_thread(app[GOAL_STORE_KEY].load)
+            await app[SCHEDULER_KEY].start()
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -357,7 +362,7 @@ async def _start_deferred_subsystems(app: web.Application) -> None:
 
 async def _configure_routines(app: web.Application) -> None:
     """Compose routine services before requests; defer execution until readiness."""
-    from tasks import RoutineService, TaskExecutor, TaskRunner, TelegramNotifier, get_store
+    from tasks import RoutineService, TaskExecutor, RoutineWorkSource, TelegramNotifier, get_store
 
     config = load_config()
     store = get_store()
@@ -373,8 +378,9 @@ async def _configure_routines(app: web.Application) -> None:
         if not notifier.enabled:
             notifier = None
 
-    runner = TaskRunner(store, executor, config.routines, notifier=notifier)
-    app["task_runner"] = runner
+    runner = RoutineWorkSource(store, executor, config.routines, scheduler=app[SCHEDULER_KEY], notifier=notifier)
+    app[SCHEDULER_KEY].register(runner)
+    app["routine_work_source"] = runner
     app[ROUTINE_SERVICE_KEY] = RoutineService(store, runner)
 
 
@@ -383,10 +389,9 @@ async def _stop_deferred_subsystems(app: web.Application) -> None:
     init_task = app.get("_deferred_init")
     if init_task and not init_task.done():
         init_task.cancel()
-    runner = app.get("task_runner")
-    if runner:
-        await runner.stop()
-    await app[GOAL_SCHEDULER_KEY].stop()
+    if init_task is not None:
+        await asyncio.gather(init_task, return_exceptions=True)
+    await app[SCHEDULER_KEY].stop()
 
 
 __all__ = ["AGENT_RUNTIME_KEY", "create_app"]

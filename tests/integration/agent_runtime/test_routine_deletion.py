@@ -10,7 +10,8 @@ from agent_core.turn import get_execution_context
 from conversations import archive_conversation, load_events_jsonl
 from providers._fake import FakeProvider
 from server._task_routes import ROUTINE_SERVICE_KEY, register_task_routes
-from tasks import RoutineService, TaskExecutor, TaskRunner
+from scheduling import Scheduler
+from tasks import RoutineService, TaskExecutor, RoutineWorkSource
 from tests.e2e._protocol import call_tool, say, spawn
 
 
@@ -53,18 +54,20 @@ async def test_deletion_awaits_owned_trees_and_preserves_unrelated_work(harness,
     other = h.store.create_routine("unrelated", auto_run=False)
     h.store.create_task(other.id, "other", message, agent_profile="root")
     other_run = h.store.queue_run(other.id)
-    config = h.config.routines.model_copy(update={"max_concurrent": 6, "shutdown_timeout": 0})
-    runner = TaskRunner(h.store, TaskExecutor(h.store, h.manager), config)
+    config = h.config.scheduling.model_copy(update={"max_concurrent": 6, "shutdown_timeout": 0})
+    scheduler = Scheduler(**config.model_dump())
+    runner = RoutineWorkSource(h.store, TaskExecutor(h.store, h.manager), h.config.routines, scheduler=scheduler)
+    scheduler.register(runner)
     service = RoutineService(h.store, runner)
     app = web.Application()
-    app["task_runner"] = runner
+    app["routine_work_source"] = runner
     app[ROUTINE_SERVICE_KEY] = service
     register_task_routes(app)
     deletion = None
     duplicate = None
     async with TestClient(TestServer(app)) as client:
         try:
-            await runner._tick()
+            await scheduler.tick()
             contexts = [await asyncio.wait_for(entered.get(), 5) for _ in range(5)]
             affected_runs = runs if target == "routine" else runs[:1]
             affected = {
@@ -79,8 +82,7 @@ async def test_deletion_awaits_owned_trees_and_preserves_unrelated_work(harness,
             def checked_delete(identifier):
                 # The service owns this boundary; admission stays blocked for
                 # the complete store operation, including history deletion.
-                blocked = runner._blocked_routine_ids if target == "routine" else runner._blocked_run_ids
-                assert identifier in blocked
+                assert scheduler.blocked("routines", {target: identifier})
                 if getattr(h.store, f"get_{target}")(identifier) is None:
                     return original_delete(identifier)
                 # These checks run at the exact destructive boundary, while the
@@ -121,7 +123,7 @@ async def test_deletion_awaits_owned_trees_and_preserves_unrelated_work(harness,
             else:
                 result = next(r for r in h.store.get_task_results(runs[0].id) if r.task_id == first.id)
                 h.store.mark_task_result_completed(result.id, "dependency satisfied during cleanup")
-            await runner._tick()
+            await scheduler.tick()
             assert entered.empty()
             if target == "routine":
                 assert all(result.status == "pending" for result in h.store.get_task_results(late_run.id))
@@ -148,10 +150,10 @@ async def test_deletion_awaits_owned_trees_and_preserves_unrelated_work(harness,
 
             release_work.set()
             await asyncio.wait_for(asyncio.gather(*(handle.wait() for handle in handles.values())), 5)
-            await asyncio.wait_for(asyncio.gather(*runner._running.values()), 5)
-            await runner._tick()
-            await asyncio.wait_for(asyncio.gather(*runner._running.values()), 5)
-            await runner._tick()
+            await asyncio.wait_for(asyncio.gather(*[entry.completion for entry in scheduler.active("routines")]), 5)
+            await scheduler.tick()
+            await asyncio.wait_for(asyncio.gather(*[entry.completion for entry in scheduler.active("routines")]), 5)
+            await scheduler.tick()
             assert effects == survivors
             assert runner.status["active_tasks"] == 0
         finally:
@@ -161,7 +163,7 @@ async def test_deletion_awaits_owned_trees_and_preserves_unrelated_work(harness,
                 await deletion
             if duplicate is not None:
                 await duplicate
-            await runner.stop()
+            await scheduler.stop()
 
 
 async def test_shutdown_waits_for_cleanup_already_started_by_deletion(harness, monkeypatch):
@@ -184,17 +186,19 @@ async def test_shutdown_waits_for_cleanup_already_started_by_deletion(harness, m
     routine = h.store.create_routine("delete during shutdown", auto_run=False)
     h.store.create_task(routine.id, "hold", call_tool("delayed_cleanup"), agent_profile="leaf")
     run = h.store.queue_run(routine.id)
-    config = h.config.routines.model_copy(update={"shutdown_timeout": 0})
-    runner = TaskRunner(h.store, TaskExecutor(h.store, h.manager), config)
+    config = h.config.scheduling.model_copy(update={"shutdown_timeout": 0})
+    scheduler = Scheduler(**config.model_dump())
+    runner = RoutineWorkSource(h.store, TaskExecutor(h.store, h.manager), h.config.routines, scheduler=scheduler)
+    scheduler.register(runner)
     service = RoutineService(h.store, runner)
-    await runner._tick()
+    await scheduler.tick()
     await asyncio.wait_for(entered.wait(), 5)
     conversation = h.store.get_task_results(run.id)[0].conversation_id
     deletion = asyncio.create_task(service.delete_routine(routine.id))
     shutdown = None
     try:
         await asyncio.wait_for(cleaning.wait(), 5)
-        shutdown = asyncio.create_task(runner.stop())
+        shutdown = asyncio.create_task(scheduler.stop())
         await asyncio.sleep(0.05)
         assert not deletion.done()
         assert not shutdown.done()
@@ -271,6 +275,7 @@ async def test_http_deletion_service_is_available_without_a_started_scheduler(ha
     """Startup composes the service even when the background loop cannot start yet."""
     from server._agent_runtime import AGENT_RUNTIME_KEY
     from server.aiohttp_app import _configure_routines
+    from server._scheduling import SCHEDULER_KEY
 
     h = harness
     monkeypatch.setattr("agent_runtime._factory.get_provider", lambda _: FakeProvider())
@@ -286,14 +291,15 @@ async def test_http_deletion_service_is_available_without_a_started_scheduler(ha
     assert load_events_jsonl(conversation)
     app = web.Application()
     app[AGENT_RUNTIME_KEY] = h.manager
+    app[SCHEDULER_KEY] = Scheduler(**h.config.scheduling.model_dump())
     app.on_startup.append(_configure_routines)
     register_task_routes(app)
     async with TestClient(TestServer(app)) as client:
         if enabled:
-            assert app["task_runner"]._loop_task is None
-            assert not app["task_runner"].status["running"]
+            assert not app[SCHEDULER_KEY].running
+            assert not app["routine_work_source"].status["running"]
         else:
-            assert "task_runner" not in app
+            assert "routine_work_source" not in app
         path = f"/api/routines/{routine.id}"
         if target == "run":
             path += f"/runs/{run.id}"

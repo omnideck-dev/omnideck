@@ -1,3 +1,4 @@
+import { forwardRef } from 'react';
 import Spinner from './Spinner.jsx';
 import styles from './Button.module.css';
 
@@ -14,11 +15,12 @@ import styles from './Button.module.css';
  * Icon API is children-based: <Button><Icon /> Label</Button>.
  * Async actions use `loading` and an optional concise `loadingLabel`; the
  * button supplies the standard spinner, busy semantics, and disabled state.
+ * `wrap` lets content-driven labels wrap while retaining a 32px minimum height.
  *
  * `type` defaults to "button" so this primitive does not accidentally
  * submit forms when dropped into a <form>.
  */
-export default function Button({
+const Button = forwardRef(function Button({
     variant = 'outline',
     type = 'button',
     className,
@@ -26,11 +28,13 @@ export default function Button({
     loading = false,
     loadingLabel = 'Loading…',
     disabled = false,
+    wrap = false,
     ...rest
-}) {
-    const cls = [styles.btn, styles[variant], className].filter(Boolean).join(' ');
+}, ref) {
+    const cls = [styles.btn, styles[variant], wrap && styles.wrap, className].filter(Boolean).join(' ');
     return (
         <button
+            ref={ref}
             type={type}
             className={cls}
             disabled={disabled || loading}
@@ -45,4 +49,6 @@ export default function Button({
             ) : children}
         </button>
     );
-}
+});
+
+export default Button;

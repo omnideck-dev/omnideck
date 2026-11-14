@@ -55,7 +55,6 @@ def _convert_messages_for_ollama(messages: list[dict[str, Any]]) -> list[dict[st
     """
     converted = []
     for msg in messages:
-        msg = {key: value for key, value in msg.items() if key != "_runtime_context"}
         images = msg.get("images")
         if images:
             ollama_images = [img["data"] for img in images]

@@ -1,3 +1,4 @@
+import GoalDesktopView from '../goals/GoalDesktopView.jsx';
 import AgentsView from '../../components/agents/AgentsView.jsx';
 import { useDesktopNavigationCommands } from '../navigation/DesktopNavigation.jsx';
 import SettingsView from '../../components/SettingsView.jsx';
@@ -46,6 +47,8 @@ export default function DesktopViewContent({
     if (view.type === 'artifact-file') {
         return <ArtifactFileDesktopView view={view} />;
     }
+
+    if (view.type === 'goal') return <GoalDesktopView view={view} />;
 
     if (view.type === 'conversation') {
         return (

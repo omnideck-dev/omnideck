@@ -11,7 +11,7 @@ from multidict import CIMultiDict
 
 import conversations._store as _store
 from agent_runtime import RunSnapshot
-from conversations import ConversationResumeState, ConversationStore
+from conversations import ConversationResumeState, ConversationStore, load_events_jsonl
 from goals import GoalStore
 from conversations._folders import create_folder, list_folders
 from conversations._store import (
@@ -155,9 +155,9 @@ async def test_resume_route_returns_active_run_at_persisted_cursor(
     resume = AsyncMock(
         return_value=ConversationResumeState(
             events=[
-                {"id": "old-event", "type": "iteration"},
-                {"id": "run-started", "type": "agent_started"},
-                {"id": "run-user", "type": "user_message"},
+                {"id": "old-event", "type": "iteration", "timestamp": "2026-01-01T00:00:00+00:00"},
+                {"id": "run-started", "type": "agent_started", "timestamp": "2026-01-01T00:00:01+00:00"},
+                {"id": "run-user", "type": "user_message", "timestamp": "2026-01-01T00:00:02+00:00"},
             ],
             browser_tabs=[],
             terminal={},
@@ -199,7 +199,6 @@ async def test_resume_route_returns_active_run_at_persisted_cursor(
         "resume_after_seq": 3,
     }
     resume.assert_awaited_once_with("conversation-1")
-    handle.sequence_for_event.assert_called_once_with("run-user")
 
 
 @pytest.mark.unit
@@ -576,3 +575,27 @@ class TestGenerateTitle:
         )
         assert resp.status == 502
         assert load_conversation_metadata("c1") == {}
+
+
+async def test_resume_uses_logged_goal_events_without_reading_goal_history():
+    from agent_runtime import AgentRuntime
+
+    _seed('goal-journal')
+    request = _make_request('goal-journal', None)
+    store = request.app[GOAL_STORE_KEY]
+    runtime = AgentRuntime(goal_store=store)
+    request.app[AGENT_RUNTIME_KEY] = runtime
+    try:
+        goal = store.create('goal-journal', 'Keep the calendar current', 'general')
+        store.pause(goal.id)
+        logged = load_events_jsonl('goal-journal')
+        store.delete_for_conversation('goal-journal')
+        del request.app[GOAL_STORE_KEY]
+        first = json.loads((await resume_conversation_handler(request)).body)
+        second = json.loads((await resume_conversation_handler(request)).body)
+        assert first['events'] == second['events'] == logged
+        transitions = [event for event in first['events'] if event['type'] == 'goal']
+        assert [event['data']['kind'] for event in transitions] == ['started', 'paused']
+        assert len({event['id'] for event in first['events']}) == len(first['events'])
+    finally:
+        await runtime.close()

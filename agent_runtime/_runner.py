@@ -17,6 +17,7 @@ from agents import AgentProfile, get_agent_profile
 from browser.runtime import BrowserRuntime
 from config import load_config
 from goals._store import GoalStore
+from goals._tools import GoalRevisionTracker
 from conversations import save_conversation_profile
 from agent_core import AgentExecutor, default_hooks
 from agent_core.context import ContextManager, ConversationHistory
@@ -24,7 +25,7 @@ from agent_core.control import StopRequestedError
 from agent_core.events import (
     AgentEvent,
     ErrorPayload,
-    GoalWakeupPayload,
+    GoalEventPayload, GoalWakeupData,
     SpawnRequestedPayload,
     UserAttachment,
     UserMessagePayload,
@@ -36,7 +37,7 @@ from tools.virtual_computer.receive_file import receive_attachment
 
 from ._compaction import LLMCompactionStrategy
 from ._factory import AgentFactory, persist_loaded_skills
-from ._goals import GoalContextHook, goal_capability
+from ._goals import GoalContextHook, goal_skill
 from ._models import AgentRunRequest, RunAttachment, RunPolicy
 from ._scratchpad_hook import ScratchpadHook
 from ._session import RunSession
@@ -137,7 +138,6 @@ class AgentRunner:
                 session.subscribe(history.handle_event)
             if history is None or session.conversation is None:
                 raise RuntimeError("RunSession has no prepared history")
-            history.set_runtime_context(None)
             history.set_system_message(prepared.system_prompt)
             ctx_manager = ContextManager(
                 history=history,
@@ -152,21 +152,26 @@ class AgentRunner:
             if context.parent_execution_id is None and session.request.goal_trigger is not None and not self.goals_enabled():
                 raise StopRequestedError()
             if context.parent_execution_id is None and self.goal_store is not None and self.goals_enabled():
-                goal = self.goal_store.current(session.conversation_id)
                 trigger = session.request.goal_trigger
                 claim_id = trigger.claim_id if trigger is not None else session.run_id
-                if trigger is not None and (goal is None or goal.claimed_run_id != claim_id):
+                goal = (self.goal_store.get(trigger.goal_id) if trigger is not None
+                        else self.goal_store.latest(session.conversation_id))
+                owned = goal is not None and goal.claim is not None and goal.claim.id == claim_id
+                if trigger is not None and not owned:
                     raise StopRequestedError()
-                if goal is not None:
-                    owned = goal.claimed_run_id == claim_id
-                    if owned:
-                        prepared.capabilities.add_capability(goal_capability(
-                            self.goal_store, goal.id, context.execution_id, claim_id, enabled=self.goals_enabled,
-                        ))
-                    hooks.insert(0, GoalContextHook(
-                        self.goal_store, goal.id, prepared.system_prompt, claim_id if owned else None,
-                        enabled=self.goals_enabled,
+                if goal is not None and (owned or goal.ended):
+                    # Unfinished goals get every goal tool on every turn, paused or not.
+                    # Ended goals take no claim and can only be read.
+                    tracker = GoalRevisionTracker()
+                    prepared.capabilities.add(goal_skill(
+                        self.goal_store, goal.id, context.execution_id, claim_id if owned else None,
+                        enabled=self.goals_enabled, tracker=tracker, read_only=not owned,
                     ))
+                    if owned:
+                        hooks.append(GoalContextHook(
+                            self.goal_store, goal.id, claim_id,
+                            enabled=self.goals_enabled, wakeup=trigger is not None, tracker=tracker,
+                        ))
             if correlation_id is not None:
                 publish_event(
                     AgentEvent(payload=SpawnRequestedPayload(type="spawn_requested", correlation_id=correlation_id))
@@ -189,14 +194,18 @@ class AgentRunner:
                     ))
                     trigger = session.request.goal_trigger if context.parent_execution_id is None else None
                     if trigger is not None:
-                        publish_event(AgentEvent(payload=GoalWakeupPayload(
-                            type="goal_wakeup", goal_id=trigger.goal_id, wake_id=trigger.wake_id,
-                            reason=trigger.reason, next_action=trigger.next_action,
+                        publish_event(AgentEvent(payload=GoalEventPayload(
+                            type="goal", goal_id=trigger.goal_id, data=GoalWakeupData(
+                                kind="wakeup", wake_id=trigger.wake_id, reason=trigger.reason, step=trigger.step,
+                            ),
                         )))
                     else:
                         publish_event(
                             AgentEvent(
-                                payload=UserMessagePayload(type="user_message", content=message, attachments=attachments or [])
+                                payload=UserMessagePayload(
+                                    type="user_message", content=message, attachments=attachments or [],
+                                    context=list(session.request.context) if context.parent_execution_id is None else [],
+                                )
                             )
                         )
                     parallel = load_config().parallel
@@ -224,8 +233,6 @@ class AgentRunner:
             result = ExecutionResult("error", error=str(exc))
             raise
         finally:
-            if history is not None:
-                history.set_runtime_context(None)
             session.finish_execution(context, result)
             if child_history is not None:
                 session.unsubscribe(child_history.handle_event)

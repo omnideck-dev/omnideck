@@ -10,7 +10,7 @@ import logging
 import re
 import types
 from collections.abc import Callable
-from typing import Any, Union, cast, get_args, get_origin
+from typing import Any, Literal, Union, cast, get_args, get_origin
 
 from pydantic import BaseModel
 
@@ -115,6 +115,9 @@ def _python_type_to_json_schema(annotation: Any) -> dict[str, Any]:
         return cast(type[BaseModel], annotation).model_json_schema()
 
     origin = get_origin(annotation)
+    if origin is Literal:
+        values = get_args(annotation)
+        return {**_python_type_to_json_schema(type(values[0])), "enum": list(values)}
     if origin is list:
         args = get_args(annotation)
         items = _python_type_to_json_schema(args[0]) if args else {"type": "string"}

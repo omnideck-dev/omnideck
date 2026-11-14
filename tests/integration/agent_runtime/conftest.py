@@ -37,6 +37,7 @@ async def harness(tmp_path, monkeypatch):
         "tools.virtual_computer.receive_file.load_config",
         "tools.scratchpad.scratchpad.load_config",
         "artifacts._store.load_config",
+        "server.aiohttp_app.load_config",
     ):
         monkeypatch.setattr(target, lambda: config)
     monkeypatch.setattr("conversations._store._get_conversations_dir", lambda: tmp_path / "conversations")

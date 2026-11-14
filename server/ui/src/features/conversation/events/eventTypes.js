@@ -21,16 +21,19 @@ export const CONVERSATION_EVENT_TYPES = Object.freeze(/** @type {const} */ ({
     AGENT_COMPLETED: 'agent_completed',
     ERROR: 'error',
     USER_MESSAGE: 'user_message',
-    GOAL_WAKEUP: 'goal_wakeup',
+    GOAL: 'goal',
     ITERATION: 'iteration',
     TOOL_RESULT: 'tool_result',
     COMPACTION: 'compaction',
+    NUDGE_QUEUED: 'nudge_queued',
+    NUDGE_REMOVED: 'nudge_removed',
 }));
 
 /** Item names understood by the chat transcript's Turn renderer. */
 export const TRANSCRIPT_ITEM_KINDS = Object.freeze(/** @type {const} */ ({
     USER_PROMPT: 'user_prompt',
-    GOAL_WAKEUP: 'goal_wakeup',
+    GOAL_TRANSITION: 'goal_transition',
+    DAY_HEADER: 'day_header',
     ITERATION: 'iteration',
     TOOL_RESULT: 'tool_result',
     FILE_OUTPUT: 'file_output',

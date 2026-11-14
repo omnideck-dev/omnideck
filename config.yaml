@@ -42,10 +42,13 @@ parallel:
   enabled: true
   max_concurrent: 4
 
-routines:
-  enabled: true
+scheduling:
   poll_interval: 5
   max_concurrent: 2
+  shutdown_timeout: 60
+
+routines:
+  enabled: true
   timezone: America/Chicago
   notifications:
     enabled: true

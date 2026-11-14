@@ -4,6 +4,7 @@ import { useToast } from './ToastProvider.jsx';
 import { clearChatDraft } from '../utils/chatDraftStorage.js';
 import StatusDot from './StatusDot.jsx';
 import Spinner from './primitives/Spinner.jsx';
+import IconButton from './primitives/IconButton.jsx';
 import SearchInput from './primitives/SearchInput.jsx';
 import SectionHeader from './ConversationSectionHeader.jsx';
 import ArchivedSection from './ConversationArchivedSection.jsx';
@@ -20,8 +21,10 @@ import {
     buildSections,
 } from './conversationSections.js';
 import styles from './ConversationsPanel.module.css';
-import { useGoals } from '../features/goals/GoalsState.jsx';
+import { goalNeedsAnswer, useGoals } from '../features/goals/GoalsState.jsx';
 import GoalStatus from '../features/goals/GoalStatus.jsx';
+
+const NEEDS_YOU = 'needs-you';
 
 function pointRect(event) {
     return {
@@ -49,6 +52,19 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
         folders, createFolder, renameFolder, setFolderIcon, deleteFolder, setConversationFolder,
     } = useConversationCatalog();
     const [query, setQuery] = useState('');
+    const [filterId, setFilterId] = useState(null);
+    // The goal filter keeps chats that have a goal, finished or not.
+    const filters = useMemo(() => [
+        ...(goalsEnabled ? [{ id: 'goals', label: 'With a goal', chip: 'Goals', icon: 'bi-bullseye',
+            match: (item) => Boolean(goalsByConversation[item.conversation_id]) }] : []),
+        { id: 'running', label: 'Running now', chip: 'Running', icon: 'bi-arrow-repeat',
+            match: (item) => activity.running.has(item.conversation_id) },
+    ].map((f) => ({ ...f, count: items.filter(f.match).length })), [goalsEnabled, goalsByConversation, activity, items]);
+    const activeFilter = filters.find((f) => f.id === filterId);
+    const visibleItems = useMemo(
+        () => (activeFilter ? items.filter(activeFilter.match) : items),
+        [activeFilter, items],
+    );
     // Which row's context menu is open, plus the trigger rect to anchor it.
     const [menu, setMenu] = useState(null); // { id, rect } | null
     const [renamingId, setRenamingId] = useState(null);
@@ -81,15 +97,20 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
     const searchResults = useMemo(() => {
         if (!searching) return [];
         const q = query.trim().toLowerCase();
-        return items
+        return visibleItems
             .filter((c) => label(c).toLowerCase().includes(q))
             .sort((a, b) => (b.started_at || '').localeCompare(a.started_at || ''));
-    }, [items, query, searching]);
+    }, [visibleItems, query, searching]);
 
-    const sections = useMemo(
-        () => (searching ? [] : buildSections(items, folders, folderById, query)),
-        [items, folders, folderById, query, searching],
-    );
+    const sections = useMemo(() => {
+        if (searching) return [];
+        const needsYou = goalsEnabled ? visibleItems.filter((item) => goalNeedsAnswer(goalsByConversation[item.conversation_id])) : [];
+        const needsIds = new Set(needsYou.map((item) => item.conversation_id));
+        const grouped = buildSections(visibleItems.filter((item) => !needsIds.has(item.conversation_id)), folders, folderById, query)
+            // A filtered list leaves out folders with nothing that matches.
+            .filter((section) => !activeFilter || section.items.length > 0);
+        return needsYou.length ? [{ key: NEEDS_YOU, kind: 'goals', label: `Needs you · ${needsYou.length}`, items: needsYou }, ...grouped] : grouped;
+    }, [visibleItems, folders, folderById, query, searching, goalsEnabled, goalsByConversation, activeFilter]);
 
     const hasRows = sections.some((s) => s.items.length > 0);
 
@@ -254,11 +275,13 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
         const menuOpen = menu?.id === id;
         const running = activity.running.has(id);
         const finished = activity.finished.has(id);
+        const goal = goalsEnabled ? goalsByConversation[id] : null;
         return (
             <div
                 key={id}
                 className={[
                     styles.item,
+                    goal ? styles.goalItem : '',
                     active ? styles.active : '',
                     menuOpen ? styles.menuOpen : '',
                 ].filter(Boolean).join(' ')}
@@ -293,8 +316,10 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
                         {running ? <Spinner /> : <StatusDot status="complete" />}
                     </span>
                 )}
-                <span className={styles.itemTitle}>{label(convo)}</span>
-                {goalsEnabled && <GoalStatus goal={goalsByConversation[id]} compact />}
+                <span className={styles.itemBody}>
+                    <span className={styles.itemTitle}>{label(convo)}</span>
+                    {goal && <GoalStatus goal={goal} compact />}
+                </span>
                 {showAge && (
                     <span className={styles.itemAge} data-testid="recent-item-age">
                         {relativeAge(convo.started_at)}
@@ -325,16 +350,14 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
         <div className={styles.recent} data-testid="recent-conversations">
             <div className={styles.sectionHeader}>
                 <span>Conversations</span>
-                <button
-                    type="button"
-                    className={styles.newFolderBtn}
+                <IconButton
                     onClick={() => setCreatingFolder(true)}
                     title="New folder"
                     aria-label="New folder"
                     data-testid="recent-new-folder"
                 >
                     <i className="bi bi-folder-plus" />
-                </button>
+                </IconButton>
             </div>
 
             <div className={styles.primary}>
@@ -362,6 +385,10 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
                     ariaLabel="Search conversations"
                     testId="recent-search"
                     clearTestId="recent-search-clear"
+                    filters={filters}
+                    filter={activeFilter?.id ?? null}
+                    onFilterChange={setFilterId}
+                    filterTestId="recent-filter"
                 />
             </div>
 
@@ -380,16 +407,17 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
                         {`No matches for "${query}"`}
                     </div>
                 )}
-                {!searching && !loading && !hasRows && !creatingFolder && folders.length === 0 && (
+                {!searching && !loading && !hasRows && !creatingFolder && (activeFilter || folders.length === 0) && (
                     <div className={styles.empty} data-testid="recent-empty">
-                        No conversations yet
+                        {activeFilter ? 'No chats match this filter' : 'No conversations yet'}
                     </div>
                 )}
 
                 {searching && searchResults.map((convo) => renderRow(convo, { showAge: true }))}
 
                 {!searching && sections.map((section) => {
-                    const isCollapsed = collapsed.has(section.key);
+                    // Needs you never collapses, so a new question is never hidden.
+                    const isCollapsed = section.key !== NEEDS_YOU && collapsed.has(section.key);
                     return (
                         <div key={section.key} data-testid="recent-section" data-section={section.key}>
                             {section.kind === 'folder' && renamingFolderId === section.folder.id ? (
@@ -408,6 +436,7 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
                                 <SectionHeader
                                     section={section}
                                     collapsed={isCollapsed}
+                                    collapsible={section.key !== NEEDS_YOU}
                                     menuOpen={folderMenu?.folderId === section.folder?.id}
                                     onToggle={() => toggleSection(section.key)}
                                     onOpenFolderMenu={(rect) => toggleFolderMenu(section.folder.id, rect)}

@@ -8,12 +8,13 @@ from zoneinfo import ZoneInfo, available_timezones
 from croniter import croniter
 
 
-def cron_has_fired_since(cron_expr: str, anchor: str, tz_name: str = "UTC") -> bool:
+def cron_has_fired_since(cron_expr: str, anchor: str, tz_name: str = "UTC", *, now: datetime) -> bool:
     """Return True if the cron expression has fired since the anchor time.
 
     Args:
         cron_expr: A standard cron expression (e.g. ``"0 */2 * * *"``).
         anchor: ISO 8601 UTC timestamp to check from.
+        now: Explicit scheduling clock instant.
         tz_name: IANA timezone name (e.g., "America/Chicago", "UTC").
 
     Returns:
@@ -39,7 +40,7 @@ def cron_has_fired_since(cron_expr: str, anchor: str, tz_name: str = "UTC") -> b
     # Convert back to UTC for comparison
     next_fire_utc = next_fire.astimezone(timezone.utc)
     
-    return next_fire_utc <= datetime.now(timezone.utc)
+    return next_fire_utc <= now
 
 
 __all__ = ["cron_has_fired_since"]

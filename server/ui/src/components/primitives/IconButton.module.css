@@ -24,7 +24,6 @@
     background: var(--surface);
     color: var(--text-primary);
 }
-
 .xs { width: 24px; height: 24px; }
 .sm { width: 28px; height: 28px; }
 .md { width: 32px; height: 32px; }

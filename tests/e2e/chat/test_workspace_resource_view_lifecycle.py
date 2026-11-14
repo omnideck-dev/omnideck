@@ -21,7 +21,7 @@ def test_root_terminal_opens_beside_chat_without_stealing_chat(page: Page):
     chat.send(bash(f'echo "{marker}"')).wait_streaming()
 
     expect(page.get_by_test_id("view-tab-terminal")).to_be_visible()
-    expect(page.get_by_test_id("chat-title-bar")).to_be_visible()
+    expect(page.get_by_test_id("chat-panel")).to_be_visible()
     expect(
         page.locator("[data-view-id='destination:conversation']")
     ).to_have_attribute("data-tab-group-id", "left")
@@ -94,7 +94,7 @@ def test_refresh_restores_the_current_execution_view(page: Page):
         '[role="tab"][title="Terminal"]'
     )
     expect(terminal_tab).to_be_visible(timeout=10_000)
-    expect(page.get_by_test_id("chat-title-bar")).to_be_visible(timeout=10_000)
+    expect(page.get_by_test_id("chat-panel")).to_be_visible(timeout=10_000)
     terminal_view = page.locator(
         "[data-view-resource-id='terminal'][data-visible='true']"
     )

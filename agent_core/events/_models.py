@@ -324,14 +324,61 @@ class UserAttachment(BaseModel):
     path: str
 
 
-class GoalWakeupPayload(BaseModel):
-    """A goal continuation requested by its agent or the user."""
+class GoalWakeupData(BaseModel):
+    """A goal run that no user message started.
 
-    type: Literal["goal_wakeup"]
-    goal_id: str
+    Attributes:
+        reason: Why the run started: planned, run_now, retry, or interrupted.
+        step: Title of the plan step the run works on, or empty when no step is open.
+    """
+
+    kind: Literal["wakeup"]
     wake_id: str
-    reason: str
-    next_action: str
+    reason: Literal["planned", "run_now", "retry", "interrupted"]
+    step: str
+
+
+class GoalTransitionData(BaseModel):
+    """A committed lifecycle change for the conversation timeline.
+
+    Attributes:
+        resume_at: The planned run time for a scheduled transition.
+        question_count: Open questions the goal waits on, for a waiting transition.
+    """
+
+    kind: Literal[
+        "started", "paused", "resumed", "scheduled", "waiting", "error", "completed", "cancelled", "reopened",
+    ]
+    objective: str
+    resume_at: str | None
+    question_count: int = 0
+
+
+class GoalStateNoticeData(BaseModel):
+    """A model-only reminder to query saved goal state."""
+
+    kind: Literal["state_notice"]
+    revision: int
+    reason: Literal["run_started", "state_changed", "compacted"]
+
+
+class GoalEventPayload(BaseModel):
+    """A goal event shared by model context and conversation rendering."""
+
+    type: Literal["goal"]
+    goal_id: str
+    data: Annotated[GoalWakeupData | GoalTransitionData | GoalStateNoticeData, Field(discriminator="kind")]
+
+
+class GoalQuestionContext(BaseModel):
+    """An accepted question snapshot paired with its user answer."""
+
+    type: Literal["goal_question"]
+    goal_id: str
+    question_id: str
+    question_revision: int
+    question: str
+    answer: str
 
 
 class UserMessagePayload(BaseModel):
@@ -341,17 +388,54 @@ class UserMessagePayload(BaseModel):
     Attributes:
         type: Discriminator; always "user_message".
         content: The user-authored text.
+        context: What this message refers to, such as a goal question, or
+            later a selection in an artifact.
         attachments: Files uploaded with the message, materialized on
             the virtual computer before the LLM ran.
         is_nudge: False for the turn-opening prompt; True for queued
             user input that landed between iterations of an already-
             running turn.
+        nudge_id: The queued message's ID when it was sent while the
+            agent was working.
     """
 
     type: Literal["user_message"]
     content: str
     attachments: list[UserAttachment] = Field(default_factory=list)
+    context: list[GoalQuestionContext] = Field(default_factory=list)
     is_nudge: bool = False
+    nudge_id: str | None = None
+
+
+class NudgeQueuedPayload(BaseModel):
+    """A user message waiting for the agent's next step.
+
+    Attributes:
+        type: Discriminator; always "nudge_queued".
+        nudge_id: The queued message's ID.
+        content: The user-authored text.
+        context: What this message refers to, such as a goal question.
+    """
+
+    type: Literal["nudge_queued"]
+    nudge_id: str
+    content: str
+    context: list[GoalQuestionContext] = Field(default_factory=list)
+
+
+class NudgeRemovedPayload(BaseModel):
+    """A queued message left the queue without the agent reading it.
+
+    Attributes:
+        type: Discriminator; always "nudge_removed".
+        nudge_id: The queued message's ID.
+        reason: "removed" when the user removed it; "returned" when the
+            run ended before the agent read it.
+    """
+
+    type: Literal["nudge_removed"]
+    nudge_id: str
+    reason: Literal["removed", "returned"]
 
 
 class IterationToolCall(BaseModel):
@@ -513,7 +597,9 @@ AgentEventPayload = Annotated[
     | AgentCompletedPayload
     | SpawnRequestedPayload
     | UserMessagePayload
-    | GoalWakeupPayload
+    | NudgeQueuedPayload
+    | NudgeRemovedPayload
+    | GoalEventPayload
     | IterationPayload
     | ToolResultPayload
     | CompactionPayload
@@ -582,7 +668,10 @@ __all__ = [
     "ErrorPayload",
     "FileOutputPayload",
     "GenerationPreviewPayload",
-    "GoalWakeupPayload",
+    "GoalEventPayload",
+    "GoalWakeupData",
+    "GoalStateNoticeData",
+    "GoalTransitionData",
     "IterationPayload",
     "IterationToolCall",
     "SpawnRequestedPayload",
@@ -593,4 +682,5 @@ __all__ = [
     "TurnEndPayload",
     "UserAttachment",
     "UserMessagePayload",
+    "GoalQuestionContext",
 ]

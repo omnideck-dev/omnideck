@@ -8,8 +8,9 @@ import {
 /** @type {Set<import('./conversationEvents.generated').ConversationEvent['type']>} */
 const RETAINED_SESSION_EVENT_TYPES = new Set([
     EVENT.AGENT_STARTED,
+    // Marks the turn finished, so goal run outcomes can show.
+    EVENT.AGENT_COMPLETED,
     EVENT.USER_MESSAGE,
-    EVENT.GOAL_WAKEUP,
     EVENT.ITERATION,
     EVENT.TOOL_RESULT,
     EVENT.COMPACTION,
@@ -30,13 +31,32 @@ export function getSessionEventActions(event) {
     if (!event?.type) return actions;
     const isRootEvent = isRootAgentEvent(event);
 
-    if (isRootEvent && RETAINED_SESSION_EVENT_TYPES.has(event.type)) {
+    if (isRootEvent && (RETAINED_SESSION_EVENT_TYPES.has(event.type)
+        || (event.type === EVENT.GOAL && event.data.kind !== 'state_notice'))) {
         actions.push({ type: 'RETAIN_EVENT', event });
     }
 
     switch (event.type) {
         case EVENT.USER_MESSAGE:
             if (isRootEvent) actions.push({ type: 'CONFIRM_USER_MESSAGE' });
+            // A queued message leaves the queue once the agent reads it.
+            if (event.nudge_id) {
+                actions.push({ type: 'DROP_QUEUED_MESSAGE', nudgeId: event.nudge_id, returned: false });
+            }
+            break;
+        // Queue events are replayed with the run but never saved in the chat.
+        case EVENT.NUDGE_QUEUED:
+            actions.push({
+                type: 'QUEUE_MESSAGE',
+                message: {
+                    id: event.nudge_id,
+                    content: event.content || '',
+                    context: Array.isArray(event.context) ? event.context : [],
+                },
+            });
+            break;
+        case EVENT.NUDGE_REMOVED:
+            actions.push({ type: 'DROP_QUEUED_MESSAGE', nudgeId: event.nudge_id, returned: event.reason === 'returned' });
             break;
         case EVENT.ITERATION:
             if (isRootEvent) actions.push({ type: 'FINALIZE_ITERATION' });

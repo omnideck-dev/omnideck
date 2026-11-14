@@ -4,7 +4,7 @@ from collections.abc import Callable
 from typing import Any
 
 from ._openai import OpenAIProvider
-from ._prompt_cache import cache_stable_prefix
+from ._prompt_cache import cache_conversation
 
 
 class OpenRouterProvider(OpenAIProvider):
@@ -15,6 +15,6 @@ class OpenRouterProvider(OpenAIProvider):
         options: dict[str, Any] | None, think: bool = False,
     ) -> dict[str, Any]:
         kwargs = super()._build_kwargs(model, messages, tools, options, think)
-        if model.startswith("anthropic/") and messages and messages[-1].get("_runtime_context"):
-            cache_stable_prefix(kwargs["messages"])
+        if model.startswith("anthropic/"):
+            cache_conversation(kwargs["messages"])
         return kwargs

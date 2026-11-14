@@ -1,173 +1,176 @@
-"""Goal tools bound to one root execution and its durable ownership claim."""
+"""Goal tools bound to one root execution and its ownership claim."""
 
 import json
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from typing import Literal
+
+from pydantic import ValidationError
 
 from agent_core.turn import get_execution_context
 
-from ._context import goal_context
-from ._models import Goal, GoalQuestionChange, GoalPlanStep, TERMINAL_STATUSES, utc_now
-from ._store import GoalConflictError, GoalNotFoundError, GoalStateError, GoalStore
+from ._context import goal_context, next_action_view
+from ._models import Goal, GoalChoice, GoalQuestionChange, GoalStepChange
+from ._store import GoalConflictError, GoalNotFoundError, GoalRevisionError, GoalStateError, GoalStore
 
 GoalTool = Callable[..., Awaitable[str]]
+SAVED = "Saved."
+
+
+@dataclass
+class GoalRevisionTracker:
+    """The last goal revision the agent saw in this run. Never saved to disk."""
+
+    seen: int | None = None
+
+
+class _GoalToolError(Exception):
+    """A refusal the agent can act on, returned as tool text."""
+
+
+def _error_text(exc: Exception) -> str:
+    if isinstance(exc, GoalRevisionError):
+        return "Error: The goal changed since you last read it. Call read_goal, then try again."
+    message = str(exc.args[0]) if exc.args else str(exc)
+    message = message.rstrip(".")
+    return f"Error: {message}."
 
 
 def make_goal_tools(
     store: GoalStore, goal_id: str, execution_id: str, claim_id: str | None = None,
-    enabled: Callable[[], bool] | None = None,
+    enabled: Callable[[], bool] | None = None, *, tracker: GoalRevisionTracker, read_only: bool = False,
 ) -> list[GoalTool]:
-    """Build tools scoped to the root execution that currently owns a goal."""
+    """Build the goal tools for one root execution.
 
-    def require_owner() -> tuple[Goal, str]:
+    Reads need the root execution of the same chat while Goals are on. Writes
+    also need the run's claim and a read of the goal since its last change.
+    """
+
+    def read_check() -> Goal:
         if enabled is not None and not enabled():
-            raise GoalStateError("Experimental goals are disabled")
+            raise _GoalToolError("Goals are turned off")
         context = get_execution_context()
-        if (context is None or context.execution_id != execution_id or context.parent_execution_id is not None):
-            raise GoalConflictError("Goal tools are only available to their owning root execution")
+        if context is None or context.execution_id != execution_id or context.parent_execution_id is not None:
+            raise _GoalToolError("Goal tools only work in the chat's own run")
         context.control.check_stop()
         goal = store.get(goal_id)
-        if goal is None:
-            raise GoalNotFoundError("The assigned goal no longer exists")
-        owner = claim_id or context.run_id
-        if goal.conversation_id != context.conversation_id or goal.claimed_run_id != owner:
-            raise GoalConflictError("This execution no longer owns the assigned goal")
-        if goal.status == "paused" or goal.status in TERMINAL_STATUSES:
-            raise GoalStateError("The assigned goal is paused or has ended")
-        return goal, owner
+        if goal is None or goal.conversation_id != context.conversation_id:
+            raise _GoalToolError("This chat's goal no longer exists")
+        return goal
 
-    def result(goal: Goal) -> str:
-        # The hook refreshes current state before the next model call. Do not append
-        # another full snapshot to the transcript after every mutation.
-        receipt = {"revision": goal.revision, "status": goal.status}
-        for name in ("next_action", "status_reason", "resume_at", "wake_reason", "blocking_question_ids", "outcome"):
-            value = getattr(goal, name)
-            if value:
-                receipt[name] = value
-        return json.dumps(receipt)
+    def write_check() -> tuple[Goal, str, int]:
+        goal = read_check()
+        context = get_execution_context()
+        owner = claim_id or (context.run_id if context is not None else "")
+        if goal.claim is None or goal.claim.id != owner:
+            raise _GoalToolError("This run no longer owns the goal. Stop working on the goal")
+        if tracker.seen is None:
+            raise _GoalToolError("Read the goal with read_goal before changing it")
+        return goal, owner, tracker.seen
+
+    def guarded(body: Callable[[], str]) -> str:
+        try:
+            return body()
+        except ValidationError:
+            raise
+        except (_GoalToolError, GoalConflictError, GoalStateError, GoalNotFoundError, ValueError) as exc:
+            return _error_text(exc)
 
     async def read_goal() -> str:
-        """Read full working state: plan with notes and dependencies, question details and recent progress.
+        """Read the whole goal: objective, plan, questions, summary, your latest note, and what happens next.
 
-        Read before replacing an existing plan; the default brief omits its steps.
+        Read it at the start of each run and after compaction. Changes are refused until you
+        have read the goal since it last changed.
         """
-        goal, _owner = require_owner()
-        return json.dumps(goal_context(goal))
+        def body() -> str:
+            goal = read_check()
+            tracker.seen = goal.revision
+            held = goal.claim.wake_id if goal.claim is not None and goal.claim.id == claim_id else None
+            return json.dumps(goal_context(goal, held_wake_id=held), ensure_ascii=False)
+        return guarded(body)
 
     async def read_goal_history(query: str = "", before: int | None = None) -> str:
-        """Search or browse preserved progress, decisions, plan revisions, questions and answers.
+        """Search or browse earlier summaries, goal activity, questions and answers.
 
         Args:
-            query: Literal text to find in the journal; empty returns all types of entries.
+            query: Literal text to find in the history; empty returns every kind of entry.
             before: Omit for the newest page. Pass next_before from the previous result
-                to read older entries with the same query. Each page contains at most 20 entries.
+                to read older entries with the same query. Each page has at most 20 entries.
         """
-        require_owner()
-        return json.dumps(store.read_history(goal_id, query, before))
+        def body() -> str:
+            read_check()
+            return json.dumps(store.read_history(goal_id, query, before), ensure_ascii=False)
+        return guarded(body)
 
-    async def update_goal_summary(summary: str, expected_revision: int) -> str:
-        """Replace the compact handoff summary without deleting underlying history.
+    async def update_goal(plan: list[GoalStepChange] | None = None, summary: str | None = None) -> str:
+        """Change plan steps, the summary, or both. This does not choose what happens next.
 
         Args:
-            summary: Current outcomes, decisions and reasons, failed approaches to avoid,
-                remaining work and relevant evidence references. Keep concise; at most 12000 characters.
-            expected_revision: Revision from the latest goal read or update. Re-read if stale.
+            plan: Step changes by ID. Steps and fields you leave out stay as they are. A new ID
+                with a title adds a step at the end, or before the step named in before.
+                remove true deletes a step. Example: {"id": "book_pavilion", "status": "done"}.
+            summary: The whole working summary when changing it: findings, decisions, reasons,
+                answers from the user, and approaches that failed. Leave it out to keep it.
+                At most 12000 characters.
         """
-        _goal, owner = require_owner()
-        return result(store.update(goal_id, expected_revision, claim_id=owner,
-                                   reason="Goal summary updated", summary=summary))
+        def body() -> str:
+            _goal, owner, seen = write_check()
+            saved = store.update(
+                goal_id, seen, claim_id=owner, actor="agent", step_changes=plan, summary=summary,
+            )
+            tracker.seen = saved.revision
+            return SAVED
+        return guarded(body)
 
-    async def update_goal_questions(
-        changes: list[GoalQuestionChange], known_facts: str, expected_revision: int,
+    async def update_goal_questions(changes: list[GoalQuestionChange]) -> str:
+        """Ask, change, resolve or withdraw questions for the user. Asking does not stop work.
+
+        Args:
+            changes: Question changes by ID. Send the ID plus only the fields that change.
+                A new ID adds a question; it needs question text and starts open. Resolve a
+                question once it is answered well enough, and withdraw one that no longer
+                applies. Example: {"id": "day", "status": "resolved"}.
+        """
+        def body() -> str:
+            _goal, owner, seen = write_check()
+            saved = store.update_questions(goal_id, changes, seen, claim_id=owner)
+            tracker.seen = saved.revision
+            return SAVED
+        return guarded(body)
+
+    async def choose_next_action(
+        action: Literal["continue", "schedule", "wait_for_input", "complete"], note: str,
+        at: str | None = None, question_ids: list[str] | None = None, outcome: str | None = None,
     ) -> str:
-        """Ask or manage questions without stopping work; retain previous versions and answers.
+        """Choose what happens after this run, with a short note for the user.
+
+        continue and schedule need a plan step that is pending or in progress; the next run
+        works on it. Asking questions does not need waiting: wait only when open questions
+        block all useful work. Complete only after checking the outcome.
 
         Args:
-            changes: Question updates with stable IDs, full question text, status, and optional
-                choices. Omitted questions are unchanged. Resolve sufficient answers;
-                withdraw questions that no longer apply. Updating acknowledges received answers.
-            known_facts: Complete concise CURRENT facts learned from answers, including useful
-                earlier facts. Only current values: no previous values, comparisons, or correction
-                history. Put historical changes in progress or the handoff summary instead.
-                Changes may be empty when only the facts need updating.
-            expected_revision: Revision from the latest goal read or successful update.
-                Read again and reconcile if stale, including newly submitted answers.
+            action: continue runs again right away; schedule runs again at a later time;
+                wait_for_input waits for answers that block all useful work; complete ends
+                the goal.
+            note: One or two plain sentences for the user about what this run did. At most
+                500 characters. Example: "Called the parks office. Booked 11 AM to 4 PM."
+            at: Only for schedule. ISO 8601 time with a timezone offset.
+            question_ids: Only for wait_for_input. IDs of the open questions that block work.
+            outcome: Only for complete. What was achieved and how it was checked.
         """
-        _goal, owner = require_owner()
-        goal = store.update_questions(goal_id, changes, known_facts, expected_revision, claim_id=owner)
-        snapshot = json.loads(result(goal))
-        snapshot["question_updates"] = []
-        for item in changes:
-            question = store.question(goal_id, item.id)
-            assert question is not None  # Persisted by the transaction above.
-            snapshot["question_updates"].append(question.model_dump(mode="json", exclude={"answers"}))
-        return json.dumps(snapshot)
+        fields: dict[str, object] = {"action": action, "note": note}
+        for name, value in (("at", at), ("question_ids", question_ids), ("outcome", outcome)):
+            if value is not None:
+                fields[name] = value
+        choice = GoalChoice.model_validate(fields)
 
-    async def update_goal_plan(plan: list[GoalPlanStep], reason: str, expected_revision: int) -> str:
-        """Replace the goal checklist while preserving IDs for existing steps.
+        def body() -> str:
+            _goal, owner, seen = write_check()
+            saved = store.choose(goal_id, choice, claim_id=owner, expected_revision=seen)
+            tracker.seen = saved.revision
+            return json.dumps(next_action_view(saved) or {}, ensure_ascii=False)
+        return guarded(body)
 
-        Args:
-            plan: Complete ordered checklist. Every item must include id, title, status,
-                notes and depends_on (use empty values when appropriate). Status is pending,
-                in_progress, done, blocked or skipped. Notes hold evidence or blockers.
-                Copy unchanged step fields exactly, including dependencies on completed steps.
-            reason: Why the approach or steps changed, including evidence or decisions.
-            expected_revision: Revision returned by the latest goal read or update.
-                Read again and reconcile changes if the revision is stale.
-        """
-        _goal, owner = require_owner()
-        if not reason.strip():
-            raise ValueError("Explain why the plan changed")
-        return result(store.update(goal_id, expected_revision, claim_id=owner, reason=reason.strip(), plan=plan))
-
-    async def record_goal_progress(summary: str, next_action: str) -> str:
-        """Record durable progress and the next intended action without scheduling a turn.
-
-        Args:
-            summary: Concrete work completed, evidence obtained, or a blocker discovered.
-            next_action: What should happen next; use an empty string when none remains.
-        """
-        _goal, owner = require_owner()
-        return result(store.record_progress(goal_id, summary, next_action, claim_id=owner))
-
-    async def continue_goal(reason: str, next_action: str) -> str:
-        """Explicitly queue another goal turn after this execution ends.
-
-        Args:
-            reason: Why an additional turn is needed and can make progress now.
-            next_action: Concrete work for the next turn, including any checks before acting.
-        """
-        _goal, owner = require_owner()
-        return result(store.schedule(goal_id, utc_now(), reason, next_action, claim_id=owner, immediate=True))
-
-    async def schedule_goal_resume(resume_at: str, reason: str, next_action: str) -> str:
-        """Schedule one future goal turn after completing the actions possible now.
-
-        Args:
-            resume_at: Future ISO 8601 timestamp with an explicit timezone offset.
-            reason: Why waiting until that time is useful or necessary.
-            next_action: What the resumed agent should inspect or do next.
-        """
-        _goal, owner = require_owner()
-        return result(store.schedule(goal_id, resume_at, reason, next_action, claim_id=owner))
-
-    async def wait_for_goal_input(question_ids: list[str]) -> str:
-        """Stop automatic continuation only when open questions block all useful work.
-
-        Args:
-            question_ids: Nonempty IDs of existing open questions blocking further work.
-                Ask or revise them with update_goal_questions first. Review new answers before waiting.
-        """
-        _goal, owner = require_owner()
-        return result(store.wait_for_input(goal_id, question_ids, claim_id=owner))
-
-    async def complete_goal(outcome: str) -> str:
-        """Mark the goal complete only after its requested outcome has been achieved.
-
-        Args:
-            outcome: The achieved result and evidence that the success criteria are met.
-        """
-        _goal, owner = require_owner()
-        return result(store.complete(goal_id, outcome, claim_id=owner))
-
-    return [read_goal, read_goal_history, update_goal_summary, update_goal_questions, update_goal_plan, record_goal_progress, continue_goal, schedule_goal_resume,
-            wait_for_goal_input, complete_goal]
+    if read_only:
+        return [read_goal, read_goal_history]
+    return [read_goal, read_goal_history, update_goal, update_goal_questions, choose_next_action]

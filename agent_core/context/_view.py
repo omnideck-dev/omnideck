@@ -16,6 +16,25 @@ _SUMMARY_PREFIX = "[Conversation summary — earlier messages were compacted]\n\
 # messages). Kept verbatim from today's strategy.
 _INTENT_PREFIX = "[User intent history]\n"
 
+# Every app-written note shown to the model as a user message starts with this.
+# Such notes are not something the user asked for.
+SYSTEM_ACTIVITY_PREFIX = "[System activity:"
+GOAL_STATE_PREFIX = f"{SYSTEM_ACTIVITY_PREFIX} goal state]"
+GOAL_WAKEUP_PREFIX = f"{SYSTEM_ACTIVITY_PREFIX} goal wakeup]"
+
+_NOTICE_TEXT = {
+    "run_started": "This chat has a goal. Read the goal before goal work.",
+    "state_changed": "The goal changed since you last read it. Read it again before more goal work.",
+    "compacted": "Earlier messages were compacted. Read the goal again before more goal work.",
+}
+
+_WAKE_REASON_TEXT = {
+    "planned": "",
+    "run_now": "The user asked to run the goal now.",
+    "retry": "The last run failed. The user asked to try again.",
+    "interrupted": "The last run was interrupted. Check saved progress and outside state before repeating actions.",
+}
+
 
 def events_for_agent(
     events: list[dict[str, Any]],
@@ -53,7 +72,8 @@ def build_llm_view(
     sandbox. This is the list sent to the provider.
     """
     evs = events_for_agent(events, agent_filter)
-    first_user = next((e for e in evs if e["type"] in {"user_message", "goal_wakeup"}), None)
+    first_user = next((e for e in evs if e["type"] == "user_message"
+                       or (e["type"] == "goal" and e["data"]["kind"] == "wakeup")), None)
     if first_user is None:
         return []
     agent_names = _agent_names(events)
@@ -68,14 +88,10 @@ def build_llm_view(
     # else the user's text with the attachment block appended.
     if latest_compaction and latest_compaction.get("user_intent_summary"):
         user_content = _INTENT_PREFIX + latest_compaction["user_intent_summary"]
-    elif first_user["type"] == "goal_wakeup":
+    elif first_user["type"] == "goal":
         user_content = _goal_wakeup_content(first_user)
-    elif first_user.get("attachments"):
-        user_content = _augment_with_attachments(
-            first_user["content"], first_user["attachments"],
-        )
     else:
-        user_content = first_user["content"]
+        user_content = _user_message_content(first_user)
     messages: list[dict[str, Any]] = [{"role": "user", "content": user_content}]
 
     if latest_compaction is None:
@@ -116,12 +132,11 @@ def _walk(
         if t == "compaction":
             continue
         if t == "user_message":
-            content = e["content"]
-            if e.get("attachments"):
-                content = _augment_with_attachments(content, e["attachments"])
-            out.append({"role": "user", "content": content})
-        elif t == "goal_wakeup":
+            out.append({"role": "user", "content": _user_message_content(e)})
+        elif t == "goal" and e["data"]["kind"] == "wakeup":
             out.append({"role": "user", "content": _goal_wakeup_content(e)})
+        elif t == "goal" and e["data"]["kind"] == "state_notice":
+            out.append({"role": "user", "content": f"{GOAL_STATE_PREFIX}\n{_NOTICE_TEXT[e['data']['reason']]}"})
         elif t == "iteration":
             # An assistant message with neither content nor tool calls (e.g.
             # a thinking-only partial captured when the user stopped
@@ -159,13 +174,28 @@ def _walk(
 
 
 def _goal_wakeup_content(event: dict[str, Any]) -> str:
-    return (
-        "[System activity: goal wakeup]\n"
-        f"Reason: {event['reason']}\n"
-        f"Next action: {event['next_action']}\n"
-        "Read the current goal state and saved progress before acting. "
-        "Check the outcome of interrupted actions before repeating them."
-    )
+    data = event["data"]
+    lines = [GOAL_WAKEUP_PREFIX, "A goal run started."]
+    if data["step"]:
+        lines.append(f"Plan step: {data['step']}")
+    else:
+        lines.append("No plan step is open. Read the goal and update the plan.")
+    if _WAKE_REASON_TEXT[data["reason"]]:
+        lines.append(_WAKE_REASON_TEXT[data["reason"]])
+    lines.append("Read the goal and the step's notes before acting.")
+    return "\n".join(lines)
+
+
+def _user_message_content(event: dict[str, Any]) -> str:
+    """Render recorded context for the model without changing stored user text."""
+    content = event["content"]
+    questions = [item for item in event.get("context") or [] if item["type"] == "goal_question"]
+    if questions:
+        blocks = [f'Question {item["question_id"]}: "{item["question"]}"\nAnswer: {item["answer"]}' for item in questions]
+        content = "[Answers to your goal questions]\n" + "\n\n".join(blocks)
+    if event.get("attachments"):
+        content = _augment_with_attachments(content, event["attachments"])
+    return content
 
 
 def _augment_with_attachments(content: str, attachments: list[dict[str, Any]]) -> str:

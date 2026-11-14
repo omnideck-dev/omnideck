@@ -203,3 +203,41 @@ class TestSettingsUpdate:
         assert "vision_model" in dumped
         assert "setup_complete" not in dumped
         assert "direct_providers" not in dumped
+
+
+def test_goals_enabled_reads_the_settings_file_once_across_many_calls(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    save_settings({"goals_enabled": True})
+    reads = []
+    original = Path.read_text
+
+    def counted(path, *args, **kwargs):
+        if path == tmp_path / "settings.json":
+            reads.append(path)
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", counted)
+    for _ in range(50):
+        assert goals_enabled() is True
+    assert len(reads) <= 1
+
+
+def test_goals_enabled_sees_a_change_after_a_settings_save():
+    save_settings({"goals_enabled": True})
+    assert goals_enabled() is True
+    save_settings({"goals_enabled": False})
+    assert goals_enabled() is False
+
+
+def test_settings_file_changed_on_disk_is_read_again(tmp_path):
+    save_settings({"goals_enabled": True})
+    assert goals_enabled() is True
+    (tmp_path / "settings.json").write_text(json.dumps({"goals_enabled": False, "setup_complete": True}))
+    assert goals_enabled() is False
+
+
+def test_cached_settings_cannot_be_changed_by_a_caller():
+    save_settings({"direct_providers": {}})
+    load_settings()["direct_providers"]["openai"] = {"model": "changed"}
+    assert load_settings()["direct_providers"] == {}

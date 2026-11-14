@@ -9,7 +9,7 @@ import styles from './ConversationSectionHeader.module.css';
  * hover, focus, or while the menu is open. Right-clicking anywhere on a folder
  * header opens that same menu.
  */
-export default function ConversationSectionHeader({ section, collapsed, menuOpen, onToggle, onOpenFolderMenu }) {
+export default function ConversationSectionHeader({ section, collapsed, collapsible = true, menuOpen, onToggle, onOpenFolderMenu }) {
     const isFolder = section.kind === 'folder';
     return (
         <div
@@ -31,7 +31,7 @@ export default function ConversationSectionHeader({ section, collapsed, menuOpen
             }}
             data-testid={isFolder ? 'recent-folder-header' : undefined}
         >
-            <button
+            {collapsible ? <button
                 type="button"
                 className={styles.sectionToggle}
                 onClick={onToggle}
@@ -42,7 +42,9 @@ export default function ConversationSectionHeader({ section, collapsed, menuOpen
                 {section.kind === 'pinned' && <i className="bi bi-pin-angle-fill" />}
                 {isFolder && <i className={`bi ${section.folder.icon || DEFAULT_FOLDER_ICON} ${styles.folderInlineIcon}`} />}
                 <span className={styles.sectionName}>{section.label}</span>
-            </button>
+            </button> : <span className={styles.sectionToggle} data-testid="recent-section-label">
+                <span className={styles.sectionName}>{section.label}</span>
+            </span>}
             {isFolder && (
                 <button
                     type="button"

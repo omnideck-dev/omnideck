@@ -1,109 +1,108 @@
-"""Default model context stays small without dropping actionable goal state."""
+"""The agent's view of a goal: the whole goal in the words of its tools."""
 
 import json
+from datetime import datetime, timedelta, timezone
 
-from agent_core.context import ConversationHistory
-from agent_runtime._goals import GoalContextHook
-from goals import GoalStep, GoalStore
-from goals._context import goal_brief, goal_context
-from goals._models import Goal, GoalAnswer, GoalProgress, GoalQuestion
+from goals import GoalStep
+from goals._context import goal_context
+from goals._models import (
+    Goal, GoalAnswer, GoalCancelled, GoalClaim, GoalDone, GoalError, GoalQuestion, GoalWait, GoalWake, local_time,
+)
 
 
-def test_context_limits_progress_and_excludes_execution_metadata():
-    goal = Goal(
-        conversation_id="chat", profile_id="assistant", objective="Grow the newsletter to 100 subscribers. Ask before spending.",
-        summary="Library referrals work; avoid paid ads.", known_facts="Budget: $100/month.",
-        claimed_run_id="private-claim", claimed_wake_reason="Check campaign results",
-        next_action="Review new subscribers", progress_count=1000, history_count=1100,
-        progress=[GoalProgress(summary=f"Review {i}", next_action=f"Old action {i}") for i in range(20)],
+def goal(**fields) -> Goal:
+    return Goal(conversation_id="chat", profile_id="assistant", objective="Book the park pavilion for the reunion",
+                **fields)
+
+
+def in_days(days: int) -> str:
+    return (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
+
+
+def test_wake_run_view_hides_held_next_action():
+    wake = GoalWake(at=in_days(-1))
+    view = goal_context(goal(next=wake, claim=GoalClaim(id="claim", wake_id=wake.id)), held_wake_id=wake.id)
+    assert "next_action" not in view
+
+
+def test_wake_run_view_shows_a_new_choice_after_the_held_wake():
+    held = GoalWake(at=in_days(-1))
+    chosen = GoalWake(at=in_days(2))
+    view = goal_context(goal(next=chosen), held_wake_id=held.id)
+    assert view["next_action"] == {"action": "schedule", "at": local_time(chosen.at)}
+
+
+def test_chat_turn_view_shows_next_action():
+    due = goal(next=GoalWake(at=in_days(-1)), claim=GoalClaim(id="turn"))
+    assert goal_context(due)["next_action"] == {"action": "continue"}
+    later = GoalWake(at=in_days(3))
+    assert goal_context(goal(next=later))["next_action"] == {"action": "schedule", "at": local_time(later.at)}
+    assert goal_context(goal(next=GoalWait(question_ids=["day"])))["next_action"] == {
+        "action": "wait_for_input", "question_ids": ["day"],
+    }
+    assert goal_context(goal(next=GoalDone(outcome="Booked June 14.")))["next_action"] == {
+        "action": "complete", "outcome": "Booked June 14.",
+    }
+
+
+def test_view_has_no_next_action_when_the_agent_did_not_choose():
+    view = goal_context(goal(next=GoalWait()))
+    assert "next_action" not in view
+
+
+def test_view_shows_error_pause_and_cancel():
+    errored = goal_context(goal(next=GoalError(message="Rate limit reached (429)."), paused=True))
+    assert errored["error"] == "Rate limit reached (429)."
+    assert errored["paused"] is True
+    assert "next_action" not in errored
+    cancelled = goal_context(goal(next=GoalCancelled()))
+    assert cancelled["cancelled"] is True
+    assert "next_action" not in cancelled
+    plain = goal_context(goal())
+    assert not {"error", "paused", "cancelled"} & plain.keys()
+
+
+def test_view_has_now_and_note_and_no_storage_words():
+    item = goal(
+        summary="The pavilion costs $80 a day.", note="Called the parks office.",
+        claim=GoalClaim(id="private-claim", wake_id="private-wake"), history_count=1100, last_run_id="run-secret",
     )
-    snapshot = goal_context(goal)
-    assert [item["summary"] for item in snapshot["progress"]] == ["Review 17", "Review 18", "Review 19"]
-    assert snapshot["earlier_progress_entries"] == 997
-    assert snapshot["history_count"] == 1100
-    assert snapshot["objective"] == goal.objective
-    assert snapshot["summary"] == goal.summary and snapshot["known_facts"] == goal.known_facts
-    assert snapshot["next_action"] == goal.next_action
-    assert snapshot["current_run_reason"] == "Check campaign results"
-    serialized = json.dumps(snapshot)
-    assert "Old action" not in serialized and "private-claim" not in serialized
-    assert not {"id", "conversation_id", "profile_id", "wake_id", "created_at", "claim_revision"} & snapshot.keys()
-    assert len(serialized) < len(goal.model_dump_json()) / 2
+    view = goal_context(item)
+    assert view["note"] == "Called the parks office."
+    assert view["summary"] == "The pavilion costs $80 a day."
+    now = datetime.fromisoformat(view["now"].split(" ")[0])
+    assert now.utcoffset() is not None
+    assert abs(now - datetime.now(timezone.utc)) < timedelta(minutes=2)
+    serialized = json.dumps(view)
+    for word in ("revision", "claim", "wake", "status_reason", "history_count", "private-claim", "run-secret",
+                 "conversation_id", "profile_id", "known_facts"):
+        assert word not in serialized
+    assert '"status"' not in json.dumps({key: value for key, value in view.items() if key not in {"plan", "questions"}})
 
 
-def test_context_preserves_full_plan_and_every_pending_answer():
-    goal = Goal(
-        conversation_id="chat", profile_id="assistant", objective="Arrange an appointment",
-        plan=[GoalStep(id="check", title="Check coverage", status="done", notes="Confirmed by insurer"),
-              GoalStep(id="book", title="Book appointment", depends_on=["check"])],
-        questions=[GoalQuestion(id="time", question="Which afternoon?", status="open", revision=2,
-            reviewed_answer_count=1, choices=["Tuesday", "Wednesday"], answers=[
-                GoalAnswer(question_id="time", question_revision=1, answer="Afternoons only"),
-                *[GoalAnswer(question_id="time", question_revision=2, answer=f"Correction {i}") for i in range(5)],
-            ])], blocking_question_ids=["time"],
+def test_view_leaves_out_an_empty_summary_and_note():
+    view = goal_context(goal())
+    assert "summary" not in view and "note" not in view
+    assert view["plan"] == [] and view["questions"] == []
+
+
+def test_view_keeps_full_plan_and_marks_new_answers():
+    item = goal(
+        plan=[GoalStep(id="check", title="Check the pavilion price", status="done", notes="Confirmed $80"),
+              GoalStep(id="book", title="Book the pavilion", depends_on=["check"])],
+        questions=[GoalQuestion(
+            id="day", question="Which Saturday?", status="open", revision=2, reviewed_answer_count=1,
+            choices=["June 14", "June 21"], answers=[
+                GoalAnswer(question_id="day", question_revision=1, answer="Afternoons only"),
+                *[GoalAnswer(question_id="day", question_revision=2, answer=f"Correction {i}") for i in range(3)],
+            ],
+        )],
     )
-    snapshot = goal_context(goal)
-    assert [GoalStep.model_validate(item) for item in snapshot["plan"]] == goal.plan
-    question = snapshot["questions"][0]
-    assert question["reviewed_answer_count"] == 1
-    assert len(question["answers"]) == 6
-    assert question["answers"][-1]["answer"] == "Correction 4"
-    assert question["answers"][0]["question_revision"] == 1
-    assert question["choices"] == ["Tuesday", "Wednesday"]
-    assert snapshot["blocking_question_ids"] == ["time"]
-
-
-async def test_hook_refreshes_state_after_small_mutation_receipt(tmp_path):
-    from agent_core.agent_capabilities import AgentCapabilities
-    from agent_core.control import ExecutionControl
-    from agent_core.turn import ExecutionContext
-    from goals import make_goal_tools
-
-    store = GoalStore(tmp_path)
-    goal = store.create("chat", "Grow newsletter", "assistant")
-    goal = store.claim(goal.id, goal.wake_id, "owner")
-    history = ConversationHistory(conversation_id="chat")
-    hook = GoalContextHook(store, goal.id, "Base prompt", "owner", enabled=lambda: True)
-    context = ExecutionContext(execution_id="root.test", conversation_id="chat", run_id="run",
-                               event_sink=history, control=ExecutionControl())
-    tools = {fn.__name__: fn for fn in make_goal_tools(store, goal.id, "root.test", claim_id="owner")}
-    with context.bind("Test", AgentCapabilities([])):
-        receipt = json.loads(await tools["update_goal_summary"]("Avoid paid ads; use library referrals.", goal.revision))
-        assert "summary" not in receipt
-        await hook.before_model(history, 1, "Test")
-        state = json.loads(history.messages[-1]["content"].split("(task data):\n")[1])
-        assert state["summary"] == "Avoid paid ads; use library referrals."
-        assert state["revision"] == receipt["revision"]
-        assert goal_brief(store.get(goal.id)) == state
-        assert json.loads(await tools["read_goal"]())["summary"] == state["summary"]
-        assert history.system_message["content"] == "Base prompt"
-        assert history.recorded_events == []
-
-
-def test_brief_keeps_pending_answers_but_loads_working_details_on_demand():
-    goal = Goal(conversation_id="chat", profile_id="assistant", objective="Book a dentist",
-        summary="Clinic accepts insurance.", known_facts="Afternoons only.",
-        plan=[GoalStep(id="book", title="Book", notes="Use reservation ID 123")],
-        questions=[GoalQuestion(id="day", question="Which day?", status="open", reviewed_answer_count=1,
-            answers=[GoalAnswer(question_id="day", question_revision=1, answer=value)
-                     for value in ["Uncertain", "Tuesday", "Correction: Wednesday"]])],
-        progress=[GoalProgress(summary="Checked insurance"), GoalProgress(summary="Reservation held until Friday")])
-    brief = goal_brief(goal)
-    assert brief["questions"] == [{"id": "day", "question": "Which day?", "answers": ["Tuesday", "Correction: Wednesday"]}]
-    assert brief["plan_steps"] == 1 and "plan" not in brief
-    assert brief["latest_progress"] == "Reservation held until Friday"
-    assert brief["summary"] == goal.summary and brief["known_facts"] == goal.known_facts
-    assert goal_context(goal)["plan"][0]["notes"] == "Use reservation ID 123"
-    assert "history_count" not in brief and "earlier_progress_entries" not in brief
-
-
-async def test_deleted_nonowned_goal_removes_transient_context(tmp_path):
-    store = GoalStore(tmp_path)
-    goal = store.create("chat", "Arrange appointments", "assistant")
-    history = ConversationHistory(system_message="Base", conversation_id="chat")
-    hook = GoalContextHook(store, goal.id, "Base", None, enabled=lambda: True)
-    await hook.before_model(history, 1, "Agent")
-    assert history.messages[-1]["_runtime_context"]
-    store.delete_for_conversation("chat")
-    await hook.before_model(history, 2, "Agent")
-    assert history.messages == [{"role": "system", "content": "Base"}]
+    view = goal_context(item)
+    assert [GoalStep.model_validate(step) for step in view["plan"]] == item.plan
+    assert view["plan"][1] == {"id": "book", "title": "Book the pavilion", "depends_on": ["check"]}
+    question = view["questions"][0]
+    assert question["choices"] == ["June 14", "June 21"]
+    assert question["answers"][0] == {"answer": "Afternoons only"}
+    assert question["answers"][1:] == [{"answer": f"Correction {i}", "new": True} for i in range(3)]
+    assert "revision" not in question and "reviewed_answer_count" not in question
