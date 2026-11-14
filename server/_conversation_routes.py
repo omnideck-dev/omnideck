@@ -44,6 +44,7 @@ from conversations import (
     update_folder,
 )
 from server._agent_runtime import AGENT_RUNTIME_KEY
+from server._goals import GOAL_STORE_KEY, pause_conversation_goal
 
 logger = logging.getLogger(__name__)
 
@@ -104,9 +105,14 @@ async def delete_conversation_handler(request: Request) -> Response:
             {"error": "This conversation is still running. Stop it before deleting."},
             status=409,
         )
+    store = request.app[GOAL_STORE_KEY]
+    goal = store.current(conversation_id)
+    if goal is not None:
+        store.cancel(goal.id)
     found = delete_conversation(conversation_id)
     if not found:
         return web.json_response({"error": "Conversation not found"}, status=404)
+    store.delete_for_conversation(conversation_id)
     await manager.conversations.evict_conversation(conversation_id)
     return web.Response(status=204)
 
@@ -127,6 +133,7 @@ async def archive_conversation_handler(request: Request) -> Response:
             {"error": "This conversation is still running. Stop it before archiving."},
             status=409,
         )
+    pause_conversation_goal(request.app, conversation_id)
     found = archive_conversation(conversation_id)
     if not found:
         return web.json_response({"error": "Conversation not found"}, status=404)
@@ -247,14 +254,13 @@ async def resume_conversation_handler(request: Request) -> Response:
     active_run = None
     if active is not None:
         resume_after_seq = 0
-        for event in reversed(resume_state.events):
+        for event in resume_state.events:
             event_id = event.get("id")
             if not isinstance(event_id, str):
                 continue
             sequence = active.sequence_for_event(event_id)
             if sequence is not None:
-                resume_after_seq = sequence
-                break
+                resume_after_seq = max(resume_after_seq, sequence)
         active_run = {
             "run_id": active.run_id,
             "status": "running",

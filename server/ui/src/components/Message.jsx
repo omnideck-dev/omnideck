@@ -150,8 +150,9 @@ function AssistantMessage({ entries, onPreview, streaming, stalled = false,
     );
 }
 
-function UserMessage({ content, attachments }) {
+function UserMessage({ content, attachments, context = [] }) {
     const list = Array.isArray(attachments) ? attachments : [];
+    const replies = context.filter(item => item.type === 'goal_question');
     return (
         <div className={`${styles.message} ${styles.user}`} data-testid="message-user">
             <div className={styles.bubble}>
@@ -167,7 +168,15 @@ function UserMessage({ content, attachments }) {
                         ))}
                     </div>
                 )}
-                {content && <MarkdownContent>{content}</MarkdownContent>}
+                {replies.map((item) => (
+                    <div className={styles.goalReply} key={`${item.goal_id}:${item.question_id}`} data-testid="goal-question-answer">
+                        <div className={styles.replyReference}>
+                            <span aria-hidden="true">↳ </span>{item.question}
+                        </div>
+                        <MarkdownContent>{item.answer}</MarkdownContent>
+                    </div>
+                ))}
+                {!replies.length && content && <MarkdownContent>{content}</MarkdownContent>}
             </div>
         </div>
     );

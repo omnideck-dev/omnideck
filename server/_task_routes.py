@@ -122,7 +122,7 @@ async def handle_delete_run(request: web.Request) -> web.Response:
 
 async def handle_runner_status(request: web.Request) -> web.Response:
     """Return the current runner status."""
-    runner = request.app.get("task_runner")
+    runner = request.app.get("routine_work_source")
     if not runner:
         return web.json_response({
             "running": False,
@@ -135,7 +135,7 @@ async def handle_runner_status(request: web.Request) -> web.Response:
 
 async def handle_runner_pause(request: web.Request) -> web.Response:
     """Pause the task runner."""
-    runner = request.app.get("task_runner")
+    runner = request.app.get("routine_work_source")
     if runner:
         runner.pause()
     return web.json_response({"paused": True})
@@ -143,7 +143,7 @@ async def handle_runner_pause(request: web.Request) -> web.Response:
 
 async def handle_runner_resume(request: web.Request) -> web.Response:
     """Resume the task runner."""
-    runner = request.app.get("task_runner")
+    runner = request.app.get("routine_work_source")
     if runner:
         runner.resume()
     return web.json_response({"paused": False})

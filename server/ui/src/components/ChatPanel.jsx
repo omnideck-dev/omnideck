@@ -1,68 +1,53 @@
-import React from 'react';
+import React, { useRef } from 'react';
+import ConversationControls from './ConversationControls.jsx';
 import ChatMessages from './ChatMessages.jsx';
 import ChatInput from './ChatInput.jsx';
-import ContextMeter from './ContextMeter.jsx';
+import GoalHeadline from '../features/goals/GoalHeadline.jsx';
 import { formatAgentName } from '../utils/agentUtils.js';
-import StatusDot from './StatusDot.jsx';
 import { useAgentState } from '../features/agent/AgentState.jsx';
 import styles from './ChatPanel.module.css';
 
-/**
- * Chat panel for talking to the root agent. A title bar across the top
- * carries the conversation title, turn count, and context meter; below
- * it the scrollable message list and the input bar.
- *
- * When sub-agents have been spawned, a network indicator appears in the
- * title bar so the user can navigate to the full agent network view.
- */
-export default function ChatPanel({ turns, stalled = false, isOffline = false, onSend, onStop, isStreaming, stopRequested = false, attachment, onPreview, onSelectAgent, networkAgentCount = 0, networkRunningCount, onOpenNetwork, onOpenArtifacts, selectedProfileId, onProfileChange, profileRefreshSignal, conversationId, draft, onDraftChange }) {
-    // The title bar reflects the root agent; read it straight from the agent
-    // tree rather than receiving it as a prop.
+/** One conversation header, transcript, and composer. */
+export default function ChatPanel({ turns, stalled = false, isOffline = false, onSend, onSendAnswers, queue, returned, onRemoveQueued, onReturnedConsumed, onStop, isStreaming, stopRequested = false, attachment, onPreview, onSelectAgent, networkAgentCount = 0, networkRunningCount = 0, onOpenNetwork, onOpenArtifacts, selectedProfileId, onProfileChange, profileRefreshSignal, conversationId, draft, onDraftChange, onRequestGoal, onOpenGoal, goal }) {
+    const headerRef = useRef(null);
     const agentState = useAgentState();
     const rootAgent = agentState.rootId ? agentState.agents[agentState.rootId] : null;
 
-    // A turn is one user message and its response. Title falls back to the
-    // agent name until the live conversation title is wired up.
+    // A turn is one user message and its response. Keep this existing metadata
+    // available in Details without repeating the conversation tab title.
     const turnCount = Array.isArray(turns) ? turns.length : 0;
     const title = rootAgent?.name ? formatAgentName(rootAgent.name) : 'Chat';
 
+    const renderControls = () => <ConversationControls
+        key={conversationId} anchorRef={headerRef} agentName={title} turnCount={turnCount}
+        contextUsage={rootAgent?.contextUsage}
+        onOpenArtifacts={onOpenArtifacts} onOpenNetwork={onOpenNetwork}
+        networkAgentCount={networkAgentCount} networkRunningCount={networkRunningCount} />;
+
     return (
-        <div className={styles.panel}>
-            <div className={styles.titleBar} data-testid="chat-title-bar">
-                <div className={styles.left}>
-                    <span className={styles.title} data-testid="chat-title">{title}</span>
-                    {turnCount > 0 && (
-                        <span className={styles.turns} data-testid="chat-turns">
-                            {turnCount} turn{turnCount !== 1 ? 's' : ''}
-                        </span>
-                    )}
-                    <ContextMeter contextUsage={rootAgent?.contextUsage} />
-                </div>
-                <button
-                    className={styles.artifactsBtn}
-                    onClick={onOpenArtifacts}
-                    title="Files produced in this conversation"
-                    data-testid="conversation-artifacts-trigger"
-                >
-                    <i className="bi bi-collection" />
-                    <span>Artifacts</span>
-                </button>
-                {networkAgentCount > 0 && (
-                    <button className={styles.networkBtn} onClick={onOpenNetwork} title="Open agent network view" data-testid="network-indicator">
-                        <StatusDot status={networkRunningCount > 0 ? 'running' : 'complete'} />
-                        <span>{networkAgentCount} agent{networkAgentCount !== 1 ? 's' : ''}</span>
-                    </button>
-                )}
-            </div>
+        <div className={styles.panel} data-testid="chat-panel">
+            <header ref={headerRef} className={styles.header} data-testid="chat-title-bar" aria-label="Conversation header">
+                {goal ? <div className={styles.goalHeading}>
+                    <GoalHeadline goal={goal} onOpen={onOpenGoal} />
+                </div> : <span className={styles.title}>{title}</span>}
+                {renderControls()}
+            </header>
             <ChatMessages turns={turns} stalled={stalled} onPreview={onPreview} onSelectAgent={onSelectAgent} onStarterSelect={onDraftChange} />
             {/* Keyed by conversation so switching chats remounts the input —
                 its own unsent-draft state is restored from local storage per
                 conversationId rather than carried over from the old chat. */}
             <ChatInput
-                key={conversationId}
+                key={`composer:${conversationId}`}
                 conversationId={conversationId}
                 onSend={onSend}
+                onSendAnswers={onSendAnswers}
+                queue={queue}
+                returned={returned}
+                onRemoveQueued={onRemoveQueued}
+                onReturnedConsumed={onReturnedConsumed}
                 onStop={onStop}
+                onRequestGoal={onRequestGoal}
+                goal={goal}
                 isStreaming={isStreaming}
                 isOffline={isOffline}
                 stopRequested={stopRequested}

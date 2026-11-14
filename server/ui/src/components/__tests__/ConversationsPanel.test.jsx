@@ -2,15 +2,18 @@ import { fireEvent, render as _render, screen, waitFor, within } from '@testing-
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ConversationsPanel from '../ConversationsPanel.jsx';
+import { GoalsProvider } from '../../features/goals/GoalsState.jsx';
+import { formatRunTime } from '../../features/goals/goalStatus.js';
 import { ToastProvider } from '../ToastProvider.jsx';
 import { ConversationCatalogProvider } from '../../features/conversation/catalog/ConversationCatalog.jsx';
 
 // ConversationsPanel reads its list from the conversations context, so every
 // render goes through the provider (which fetches the list on mount).
+let goalsEnabled = false;
 function Providers({ children }) {
     return (
         <ToastProvider>
-            <ConversationCatalogProvider>{children}</ConversationCatalogProvider>
+            <ConversationCatalogProvider><GoalsProvider enabled={goalsEnabled}>{children}</GoalsProvider></ConversationCatalogProvider>
         </ToastProvider>
     );
 }
@@ -28,6 +31,12 @@ function isoAgo({ days = 0, hours = 0 }) {
     d.setHours(d.getHours() - hours);
     return d.toISOString();
 }
+
+const openQuestion = (id) => ({ id, question: `Question ${id}`, choices: [], status: 'open', revision: 1, answers: [], reviewed_answer_count: 0 });
+const goalFor = (conversationId, fields = {}) => ({
+    id: `goal-${conversationId}`, conversation_id: conversationId, objective: 'A goal', revision: 1,
+    paused: false, running: false, next: { kind: 'wait', question_ids: [] }, questions: [], plan: [], ...fields,
+});
 
 // A spread of conversations across the day buckets.
 const SESSIONS = [
@@ -84,6 +93,7 @@ beforeEach(() => {
     // Collapsed-section state persists to localStorage; clear it so each test
     // starts with every section expanded.
     localStorage.clear();
+    goalsEnabled = false;
     mockFetch();
 });
 afterEach(() => {
@@ -92,6 +102,132 @@ afterEach(() => {
 });
 
 describe('ConversationsPanel', () => {
+    it('keeps goal status informational and opens the chat when it is clicked', async () => {
+        goalsEnabled = true;
+        const baseFetch = global.fetch;
+        global.fetch = vi.fn((url, opts) => url === '/api/goals'
+            ? Promise.resolve({ ok: true, json: async () => ({ goals: [
+                goalFor('c1', { running: true, next: { kind: 'wake', id: 'w1', at: isoAgo({ hours: 1 }), reason: 'planned' }, plan: [{ id: 's1', status: 'in_progress', title: 'Search live openings and capture company details and application links' }] }),
+            ] }) }) : baseFetch(url, opts));
+        const onLoadConversation = vi.fn();
+        const user = userEvent.setup();
+        render(<ConversationsPanel onLoadConversation={onLoadConversation} />);
+        const status = await screen.findByTestId('goal-status');
+        expect(status).toHaveTextContent(/^Working$/);
+        expect(status).toHaveAttribute('title', expect.stringContaining('Search live openings'));
+        expect(screen.queryByRole('button', { name: /View goal for/ })).not.toBeInTheDocument();
+        await user.click(status);
+        expect(onLoadConversation).toHaveBeenCalledOnce();
+        await user.click(screen.getByText('muxer flush bug'));
+        expect(onLoadConversation).toHaveBeenCalledWith('c1');
+    });
+
+    it('groups goals waiting for the user or stopped by an error, and returns a chat to its folder once it runs again', async () => {
+        goalsEnabled = true;
+        const sessions = [
+            { ...SESSIONS[0], pinned: true },
+            { ...SESSIONS[1], folder_id: 'family' },
+            ...SESSIONS.slice(2),
+        ];
+        mockFetch(sessions, [{ id: 'family', name: 'Family', icon: 'bi-folder' }]);
+        const baseFetch = global.fetch;
+        let retried = false;
+        const goals = () => [
+            goalFor('c1', { next: { kind: 'wait', question_ids: ['q1'] }, questions: [openQuestion('q1')] }),
+            goalFor('c2', retried
+                ? { revision: 3, running: true, next: { kind: 'wake', id: 'w2', at: isoAgo({ hours: 0 }), reason: 'retry' } }
+                : { next: { kind: 'error', message: 'Rate limit reached (429).' } }),
+            goalFor('c3', { paused: true, next: { kind: 'wait', question_ids: ['q3'] }, questions: [openQuestion('q3')] }),
+        ];
+        global.fetch = vi.fn((url, opts) => url === '/api/goals'
+            ? Promise.resolve({ ok: true, json: async () => ({ goals: goals() }) }) : baseFetch(url, opts));
+        render(<ConversationsPanel onLoadConversation={vi.fn()} />);
+        const attention = (await screen.findByText('Needs you · 2')).closest('[data-testid="recent-section"]');
+        expect(within(attention).getAllByTestId('recent-item')).toHaveLength(2);
+        expect(screen.getAllByTestId('recent-item')).toHaveLength(4);
+        expect(within(attention).getByText('1 question for you')).toBeVisible();
+        expect(within(attention).getByText('Stopped by an error')).toBeVisible();
+        expect(within(attention).queryByText('release notes draft')).not.toBeInTheDocument();
+        retried = true;
+        fireEvent(window, new Event('online'));
+        await screen.findByText('Needs you · 1');
+        const family = screen.getByText('Family').closest('[data-testid="recent-section"]');
+        expect(within(family).getByText('snake game')).toBeVisible();
+        expect(within(family).getByText('Working')).toBeVisible();
+        expect(screen.getAllByTestId('recent-item')).toHaveLength(4);
+    });
+
+    it('keeps a scheduled goal with a non-blocking question out of Needs you and counts the question on its row', async () => {
+        goalsEnabled = true;
+        const baseFetch = global.fetch;
+        const at = '2099-11-14T15:00:00Z';
+        global.fetch = vi.fn((url, opts) => url === '/api/goals'
+            ? Promise.resolve({ ok: true, json: async () => ({ goals: [
+                goalFor('c1', { next: { kind: 'wake', id: 'w1', at, reason: 'planned' }, questions: [openQuestion('q1')] }),
+            ] }) }) : baseFetch(url, opts));
+        render(<ConversationsPanel onLoadConversation={vi.fn()} />);
+        const status = await screen.findByTestId('goal-status');
+        expect(status).toHaveTextContent(`Resumes ${formatRunTime(at)} · 1 question`);
+        expect(screen.queryByText(/Needs you/)).not.toBeInTheDocument();
+    });
+
+    it('never collapses Needs you, even when a saved collapsed set names it', async () => {
+        goalsEnabled = true;
+        localStorage.setItem('omnideck_sidebar_collapsed_sections', JSON.stringify(['needs-you']));
+        const baseFetch = global.fetch;
+        global.fetch = vi.fn((url, opts) => url === '/api/goals'
+            ? Promise.resolve({ ok: true, json: async () => ({ goals: [
+                goalFor('c1', { next: { kind: 'wait', question_ids: ['q1'] }, questions: [openQuestion('q1')] }),
+            ] }) }) : baseFetch(url, opts));
+        render(<ConversationsPanel onLoadConversation={vi.fn()} />);
+        const attention = (await screen.findByText('Needs you · 1')).closest('[data-testid="recent-section"]');
+        expect(within(attention).getByText('muxer flush bug')).toBeVisible();
+        expect(within(attention).queryByTestId('recent-section-toggle')).not.toBeInTheDocument();
+        expect(within(attention).getByTestId('recent-section-label')).toHaveTextContent('Needs you · 1');
+    });
+
+    it('shows only chats with a goal while the goal filter is on', async () => {
+        goalsEnabled = true;
+        const user = userEvent.setup();
+        const baseFetch = global.fetch;
+        global.fetch = vi.fn((url, opts) => url === '/api/goals'
+            ? Promise.resolve({ ok: true, json: async () => ({ goals: [
+                goalFor('c2', { next: { kind: 'wake', id: 'w1', at: '2099-11-14T15:00:00Z', reason: 'planned' } }),
+                goalFor('c4', { next: { kind: 'done', outcome: 'Shipped' } }),
+            ] }) }) : baseFetch(url, opts));
+        render(<ConversationsPanel onLoadConversation={vi.fn()} />);
+        await waitFor(() => expect(screen.getAllByTestId('goal-status')).toHaveLength(2));
+        await user.click(screen.getByRole('button', { name: 'Filter' }));
+        await user.click(screen.getByRole('menuitemradio', { name: /With a goal/ }));
+        expect(screen.getByTestId('recent-filter-chip')).toHaveTextContent('Goals');
+        expect(screen.getAllByTestId('recent-item').map((row) => row.textContent)).toEqual([
+            expect.stringContaining('snake game'), expect.stringContaining('eval pass'),
+        ]);
+        await user.click(screen.getByRole('button', { name: 'Clear Goals filter' }));
+        expect(screen.getAllByTestId('recent-item')).toHaveLength(4);
+    });
+
+    it('hides empty folders while a filter is on', async () => {
+        goalsEnabled = true;
+        const user = userEvent.setup();
+        mockFetch(SESSIONS, [{ id: 'f1', name: 'Work', icon: 'bi-folder', order: 0 }]);
+        render(<ConversationsPanel onLoadConversation={vi.fn()} />);
+        await screen.findByText('Work');
+        await user.click(screen.getByRole('button', { name: 'Filter' }));
+        await user.click(screen.getByRole('menuitemradio', { name: /With a goal/ }));
+        expect(screen.queryByText('Work')).not.toBeInTheDocument();
+        expect(screen.getByTestId('recent-empty')).toHaveTextContent('No chats match this filter');
+    });
+
+    it('offers no goal filter while goals are off', async () => {
+        const user = userEvent.setup();
+        render(<ConversationsPanel onLoadConversation={vi.fn()} />);
+        await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(4));
+        await user.click(screen.getByRole('button', { name: 'Filter' }));
+        expect(screen.queryByRole('menuitemradio', { name: /With a goal/ })).not.toBeInTheDocument();
+        expect(screen.getByRole('menuitemradio', { name: /Running now/ })).toBeInTheDocument();
+    });
+
     it('lists fetched conversations grouped by day', async () => {
         render(<ConversationsPanel onLoadConversation={vi.fn()} />);
         await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(4));
@@ -230,6 +366,7 @@ describe('ConversationsPanel — context menu', () => {
 describe('ConversationsPanel — delete', () => {
     beforeEach(() => {
         localStorage.clear();
+    goalsEnabled = false;
     });
 
     it('deletes a conversation via the menu after a confirm click', async () => {

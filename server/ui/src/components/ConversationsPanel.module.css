@@ -12,32 +12,20 @@
     display: flex;
     align-items: center;
     flex-shrink: 0;
-    padding: 0 10px 0 11px;
+    gap: var(--sp-1);
+    padding: 0 var(--sp-2) 0 var(--sp-3);
     color: var(--text-tertiary);
     font-family: var(--font-body);
-    font-size: 12px;
+    /* Icon buttons inherit this size; the label sets its own smaller one. */
+    font-size: var(--font-size-ui);
     font-weight: 600;
     letter-spacing: 0.02em;
 }
-.sectionHeader > span { flex: 1; }
-
-.newFolderBtn {
-    width: 24px;
-    height: 24px;
-    flex-shrink: 0;
-    display: grid;
-    place-items: center;
-    border-radius: var(--radius-sm);
-    background: transparent;
-    color: var(--text-tertiary);
-    cursor: pointer;
-    font-size: 12px;
-}
-.newFolderBtn:hover { background: var(--accent-muted); color: var(--text-primary); }
+.sectionHeader > span { flex: 1; font-size: var(--font-size-small); }
 
 .primary {
     flex-shrink: 0;
-    padding: 0 var(--sp-2) var(--sp-1);
+    padding: 0 var(--sp-2) var(--sp-3);
 }
 
 .newChat {
@@ -52,7 +40,7 @@
     border: 1px solid var(--accent-muted);
     color: var(--text-primary);
     cursor: pointer;
-    font-size: 13.5px;
+    font-size: var(--font-size-ui);
     font-weight: 600;
 }
 .newChat:hover { background: var(--accent-glow); border-color: var(--accent-glow); }
@@ -65,7 +53,7 @@
     justify-content: center;
     flex-shrink: 0;
     color: var(--accent);
-    font-size: 13px;
+    font-size: var(--font-size-body);
 }
 
 /* ── Search ──────────────────────────────────────────── */
@@ -120,6 +108,9 @@
 .item.active { background: var(--accent-muted); color: var(--text-primary); }
 .item:focus-visible { outline: none; box-shadow: var(--shadow-glow); }
 
+.goalItem { height: auto; min-height: 34px; padding-top: var(--sp-2); padding-bottom: var(--sp-2); }
+.itemBody { display: flex; flex-direction: column; gap: var(--sp-1); flex: 1; min-width: 0; }
+
 .itemTitle {
     flex: 1;
     min-width: 0;
@@ -163,3 +154,4 @@
     font-size: 12px;
     color: var(--text-tertiary);
 }
+

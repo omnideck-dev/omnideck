@@ -10,14 +10,16 @@ from conversations import load_events_jsonl
 from agent_core.events import get_current_agent_id
 from agent_core.providers import ChatDelta, ProviderError
 from agent_core.turn import get_conversation_id
+from goals import GoalStore
 from server._agent_run_routes import register_agent_run_routes
 from server._agent_runtime import AGENT_RUNTIME_KEY
+from server._goals import GOAL_STORE_KEY
 
 from ._support import assert_lifecycle, call, collect, payloads, reply
 
 
 @pytest.mark.parametrize("outcome", ["success", "stopped", "error"])
-async def test_http_disconnect_replay_control_and_next_turn(harness, aiohttp_client, outcome):
+async def test_http_disconnect_replay_control_and_next_turn(harness, aiohttp_client, outcome, tmp_path):
     h = harness
     release = asyncio.Event()
 
@@ -39,6 +41,7 @@ async def test_http_disconnect_replay_control_and_next_turn(harness, aiohttp_cli
         h.provider.plan("leaf", reply("finished"))
     app = web.Application()
     app[AGENT_RUNTIME_KEY] = h.manager
+    app[GOAL_STORE_KEY] = GoalStore(tmp_path / "session-goals")
     register_agent_run_routes(app)
     client = await aiohttp_client(app)
     request = {"conversation_id": "contract", "profile_id": "leaf", "message": "work"}
@@ -55,8 +58,11 @@ async def test_http_disconnect_replay_control_and_next_turn(harness, aiohttp_cli
     cursor = record["seq"]
     initial.close()
     assert h.manager.active_for_conversation("contract").run_id == run_id
-    conflict = await client.post("/api/chat", json=request)
-    assert conflict.status == 409
+    queued = await client.post("/api/chat", json=request)
+    assert queued.status == 202
+    nudge_id = (await queued.json())["nudge"]["id"]
+    removed = await client.delete(f"/api/chat/nudges/{nudge_id}?conversation_id=contract")
+    assert removed.status == 200
     invalid = await client.get(f"/api/chat/runs/{run_id}/events?after=999999")
     assert invalid.status == 400
 

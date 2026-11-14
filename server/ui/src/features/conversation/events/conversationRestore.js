@@ -1,5 +1,5 @@
 import { mapConversationEventToActions } from './mapConversationEventToActions.js';
-import { CONVERSATION_EVENT_TYPES as EVENT } from './eventTypes.js';
+import { CONVERSATION_EVENT_TYPES as EVENT, isRootAgentEvent } from './eventTypes.js';
 
 /** @param {string|null|undefined} timestamp */
 function eventTime(timestamp) {
@@ -90,4 +90,34 @@ export function getConversationRestorePlan(data) {
         agentActions,
         workspaceActions,
     };
+}
+
+/**
+ * A process can stop before writing agent_completed. When the server reports
+ * no active run, add the missing completion for each root agent left open, so
+ * the transcript treats its turn as finished.
+ *
+ * @param {Array<import('./conversationEvents.generated').ConversationEvent>} events
+ * @returns {Array<import('./conversationEvents.generated').ConversationEvent>}
+ */
+export function closeInterruptedTurns(events) {
+    /** @type {Map<string, import('./conversationEvents.generated').ConversationEvent>} Each open agent's latest event. */
+    const open = new Map();
+    for (const event of events) {
+        if (!event.agent_id) continue;
+        if (event.type === EVENT.AGENT_STARTED && isRootAgentEvent(event)) open.set(event.agent_id, event);
+        else if (event.type === EVENT.AGENT_COMPLETED) open.delete(event.agent_id);
+        else if (open.has(event.agent_id)) open.set(event.agent_id, event);
+    }
+    if (open.size === 0) return events;
+    return [...events, ...Array.from(open, ([agentId, last]) => ({
+        id: `_interrupted_${agentId}`,
+        timestamp: last.timestamp,
+        conversation_id: last.conversation_id,
+        type: /** @type {const} */ ('agent_completed'),
+        agent_id: agentId,
+        agent_name: last.agent_name || '',
+        depth: 0,
+        status: /** @type {const} */ ('stopped'),
+    }))];
 }

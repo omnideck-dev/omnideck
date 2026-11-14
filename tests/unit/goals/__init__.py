@@ -1,0 +1,1 @@
+"""Persistent chat goal tests."""

@@ -4,6 +4,10 @@ import {
     isRootAgentEvent,
     isSubAgentEvent,
 } from './eventTypes.js';
+import { addDayHeaders, hideRunAfterStart, placeRunOutcomes } from './goalTranscript.js';
+
+/** Display rules applied after the events become items, in this order. */
+const TRANSCRIPT_PASSES = [placeCompactions, hideRunAfterStart, placeRunOutcomes, addDayHeaders];
 
 /**
  * Build the chat transcript from the persisted conversation event log.
@@ -23,6 +27,10 @@ import {
  * A sub-agent's events are omitted here because its detailed output appears in
  * the agent network/activity view. The root transcript can still contain the
  * `spawn_requested` item that links to that sub-agent.
+ *
+ * The loop below only turns events into items, in the order they happened.
+ * Display rules that move, hide or add items run afterwards as separate
+ * passes, in the order listed in TRANSCRIPT_PASSES.
  *
  * @param {Array<import('./conversationEvents.generated').ConversationEvent>|null|undefined} events
  * @returns {Array<import('./frontendTypes').ConversationTurn>}
@@ -45,6 +53,7 @@ export function projectTurns(events) {
                 currentTurn = {
                     id: `turn_${turns.length}`,
                     agentId: ev.agent_id,
+                    finished: false,
                     children: [],
                 };
                 turns.push(currentTurn);
@@ -55,9 +64,34 @@ export function projectTurns(events) {
             continue;
         }
         // Completion and context metadata affect the agent graph/status, not
-        // the transcript's visible children.
-        if (t === EVENT.AGENT_COMPLETED) continue;
+        // the transcript's visible children. Completion of the root agent marks
+        // the turn as finished.
+        if (t === EVENT.AGENT_COMPLETED) {
+            if (currentTurn && ev.agent_id === currentTurn.agentId) currentTurn.finished = true;
+            continue;
+        }
         if (t === EVENT.CONTEXT_USAGE) continue;
+        // Every goal run that no user message started gets a divider, whatever
+        // started it. Internal notes to the agent stay hidden.
+        if (t === EVENT.GOAL) {
+            const data = ev.data;
+            if (data.kind === 'state_notice') continue;
+            if (!currentTurn) {
+                // No agent runs in this turn, so it has nothing left to finish.
+                currentTurn = { id: `turn_${turns.length}`, agentId: null, finished: true, children: [] };
+                turns.push(currentTurn);
+            }
+            const wakeup = data.kind === 'wakeup';
+            currentTurn.children.push({
+                kind: ITEM.GOAL_TRANSITION, id: ev.id,
+                transition: wakeup ? 'run' : data.kind,
+                objective: wakeup ? '' : data.objective,
+                step: wakeup ? data.step : '',
+                questionCount: wakeup ? 0 : data.question_count || 0,
+                timestamp: ev.timestamp, resumeAt: wakeup ? null : data.resume_at,
+            });
+            continue;
+        }
 
         if (!currentTurn) {
             // A root error with no turn yet means the turn failed before
@@ -68,6 +102,7 @@ export function projectTurns(events) {
                 currentTurn = {
                     id: `turn_${turns.length}`,
                     agentId: ev.agent_id || null,
+                    finished: true,
                     children: [],
                 };
                 turns.push(currentTurn);
@@ -88,7 +123,9 @@ export function projectTurns(events) {
                 id: ev.id,
                 content: ev.content || '',
                 attachments: ev.attachments || [],
+                context: ev.context || [],
                 isNudge: !!ev.is_nudge,
+                timestamp: ev.timestamp || null,
             });
         } else if (t === EVENT.ITERATION) {
             currentTurn.children.push({
@@ -146,20 +183,26 @@ export function projectTurns(events) {
         }
     }
 
-    // Keep the source event log in chronological order. Only rearrange these
-    // derived transcript children so a compaction chip marks the semantic
-    // boundary between summarized context and the iterations kept verbatim.
-    // The backend emits the compaction after doing the work, while keptFromId
-    // identifies the first iteration on the kept side of the boundary:
-    //
-    //     event order:      iter-1, iter-2, compaction(keptFromId=iter-2)
-    //     transcript order: iter-1, [compaction], iter-2
-    //                               summarized | kept verbatim
-    //
-    // This is presentation logic over newly-created children; persisted events
-    // are neither mutated nor rewritten.
-    for (const turn of turns) {
-        const children = turn.children;
+    return TRANSCRIPT_PASSES.reduce((list, pass) => pass(list), turns);
+}
+
+/**
+ * Keep the source event log in chronological order. Only rearrange these
+ * derived transcript children so a compaction chip marks the semantic
+ * boundary between summarized context and the iterations kept verbatim.
+ * The backend emits the compaction after doing the work, while keptFromId
+ * identifies the first iteration on the kept side of the boundary:
+ *
+ *     event order:      iter-1, iter-2, compaction(keptFromId=iter-2)
+ *     transcript order: iter-1, [compaction], iter-2
+ *                               summarized | kept verbatim
+ *
+ * @param {Array<import('./frontendTypes').ConversationTurn>} turns
+ * @returns {Array<import('./frontendTypes').ConversationTurn>}
+ */
+export function placeCompactions(turns) {
+    return turns.map((turn) => {
+        const children = [...turn.children];
         const compactions = children.filter((c) => c.kind === ITEM.COMPACTION);
         for (const comp of compactions) {
             if (!comp.keptFromId) continue;
@@ -175,7 +218,6 @@ export function projectTurns(events) {
                 : targetIdx;
             children.splice(newTargetIdx, 0, comp);
         }
-    }
-
-    return turns;
+        return { ...turn, children };
+    });
 }

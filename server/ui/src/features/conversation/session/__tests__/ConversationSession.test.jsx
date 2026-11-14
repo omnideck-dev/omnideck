@@ -1,5 +1,6 @@
 import { act, render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { GoalsProvider } from '../../../goals/GoalsState.jsx';
 import { AgentProvider, useAgentState } from '../../../agent/AgentState.jsx';
 import {
     AppEffectsProvider,
@@ -25,10 +26,16 @@ const harness = vi.hoisted(() => ({
         stopRequested: false,
         stalled: false,
         sendMessage: vi.fn(),
+        sendAnswers: vi.fn(),
+        removeQueuedMessage: vi.fn(),
+        consumeReturnedMessages: vi.fn(),
+        queue: [],
+        returned: [],
         sendNudge: vi.fn(),
         stopGeneration: vi.fn(),
         loadConversation: vi.fn(),
         reattachActiveRun: vi.fn(),
+        refreshActiveConversation: vi.fn(),
         newConversation: vi.fn(),
         setDraft: vi.fn(),
     },
@@ -83,9 +90,9 @@ function renderSession() {
         <AppEffectsProvider>
             <AgentProvider>
                 <WorkspaceProvider>
-                    <ConversationSessionProvider>
+                    <GoalsProvider><ConversationSessionProvider>
                         <Inspector />
-                    </ConversationSessionProvider>
+                    </ConversationSessionProvider></GoalsProvider>
                 </WorkspaceProvider>
             </AgentProvider>
         </AppEffectsProvider>,
@@ -284,6 +291,43 @@ describe('ConversationSessionProvider', () => {
             'Agent is no longer running',
             { type: 'warn', duration: 5000 },
         );
+    });
+
+    it('shows no toast when a sub-agent message is sent', async () => {
+        harness.controller.sendNudge.mockResolvedValue({ ok: true });
+        const { getSession } = renderSession();
+
+        await act(async () => {
+            await getSession().sendNudge('Also check Thursday', 'agent-2');
+        });
+
+        expect(harness.controller.sendNudge).toHaveBeenCalledWith('Also check Thursday', 'agent-2');
+        expect(harness.addToast).not.toHaveBeenCalled();
+    });
+
+    it('shows no toast when a message is queued while the agent works', async () => {
+        harness.controller.sendMessage.mockResolvedValue({ ok: true, queued: true });
+        const { getSession } = renderSession();
+
+        await act(async () => {
+            await getSession().sendMessage('Also check Thursday', null, 'profile-1');
+        });
+
+        expect(harness.controller.sendMessage).toHaveBeenCalledWith('Also check Thursday', null, 'profile-1');
+        expect(harness.addToast).not.toHaveBeenCalled();
+    });
+
+    it('sends goal answers through the controller without a toast', async () => {
+        harness.controller.sendAnswers.mockResolvedValue({ ok: true, queued: true });
+        const { getSession } = renderSession();
+        const answers = [{ question_id: 'day', question_revision: 1, question: 'Which day?', answer: 'Tuesday' }];
+
+        await act(async () => {
+            await getSession().sendAnswers('g1', answers);
+        });
+
+        expect(harness.controller.sendAnswers).toHaveBeenCalledWith('g1', answers, undefined);
+        expect(harness.addToast).not.toHaveBeenCalled();
     });
 
     it('owns formatting when an external source composes into the draft', () => {

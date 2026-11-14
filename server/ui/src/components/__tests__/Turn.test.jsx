@@ -1,6 +1,8 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import Turn from '../Turn.jsx';
+import { projectTurns } from '../../features/conversation/events/projectTurns.js';
+import { formatRunTime } from '../../features/goals/goalStatus.js';
 
 const _turn = (children) => ({
     id: 'turn_0', agentId: 'root.test.1', children,
@@ -30,6 +32,22 @@ const _compaction = (id, opts = {}) => ({
 });
 
 describe('Turn', () => {
+    it.each(['planned', 'run_now', 'retry', 'interrupted'])('shows a "Goal run" divider for a %s wakeup and hides the wake note', (reason) => {
+        const [turn] = projectTurns([
+            { type: 'agent_started', id: 'start', agent_id: 'root.test.1', depth: 0, agent_name: 'Test' },
+            { type: 'goal', id: 'wake-1', agent_id: 'root.test.1', depth: 0, goal_id: 'g1',
+                data: { kind: 'wakeup', wake_id: 'w1', reason, step: 'Check the school calendar' } },
+            { type: 'iteration', id: 'iter1', agent_id: 'root.test.1', depth: 0, content: 'I checked the new dates.' },
+        ]);
+        expect(turn.children.map(child => child.kind)).toEqual(['goal_transition', 'iteration']);
+        render(<Turn turn={turn} />);
+        const divider = screen.getByTestId('goal-transition');
+        expect(divider).toHaveAttribute('data-transition', 'run');
+        expect(divider).toHaveTextContent('Goal run· Check the school calendar');
+        expect(divider).not.toHaveTextContent(reason);
+        expect(screen.queryByTestId('message-user')).not.toBeInTheDocument();
+        expect(screen.getByTestId('message-assistant')).toHaveTextContent('I checked the new dates.');
+    });
     it('returns null for missing turn', () => {
         const { container } = render(<Turn turn={null} />);
         expect(container).toBeEmptyDOMElement();
@@ -378,4 +396,111 @@ describe('Turn with mid-turn compaction', () => {
         expect(items[1]).toHaveAttribute('data-testid', 'compaction-row');
         expect(items[2]).toHaveAttribute('data-testid', 'message-assistant');
     });
+});
+
+
+it('renders a saved goal reply with its question and no model-only metadata', () => {
+    const events = [
+        { type: 'agent_started', id: 'start', agent_id: 'root.test.1', depth: 0, agent_name: 'Test' },
+        { type: 'user_message', id: 'reply', agent_id: 'root.test.1', depth: 0,
+            content: 'Saturday at 9 AM', is_nudge: true, context: [{
+                type: 'goal_question', goal_id: 'goal_123', question_id: 'start_time',
+                question_revision: 1, question: 'When should the cleanup start?', answer: 'Saturday at 9 AM',
+            }] },
+    ];
+    const [turn] = projectTurns(JSON.parse(JSON.stringify(events)));
+    render(<Turn turn={turn} />);
+    const message = screen.getByTestId('message-user');
+    expect(message).toHaveTextContent('↳ When should the cleanup start?');
+    expect(message).toHaveTextContent('Saturday at 9 AM');
+    expect(message).not.toHaveTextContent('goal_123');
+    expect(message).not.toHaveTextContent('start_time');
+    expect(message).not.toHaveTextContent('revision');
+});
+
+
+it('pairs each saved question with its full answer, including multiple paragraphs', () => {
+    const context = [
+        { type: 'goal_question', goal_id: 'g1', question_id: 'service', question_revision: 1,
+            question: 'Which service should I purchase?', answer: 'Keep writing it ourselves.\n\nI need to approve it.' },
+        { type: 'goal_question', goal_id: 'g1', question_id: 'timing', question_revision: 1,
+            question: 'When should I send the notes?', answer: 'Hold all five until the resume is ready.' },
+    ];
+    const [turn] = projectTurns(JSON.parse(JSON.stringify([
+        { type: 'agent_started', id: 'start', agent_id: 'root.test.1', depth: 0, agent_name: 'Test' },
+        { type: 'user_message', id: 'reply', agent_id: 'root.test.1', depth: 0,
+            content: context.map(item => item.answer).join('\n\n'), context },
+    ])));
+    render(<Turn turn={turn} />);
+    const pairs = screen.getAllByTestId('goal-question-answer');
+    expect(pairs).toHaveLength(2);
+    expect(pairs[0]).toHaveTextContent(/Which service should I purchase\?\s*Keep writing it ourselves\.\s*I need to approve it\./);
+    expect(pairs[0]).not.toHaveTextContent('Hold all five');
+    expect(pairs[1]).toHaveTextContent('When should I send the notes?Hold all five until the resume is ready.');
+    expect(screen.getAllByText('I need to approve it.')).toHaveLength(1);
+    expect(screen.getAllByText('Hold all five until the resume is ready.')).toHaveLength(1);
+});
+
+it('keeps model-only goal refresh notices out of the transcript', () => {
+    const [turn] = projectTurns([
+        { type: 'agent_started', id: 'start', agent_id: 'root.test.1', depth: 0, agent_name: 'Test' },
+        { type: 'user_message', id: 'user', agent_id: 'root.test.1', depth: 0, content: 'Continue' },
+        { type: 'goal', id: 'notice', agent_id: 'root.test.1', depth: 0,
+            goal_id: 'private-goal', data: { kind: 'state_notice', revision: 12, reason: 'state_changed' } },
+        { type: 'iteration', id: 'reply', agent_id: 'root.test.1', depth: 0, content: 'Working on it.' },
+    ]);
+    render(<Turn turn={turn} />);
+    expect(screen.getByTestId('message-user')).toHaveTextContent('Continue');
+    expect(screen.getByTestId('message-assistant')).toHaveTextContent('Working on it.');
+    expect(screen.queryByText(/state_changed|private-goal|read_goal/)).not.toBeInTheDocument();
+});
+
+it('renders goal transitions in chronological order outside messages, including before the first turn', () => {
+    const milestone = (id, transition, extra = {}) => ({
+        type: 'goal', id, goal_id: 'g1', timestamp: '2026-10-23T14:00:00Z',
+        data: { kind: transition, objective: 'Keep our community calendar current', resume_at: null, question_count: 0, ...extra },
+    });
+    const started = (n) => ({ type: 'agent_started', id: `start${n}`, agent_id: `root.test.${n}`, depth: 0 });
+    const finished = (n) => ({ type: 'agent_completed', id: `done${n}`, agent_id: `root.test.${n}`, depth: 0, status: 'success' });
+    const events = [
+        milestone('created', 'started'),
+        started(1),
+        { type: 'iteration', id: 'work', agent_id: 'root.test.1', depth: 0, content: 'Calendar checked.' },
+        milestone('scheduled', 'scheduled', { resume_at: '2026-10-24T14:00:00Z' }),
+        finished(1),
+        milestone('paused', 'paused'),
+        milestone('resumed', 'resumed'),
+        started(2),
+        { type: 'goal', id: 'returned', goal_id: 'g1', timestamp: '2026-10-23T14:00:00Z',
+            data: { kind: 'wakeup', wake_id: 'w1', reason: 'planned', step: 'Check the parks calendar' } },
+        milestone('input', 'waiting', { question_count: 3 }),
+        finished(2),
+        milestone('failed', 'error'),
+        started(3),
+        milestone('completed', 'completed'),
+        finished(3),
+        milestone('reopened', 'reopened'),
+        milestone('cancelled', 'cancelled'),
+    ];
+    render(<>{projectTurns(events).map(turn => <Turn key={turn.id} turn={turn} />)}</>);
+    const dividers = screen.getAllByTestId('goal-transition');
+    expect(dividers.map((divider) => divider.dataset.transition)).toEqual([
+        'started', 'scheduled', 'paused', 'resumed', 'run', 'waiting', 'error', 'completed', 'reopened', 'cancelled',
+    ]);
+    expect(dividers[0]).toHaveTextContent('Goal started· Keep our community calendar current');
+    expect(dividers[1]).toHaveTextContent(`Resumes ${formatRunTime('2026-10-24T14:00:00Z')}`);
+    expect(dividers[2]).toHaveTextContent('Paused');
+    expect(dividers[3]).toHaveTextContent('Resumed');
+    expect(dividers[4]).toHaveTextContent('Goal run· Check the parks calendar');
+    expect(dividers[5]).toHaveTextContent('Waiting for you· 3 questions');
+    expect(dividers[6]).toHaveTextContent('Stopped by an error');
+    expect(dividers[6]).not.toHaveTextContent('Waiting');
+    expect(dividers[7]).toHaveTextContent('Goal done');
+    expect(dividers[8]).toHaveTextContent('Goal reopened');
+    expect(dividers[9]).toHaveTextContent('Goal cancelled');
+    expect(screen.getAllByTestId('day-header')).toHaveLength(1);
+    expect(screen.getAllByTestId('message-assistant')).toHaveLength(1);
+    expect(screen.queryByTestId('message-user')).not.toBeInTheDocument();
+    expect(dividers[0].compareDocumentPosition(screen.getByText('Calendar checked.')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByText('Calendar checked.').compareDocumentPosition(dividers[1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });

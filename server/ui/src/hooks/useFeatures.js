@@ -9,6 +9,7 @@ const DEFAULTS = {
     visual_grounding: false,
     custom_tools: false,
     custom_apps: false,
+    goals: false,
 };
 
 /**

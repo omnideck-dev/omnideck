@@ -1,0 +1,17 @@
+---
+target: app
+type: added
+area: chat
+---
+
+Enable Goals in Settings → System → Experimental, then choose Goal from the chat composer's + menu or type `/goal` to assign a goal and follow its editable plan and progress. Add an objective after `/goal` to prefill the goal dialog. Agents can schedule their own returns, ask for missing information, and complete goals in the same conversation. The chat header shows Goal and its current status. Click the header status to open goal details in a separate tab group; the conversation list shows informational goal status, and selecting a conversation opens its chat without adding a Goal tab. Pause, resume, and editing controls stay in goal details. Conversation rows show a short status or return time, with the current step available on hover, and a Needs you group brings unanswered questions to the top. Pause, resume, or cancel from goal details. Goals starts off; turning it off pauses saved goals and keeps their progress.
+
+Answer goal questions in the message composer, moving between questions without losing drafts. Send all filled answers together, leaving blank questions open. Hide questions to continue chatting while the agent works, then reopen them with Show in the collapsed question row inside the composer. Goal details show a short waiting status instead of repeating the questions. The agent resolves answered questions and withdraws obsolete ones; question changes remain in goal history, while submitted answers quote their question in the conversation. Goal lifecycle transitions appear as quiet, timestamped dividers in the conversation, built entirely from goal events in the conversation event log. A single goal event type distinguishes lifecycle transitions, execution wakeups, and hidden state notices. Only newly recorded transitions appear; existing goal history is not backfilled into the transcript. Automatic question updates and internal goal wake instructions do not add transcript blocks; the agent’s replies still appear normally. Answering a paused goal keeps it paused.
+
+Long-running goals keep a current plan and concise working summary. Goal history preserves earlier summaries, goal activity, questions, and answers; exact plan changes stay in the saved diagnostic history. The agent uses five tools to read and update the goal, retrieve history, manage questions, and choose whether to continue, schedule, wait, or complete. Current state and history are saved as readable JSON files on disk; older history loads on demand. Editing keeps the objective prominent, with an expandable plan and readable multiline step fields. Save and Cancel stay visible while the plan scrolls; long question choices wrap on narrow screens.
+
+Goals have no one-time or ongoing type selector. The agent determines completion from the goal instructions, including instructions to keep working until stopped.
+
+Agents query saved goal state when needed instead of receiving a fresh snapshot on every model call. Internal refresh notices cover new runs, external changes, and compaction without adding transcript messages. An internal goal skill supplies instructions and tools only to the run managing the goal; it is not retained as a chat skill after the goal ends.
+
+Goals and routines share one scheduler and concurrency limit, alternating admission when both have work ready. Saved schedules survive restarts, and routine pause remains independent of goals.

@@ -1,0 +1,12 @@
+.questions { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-2); padding: var(--sp-3) var(--sp-2) var(--sp-3) 0; min-width: 0; max-height: 40dvh; overflow-y: auto; }
+.heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-2); color: var(--text-secondary); font-size: var(--font-size-small); }
+.navigation, .choices { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); }
+.question { margin: 0; color: var(--text-primary); font-weight: 500; white-space: pre-wrap; overflow-wrap: anywhere; }
+.notice { margin: 0; color: var(--text-secondary); font-size: var(--font-size-small); }
+.review { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); }
+.collapsed { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); padding: var(--sp-2) var(--sp-2) var(--sp-2) 0; color: var(--text-secondary); font-size: var(--font-size-small); }
+.marks { display: inline-flex; align-items: center; gap: var(--sp-1); }
+.mark { width: 18px; height: 4px; padding: 0; border: none; border-radius: var(--radius-sm); background: var(--border); cursor: pointer; }
+.mark.drafted { background: var(--accent); }
+.mark.current { outline: 1px solid var(--text-secondary); outline-offset: 1px; }
+.mark:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

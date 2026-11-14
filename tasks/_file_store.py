@@ -6,11 +6,12 @@ import json
 import logging
 import shutil
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 
 from conversations import delete_conversation
 from tasks._models import Routine, Run, Task, TaskResult, _new_id, _utcnow
-from tasks._scheduler import cron_has_fired_since
+from scheduling._timing import cron_has_fired_since
 
 logger = logging.getLogger(__name__)
 
@@ -391,7 +392,7 @@ class FileTaskStore:
         return results
 
 
-    def get_due_recurring_routines(self) -> list[Routine]:
+    def get_due_recurring_routines(self, now: datetime) -> list[Routine]:
         """Active routines with cron, no in-progress run, and cron due since last run."""
         result: list[Routine] = []
         for routine in self.list_routines(status="active"):
@@ -409,7 +410,7 @@ class FileTaskStore:
                 filter(None, (last_completed, routine.last_run_spawned_at)),
                 default=routine.created_at,
             )
-            if cron_has_fired_since(routine.cron, anchor, routine.timezone):
+            if cron_has_fired_since(routine.cron, anchor, routine.timezone, now=now):
                 result.append(routine)
         return result
 

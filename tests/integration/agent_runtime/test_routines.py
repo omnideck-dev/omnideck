@@ -8,7 +8,8 @@ import pytest
 from conversations import load_events_jsonl
 from agent_core.events import AgentEvent, FileOutputPayload, publish_event
 from agent_core.providers import ProviderError
-from tasks import TaskExecutor, TaskRunner
+from scheduling import Scheduler
+from tasks import TaskExecutor, RoutineWorkSource
 from tasks._file_store import FileTaskStore
 
 from ._support import call, reply
@@ -54,13 +55,15 @@ async def test_routine_scheduler_executes_only_ready_tasks_and_persists_outcomes
         "depends_on": [first.id], "max_retries": 0,
     }])[0]
     run = h.store.queue_run(routine.id)
-    config = h.config.routines.model_copy(update={"poll_interval": 0.01, "max_concurrent": 2})
-    runner = TaskRunner(h.store, TaskExecutor(h.store, h.manager), config)
+    config = h.config.scheduling.model_copy(update={"poll_interval": 0.01, "max_concurrent": 2})
+    scheduler = Scheduler(**config.model_dump())
+    runner = RoutineWorkSource(h.store, TaskExecutor(h.store, h.manager), h.config.routines, scheduler=scheduler)
+    scheduler.register(runner)
     try:
-        await runner.start()
+        await scheduler.start()
         await wait_for_terminal(h.store, run.id)
     finally:
-        await runner.stop()
+        await scheduler.stop()
 
     # Reopen the store so assertions cover committed disk state.
     store = FileTaskStore(h.store._base)

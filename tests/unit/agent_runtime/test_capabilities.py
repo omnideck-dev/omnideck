@@ -302,3 +302,29 @@ async def test_restore_skills_skips_unresolvable_id():
     state = AgentCapabilities([])
     await _restore_persisted_loaded_skills(state, ["ghost"])  # no such record — stale metadata
     assert state.loaded_skill_ids == frozenset()
+
+
+@pytest.mark.unit
+async def test_internal_goal_skill_cannot_be_granted_from_user_records(monkeypatch):
+    from agent_core.agent_capabilities import _active_agent_capabilities
+    from skills._policy import SESSION_GOAL_SKILL_ID
+    from skills._tools import list_available_skills, load_skill
+
+    # A conflicting on-disk record must not shadow the run-bound internal skill.
+    save_skill_record(SkillRecord(
+        id=SESSION_GOAL_SKILL_ID, name="Session goal", prompt="Wrong instructions",
+        tool_categories=["coding"],
+    ))
+    monkeypatch.setattr("conversations.load_loaded_skills", lambda cid: {SESSION_GOAL_SKILL_ID})
+    state = await AgentFactory().build_capabilities(
+        spawn_agent=_spawn_tool, profile=_profile(skills=[SESSION_GOAL_SKILL_ID]),
+        conversation_id="chat",
+    )
+    assert SESSION_GOAL_SKILL_ID not in state.skill_ids
+    assert "read_file" not in _names(state.tools)
+    assert "Session goal" not in list_available_skills()
+    token = _active_agent_capabilities.set(state)
+    try:
+        assert "Unknown skill" in await load_skill("Session goal")
+    finally:
+        _active_agent_capabilities.reset(token)

@@ -41,6 +41,35 @@ export interface CompactionStats {
     elapsed_seconds: number | null;
 }
 
+export interface GoalQuestionContext {
+    type: 'goal_question';
+    goal_id: string;
+    question_id: string;
+    question_revision: number;
+    question: string;
+    answer: string;
+}
+
+export interface GoalStateNoticeData {
+    kind: 'state_notice';
+    revision: number;
+    reason: 'run_started' | 'state_changed' | 'compacted';
+}
+
+export interface GoalTransitionData {
+    kind: 'started' | 'paused' | 'resumed' | 'scheduled' | 'waiting' | 'error' | 'completed' | 'cancelled' | 'reopened';
+    objective: string;
+    resume_at: string | null;
+    question_count: number;
+}
+
+export interface GoalWakeupData {
+    kind: 'wakeup';
+    wake_id: string;
+    reason: 'planned' | 'run_now' | 'retry' | 'interrupted';
+    step: string;
+}
+
 export interface IterationToolCall {
     id: string | null;
     name: string;
@@ -164,7 +193,28 @@ export interface UserMessagePayload {
     type: 'user_message';
     content: string;
     attachments: Array<UserAttachment>;
+    context: Array<GoalQuestionContext>;
     is_nudge: boolean;
+    nudge_id: string | null;
+}
+
+export interface NudgeQueuedPayload {
+    type: 'nudge_queued';
+    nudge_id: string;
+    content: string;
+    context: Array<GoalQuestionContext>;
+}
+
+export interface NudgeRemovedPayload {
+    type: 'nudge_removed';
+    nudge_id: string;
+    reason: 'removed' | 'returned';
+}
+
+export interface GoalEventPayload {
+    type: 'goal';
+    goal_id: string;
+    data: GoalWakeupData | GoalTransitionData | GoalStateNoticeData;
 }
 
 export interface IterationPayload {
@@ -214,6 +264,9 @@ export type ConversationEventPayload =
     | AgentCompletedPayload
     | SpawnRequestedPayload
     | UserMessagePayload
+    | NudgeQueuedPayload
+    | NudgeRemovedPayload
+    | GoalEventPayload
     | IterationPayload
     | ToolResultPayload
     | CompactionPayload
@@ -235,6 +288,9 @@ export type ConversationEvent =
     | (ConversationEventMetadata & AgentCompletedPayload)
     | (ConversationEventMetadata & SpawnRequestedPayload)
     | (ConversationEventMetadata & UserMessagePayload)
+    | (ConversationEventMetadata & NudgeQueuedPayload)
+    | (ConversationEventMetadata & NudgeRemovedPayload)
+    | (ConversationEventMetadata & GoalEventPayload)
     | (ConversationEventMetadata & IterationPayload)
     | (ConversationEventMetadata & ToolResultPayload)
     | (ConversationEventMetadata & CompactionPayload)

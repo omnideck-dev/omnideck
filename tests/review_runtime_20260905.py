@@ -23,7 +23,8 @@ from agent_core.hooks import BudgetGuard, StopHook
 from agent_core.providers import ChatDelta, ChatMessage, ChatResponse, ToolCall, ToolCallFunction
 from agent_core.turn import StopRequestedError, AgentExecutor, turn_scope
 from tasks._file_store import FileTaskStore
-from tasks._runner import TaskRunner
+from tasks._scheduling import RoutineWorkSource
+from scheduling import Scheduler
 from tasks._tools import commit_routine
 
 
@@ -163,7 +164,7 @@ async def routine_retry_probe():
                 return "done", []
 
         executor = SideEffectThenFailure()
-        runner = TaskRunner(store, executor, SimpleNamespace())
+        runner = RoutineWorkSource(store, executor, SimpleNamespace(), scheduler=Scheduler(max_concurrent=2, poll_interval=1, shutdown_timeout=0))
         store.mark_task_result_running(result.id)
         await runner._execute(result, task)
         retry = store.get_task_results(run.id)[0]

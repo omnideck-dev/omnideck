@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { getAgentEventActions } from '../agentEventActions.js';
-import { getConversationRestorePlan } from '../conversationRestore.js';
+import { closeInterruptedTurns, getConversationRestorePlan } from '../conversationRestore.js';
 import { normalizeLiveEvent } from '../normalizeEvent.js';
 import { projectTurns } from '../projectTurns.js';
 
@@ -212,5 +212,30 @@ describe('getConversationRestorePlan', () => {
             agentActions: [],
             workspaceActions: [],
         });
+    });
+});
+
+describe('closeInterruptedTurns', () => {
+    const started = (agentId, fields = {}) => event('agent_started', { id: `start-${agentId}`, agent_id: agentId, ...fields });
+    const completed = (agentId) => event('agent_completed', { id: `done-${agentId}`, agent_id: agentId, status: 'success' });
+
+    it('adds a stopped completion for a root agent a restart left open', () => {
+        const events = [started('root-1'), completed('root-1'), started('root-2')];
+        const closed = closeInterruptedTurns(events);
+        expect(closed.slice(0, 3)).toEqual(events);
+        expect(closed[3]).toMatchObject({ type: 'agent_completed', agent_id: 'root-2', depth: 0, status: 'stopped' });
+    });
+
+    it('leaves finished turns and open sub-agents alone', () => {
+        const events = [started('root-1'), started('child-1', { depth: 1, parent_agent_id: 'root-1' }), completed('root-1')];
+        expect(closeInterruptedTurns(events)).toBe(events);
+    });
+
+    it('lets the transcript show the outcome the interrupted turn chose', () => {
+        const done = event('goal', { id: 'done', data: { kind: 'completed', objective: '', resume_at: null, question_count: 0 } });
+        const events = [started('root-1'), event('iteration', { id: 'reply', content: 'Booked.' }), done];
+        const kinds = (list) => projectTurns(list).flatMap((turn) => turn.children).map((child) => child.id);
+        expect(kinds(events)).not.toContain('done');
+        expect(kinds(closeInterruptedTurns(events))).toContain('done');
     });
 });

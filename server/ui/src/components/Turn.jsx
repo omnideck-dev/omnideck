@@ -6,6 +6,7 @@ import {
 import { containerFileUrl } from '../utils/containerFileUrl.js';
 import Message from './Message.jsx';
 import CompactionChip from './CompactionChip.jsx';
+import GoalTransition, { DayHeader } from '../features/goals/GoalTransition.jsx';
 import Callout from './primitives/Callout.jsx';
 import styles from './Message.module.css';
 
@@ -103,6 +104,12 @@ export default function Turn({
         if (child.kind === ITEM.USER_PROMPT) {
             flushAssistant();
             items.push({ kind: 'user', child });
+        } else if (child.kind === ITEM.GOAL_TRANSITION) {
+            flushAssistant();
+            items.push({ kind: 'goal_transition', child });
+        } else if (child.kind === ITEM.DAY_HEADER) {
+            flushAssistant();
+            items.push({ kind: 'day_header', child });
         } else if (child.kind === ITEM.COMPACTION) {
             flushAssistant();
             items.push({ kind: 'compaction', child });
@@ -145,8 +152,15 @@ export default function Turn({
                             role="user"
                             content={item.child.content}
                             attachments={_normalizeAttachments(item.child.attachments)}
+                            context={item.child.context}
                         />
                     );
+                }
+                if (item.kind === 'goal_transition') {
+                    return <GoalTransition key={item.child.id} event={item.child} />;
+                }
+                if (item.kind === 'day_header') {
+                    return <DayHeader key={item.child.id} timestamp={item.child.timestamp} />;
                 }
                 if (item.kind === 'compaction') {
                     return (

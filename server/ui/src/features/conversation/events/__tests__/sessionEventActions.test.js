@@ -33,6 +33,14 @@ describe('getSessionEventActions', () => {
         ]);
     });
 
+    it('retains root agent completion so the transcript knows a turn finished', () => {
+        const root = event('agent_completed', { status: 'success' });
+        const child = event('agent_completed', { depth: 1, status: 'success' });
+
+        expect(getSessionEventActions(root)).toEqual([{ type: 'RETAIN_EVENT', event: root }]);
+        expect(getSessionEventActions(child)).toEqual([]);
+    });
+
     it('sets only root agents on the open session', () => {
         const root = event('agent_started', { parent_agent_id: null });
         const child = event('agent_started', { depth: 1, parent_agent_id: 'agent-1' });

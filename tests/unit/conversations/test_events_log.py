@@ -19,6 +19,8 @@ from agent_core.events import (
     ToolResultPayload,
     TurnEndPayload,
     UserAttachment,
+    NudgeQueuedPayload,
+    NudgeRemovedPayload,
     UserMessagePayload,
 )
 
@@ -149,3 +151,15 @@ def test_writer_emits_valid_jsonl_for_every_new_payload(_conv_dir: Path):
     raw = (_conv_dir / "events.jsonl").read_text()
     for line in raw.splitlines():
         json.loads(line)
+
+
+def test_queue_events_are_not_written_to_the_chat_file(_conv_dir: Path):
+    writer = EventsLogWriter("test-conv")
+    writer.handle_event(AgentEvent(payload=NudgeQueuedPayload(type="nudge_queued", nudge_id="n1", content="hi")))
+    writer.handle_event(AgentEvent(payload=NudgeRemovedPayload(type="nudge_removed", nudge_id="n1", reason="removed")))
+    writer.handle_event(AgentEvent(payload=UserMessagePayload(
+        type="user_message", content="read", is_nudge=True, nudge_id="n2",
+    )))
+
+    rows = [json.loads(l) for l in (_conv_dir / "events.jsonl").read_text().splitlines()]
+    assert [(r["type"], r["nudge_id"]) for r in rows] == [("user_message", "n2")]

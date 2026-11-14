@@ -5,6 +5,7 @@ mutable state that the user changes at runtime (e.g. via the setup
 wizard or the settings page).
 """
 
+import copy
 import json
 import logging
 import os
@@ -58,6 +59,7 @@ _DEFAULTS: dict[str, Any] = {
     "title_model": "",
     "custom_apps_enabled": False,
     "custom_tools_enabled": False,
+    "goals_enabled": False,
     # Custom App shown as Home; None keeps Chat as Home.
     "home_app_slug": None,
     # Install updates without being asked. Only the desktop application acts on
@@ -111,6 +113,7 @@ class SettingsUpdate(BaseModel):
     title_model: str | None = None
     custom_apps_enabled: bool | None = None
     custom_tools_enabled: bool | None = None
+    goals_enabled: bool | None = None
     home_app_slug: str | None = None
     software_updates_automatic: bool | None = None
     software_updates_notify: bool | None = None
@@ -137,6 +140,9 @@ class SettingsUpdate(BaseModel):
         return v
 
 
+_cache: dict[str, tuple[tuple[str, int, int], dict[str, Any]]] = {}
+
+
 def _settings_path() -> Path:
     cfg = load_config()
     return Path(cfg.settings.home_dir) / _SETTINGS_FILE
@@ -154,12 +160,23 @@ def load_settings() -> dict[str, Any]:
     this returns a copy of _DEFAULTS.
     """
     path = _settings_path()
-    if path.exists():
-        try:
-            return json.loads(path.read_text())
-        except Exception:
-            logger.warning("Failed to read settings file, using defaults")
-    return dict(_DEFAULTS)
+    try:
+        stat = path.stat()
+    except FileNotFoundError:
+        return dict(_DEFAULTS)
+    # Settings are read on hot paths, such as every model call. Reuse the last
+    # read until the file changes on disk.
+    key = (str(path), stat.st_mtime_ns, stat.st_size)
+    cached = _cache.get("settings")
+    if cached is not None and cached[0] == key:
+        return copy.deepcopy(cached[1])
+    try:
+        data = json.loads(path.read_text())
+    except Exception:
+        logger.warning("Failed to read settings file, using defaults")
+        return dict(_DEFAULTS)
+    _cache["settings"] = (key, data)
+    return copy.deepcopy(data)
 
 
 def save_settings(data: dict[str, Any]) -> dict[str, Any]:
@@ -182,6 +199,7 @@ def save_settings(data: dict[str, Any]) -> dict[str, Any]:
         with os.fdopen(fd, "w") as f:
             f.write(json.dumps(current, indent=2))
         os.replace(tmp_path, path)
+        _cache.pop("settings", None)
     except Exception:
         try:
             os.unlink(tmp_path)
@@ -201,10 +219,16 @@ def custom_tools_enabled() -> bool:
     return load_settings().get("custom_tools_enabled", False) is True
 
 
+def goals_enabled() -> bool:
+    """Return whether the user has enabled experimental chat goals."""
+    return load_settings().get("goals_enabled", False) is True
+
+
 __all__ = [
     "SettingsUpdate",
     "custom_apps_enabled",
     "custom_tools_enabled",
+    "goals_enabled",
     "load_settings",
     "save_settings",
 ]

@@ -98,9 +98,6 @@ class AnthropicProvider(BaseAPIProvider):
             budget = budget_map.get(thinking_budget, max_tok // 2)
             kwargs["thinking"] = {"type": "enabled", "budget_tokens": max(1024, budget)}
 
-        # Automatic prompt caching — Anthropic places a cache breakpoint at
-        # the end of the cacheable prefix. Subsequent turns with the same
-        # prefix read from cache at 90% discount.
         kwargs["cache_control"] = {"type": "ephemeral"}
 
         return kwargs

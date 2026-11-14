@@ -40,6 +40,7 @@ logger = logging.getLogger(__name__)
 # resumed from the warm cache loses them while a cold disk resume keeps them.
 _RETAINED_EVENT_TYPES: frozenset[str] = frozenset({
     "user_message",
+    "goal",
     "iteration",
     "tool_result",
     "compaction",
@@ -79,7 +80,7 @@ class ConversationHistory:
 
     @property
     def messages(self) -> list[dict[str, Any]]:
-        """LLM-ready message list: system message + derived conversation."""
+        """LLM-ready messages derived from the append-only conversation."""
         body = self.derived_messages
         if self._system_message is None:
             return body

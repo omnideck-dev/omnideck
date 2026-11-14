@@ -26,7 +26,6 @@ def clock(monkeypatch):
             return cls.current.astimezone(tz)
 
     monkeypatch.setattr("tasks._models.datetime", Clock)
-    monkeypatch.setattr("tasks._scheduler.datetime", Clock)
     return Clock
 
 
@@ -49,7 +48,7 @@ class TestRecurringSchedule:
         store.update_run_status(yesterday.id)
 
         clock.current = datetime(2026, 7, 2, 9, tzinfo=timezone.utc)
-        assert [r.id for r in store.get_due_recurring_routines()] == [routine.id]
+        assert [r.id for r in store.get_due_recurring_routines(clock.current)] == [routine.id]
         today = store.queue_run(routine.id)
         store.stamp_last_run_spawned(routine.id)
         result = store.get_task_results(today.id)[0]
@@ -65,10 +64,10 @@ class TestRecurringSchedule:
         store.delete_run(today.id)
         reopened = FileTaskStore(store._base)
         assert reopened.get_run(yesterday.id).status == "completed"
-        assert reopened.get_due_recurring_routines() == []
+        assert reopened.get_due_recurring_routines(clock.current) == []
 
         clock.current = datetime(2026, 7, 3, 9, tzinfo=timezone.utc)
-        assert [r.id for r in reopened.get_due_recurring_routines()] == [routine.id]
+        assert [r.id for r in reopened.get_due_recurring_routines(clock.current)] == [routine.id]
 
     def test_later_completion_remains_the_schedule_anchor(self, store, clock):
         """A long run still skips occurrences passed before it finished."""
@@ -82,13 +81,13 @@ class TestRecurringSchedule:
         store.update_run_status(run.id)
 
         clock.current = datetime(2026, 7, 2, 9, 10, tzinfo=timezone.utc)
-        assert store.get_due_recurring_routines() == []
+        assert store.get_due_recurring_routines(clock.current) == []
         store.mark_task_result_completed(result.id, "Report")
         store.update_run_status(run.id)
-        assert store.get_due_recurring_routines() == []
+        assert store.get_due_recurring_routines(clock.current) == []
 
         clock.current = datetime(2026, 7, 3, 9, tzinfo=timezone.utc)
-        assert [r.id for r in store.get_due_recurring_routines()] == [routine.id]
+        assert [r.id for r in store.get_due_recurring_routines(clock.current)] == [routine.id]
 
 
 @pytest.mark.unit

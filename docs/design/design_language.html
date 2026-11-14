@@ -449,6 +449,7 @@ body {
 }
 
 .btn:active { transform: translateY(1px); }
+.btn-wrap { height: auto; min-height: 32px; min-width: 0; max-width: 100%; padding-top: var(--sp-2); padding-bottom: var(--sp-2); white-space: normal; overflow-wrap: anywhere; }
 
 .btn-ghost {
   background: transparent;
@@ -521,6 +522,21 @@ body {
 }
 .btn-icon:hover { background: var(--surface); color: var(--text-primary); }
 .btn-icon:active { transform: translateY(1px); }
+
+/* ── Search with filter ── */
+.search-field { width: 260px; height: 32px; display: flex; align-items: center; gap: var(--sp-2); padding: 0 6px 0 10px; background: var(--elevated); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-tertiary); }
+.search-field:focus-within { border-color: var(--accent); box-shadow: var(--shadow-glow); }
+.search-field input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; color: var(--text-primary); font: inherit; font-size: 13px; }
+.search-field .btn-icon { width: 24px; height: 24px; font-size: 13px; }
+.search-chip { display: inline-flex; align-items: center; gap: var(--sp-1); flex-shrink: 0; height: 22px; padding: 0 2px 0 var(--sp-2); border-radius: var(--radius-full); background: var(--accent-muted); color: var(--accent); font-size: 12px; font-weight: 600; }
+.search-chip button { width: 18px; height: 18px; display: grid; place-items: center; padding: 0; border: none; border-radius: var(--radius-full); background: transparent; color: inherit; font-size: 9px; cursor: pointer; }
+.search-chip button:hover { background: var(--accent-glow); }
+.search-filter-menu { width: 200px; display: flex; flex-direction: column; gap: var(--sp-1); padding: var(--sp-2); align-self: flex-end; background: var(--elevated); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); }
+.search-filter-menu button { height: 32px; display: flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-3); border: none; border-radius: var(--radius-md); background: transparent; color: var(--text-primary); font: inherit; font-size: 13px; cursor: pointer; }
+.search-filter-menu button:hover { background: var(--surface); }
+.search-filter-menu button span:first-of-type { flex: 1; text-align: left; }
+.search-filter-menu .check { color: var(--accent); }
+.search-filter-menu .count { color: var(--text-tertiary); font-size: 12px; }
 
 /* ── Inputs ── */
 .input {
@@ -2741,6 +2757,15 @@ body {
 }
 .file-pill-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
 
+  .slash-hint-example { width: min(100%, 420px); }
+  .slash-hint-option { display: flex; align-items: center; gap: var(--sp-3); min-height: 32px; padding: 0 var(--sp-2); border-radius: var(--radius-md); background: var(--surface); color: var(--text-primary); font-size: var(--font-size-body); }
+  .slash-hint-command { font-family: var(--font-code); font-size: var(--font-size-small); color: var(--accent); }
+  .slash-hint-desc { flex: 1; min-width: 0; color: var(--text-secondary); }
+  .slash-hint-key { color: var(--text-tertiary); font-size: var(--font-size-caption); }
+  .queue-strip-example { width: min(100%, 420px); padding: var(--sp-2) var(--sp-2) var(--sp-1) var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--accent-muted); font-size: var(--font-size-small); }
+  .queue-strip-title { color: var(--text-secondary); font-weight: 600; }
+  .queue-strip-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); min-height: 24px; color: var(--text-primary); }
+  .queue-strip-row span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -3529,6 +3554,7 @@ body {
         // <code>.btn-danger</code> &mdash; destructive (Delete, Disconnect, Remove). Use anywhere the action can&apos;t be cheaply undone.<br>
         // <strong style="color:var(--text-secondary)">Async actions:</strong> keep the action in place, replace its contents with a spinner and concise progress label, and disable it until the operation settles. In React, use <code>&lt;Button loading loadingLabel="Saving&hellip;"&gt;</code>; do not recreate the spinner locally.<br>
         // <strong style="color:var(--text-secondary)">Rule of thumb:</strong> distinguish primary from secondary through emphasis, not by outlining every action. A wizard footer of <code>[Back] [Cancel] [Save]</code> uses quiet Back/Cancel and filled Save. Retain readable labels, hover feedback, and keyboard focus.<br>
+        // Content-driven choices may use <code>&lt;Button wrap&gt;</code> (<code>.btn-wrap</code>) to wrap long labels within their container, keeping a 32px minimum height. Ordinary action labels stay on one line.<br>
         // The React Button API still defaults to <code>outline</code>; choose the variant explicitly. Existing screens may predate these rules and should adopt them when revised.
       </div>
 
@@ -3578,6 +3604,32 @@ body {
       <p class="section-desc">Production menus use menu/menuitem semantics, arrows and Home/End to move focus, Escape to close and restore the trigger, and Tab to leave. Move initial focus through Popover’s onOpen callback only after the positioned surface is visible. Keep the menu open while confirmation is armed. Guard navigation actions against silently discarding dirty edits.</p>
     </div>
 
+    <div class="subsection" id="slash-hint">
+      <div class="subsection-label">Composer Command Hint</div>
+      <p class="section-desc">SlashHint shows one row above a composer while its text starts with “/”. Focus stays in the text box. Enter picks the command, Escape hides the hint, and clicking the row also picks it. The command uses the code font in accent; the description uses secondary text.</p>
+      <div class="component-row">
+        <div class="slash-hint-example" role="listbox" aria-label="Commands">
+          <div class="slash-hint-option" role="option" aria-selected="true">
+            <span class="slash-hint-command">/goal</span>
+            <span class="slash-hint-desc">Start a goal for this chat</span>
+            <span class="slash-hint-key">Enter</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="subsection" id="queue-strip">
+      <div class="subsection-label">Composer Queue Strip</div>
+      <p class="section-desc">QueueStrip sits above the message box while the agent works. It lists messages waiting for the agent's next step, each with a remove control. Clicking a text message takes it out of the queue and back into the message box. Goal answers show as “Answers to N questions” with remove only. A message leaves the strip when the agent reads it.</p>
+      <div class="component-row">
+        <section class="queue-strip-example" aria-label="Queued for the agent's next step">
+          <div class="queue-strip-title">Queued for the agent's next step</div>
+          <div class="queue-strip-row"><span>Also check flights on Thursday</span><button type="button" class="btn-icon" aria-label="Remove queued message"><i class="bi bi-x" aria-hidden="true"></i></button></div>
+          <div class="queue-strip-row"><span>Answers to 2 questions</span><button type="button" class="btn-icon" aria-label="Remove queued message"><i class="bi bi-x" aria-hidden="true"></i></button></div>
+        </section>
+      </div>
+    </div>
+
     <!-- Inputs -->
     <div class="subsection">
       <div class="subsection-label">Inputs</div>
@@ -3588,6 +3640,37 @@ body {
       </div>
       <div class="component-row" style="max-width: 400px">
         <textarea class="textarea" placeholder="Enter your message..." rows="3"></textarea>
+      </div>
+    </div>
+
+    <!-- Search with filter -->
+    <div class="subsection" id="search-filter">
+      <div class="subsection-label">Search with filter</div>
+      <div class="component-row" style="align-items:flex-start;gap:24px">
+        <div class="search-field">
+          <i class="bi bi-search" aria-hidden="true"></i>
+          <input placeholder="Search conversations…" aria-label="Search conversations">
+          <button class="btn-icon" aria-label="Filter" aria-haspopup="menu"><i class="bi bi-funnel" aria-hidden="true"></i></button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <div class="search-field">
+            <i class="bi bi-search" aria-hidden="true"></i>
+            <span class="search-chip">Goals<button aria-label="Clear Goals filter"><i class="bi bi-x-lg" aria-hidden="true"></i></button></span>
+            <input placeholder="Search…" aria-label="Search conversations">
+            <button class="btn-icon" aria-label="Filter" aria-haspopup="menu" aria-expanded="true"><i class="bi bi-funnel" aria-hidden="true"></i></button>
+          </div>
+          <div class="search-filter-menu" role="menu" aria-label="Filter">
+            <button role="menuitemradio" aria-checked="false"><i class="bi bi-list-ul" aria-hidden="true"></i><span>All</span></button>
+            <button role="menuitemradio" aria-checked="true"><i class="bi bi-bullseye" aria-hidden="true"></i><span>With a goal</span><i class="bi bi-check2 check" aria-hidden="true"></i></button>
+            <button role="menuitemradio" aria-checked="false"><i class="bi bi-arrow-repeat" aria-hidden="true"></i><span>Running now</span><span class="count">1</span></button>
+          </div>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--text-tertiary);font-family:var(--font-code);margin-top:12px;line-height:1.6;max-width:760px">
+        // Narrow a list by kind from inside its search field. A funnel icon button at the end of the field opens a single-choice menu: All first, then each filter with its icon and count.<br>
+        // The chosen filter shows as an accent chip before the text, with an x to clear it. The placeholder shortens to "Search…" so the chip has room. The list says when nothing matches the filter.<br>
+        // Search and the filter combine. Folders and pinned items keep their sections; sections with no matches are hidden while a filter is on.<br>
+        // Use this instead of toggle buttons in headers or extra rows of filter chips. In React, pass <code>filters</code>, <code>filter</code> and <code>onFilterChange</code> to <code>SearchInput</code>.
       </div>
     </div>
 
@@ -5081,16 +5164,34 @@ body {
     <div class="section-title">26. Chat Input</div>
     <div class="section-desc">
       The composer at the bottom of the chat column. Wrapped textarea with focus glow, button bar below
-      (profile selector + attach + send / stop). Streaming-state placeholder ("Send a nudge to the
-      agent..."). Optional inline attachment preview area sits above the textarea.
+      (profile selector + add menu + send / stop). The add menu includes file attachments and
+      enabled chat actions such as Goal. The <code>/goal</code> command opens the same goal dialog;
+      an optional objective prefills it. Streaming-state placeholder ("Message the agent while it
+      works…"). Messages sent while the agent works wait in the queue strip above the textarea. Optional inline attachment preview area sits above the textarea.
+      An assigned goal appears beside Artifacts, Sub-agents, and Details on the right of the
+      composer controls, separated from Send. The add menu and profile picker stay on the left.
+      Goal status opens the plan and controls in a bounded popover above the composer;
+      conversation Details holds the existing agent, turn count, and context information.
+      There is no separate chat header, and the tab row remains navigation only.
+      Steps and next actions use two columns when there is room; on narrow screens they stack.
+      Questions live inside the composer with previous/next navigation and Hide; hidden questions
+      reopen from goal status. While questions are visible, the status control quietly reads Goal.
+      Automatic question updates appear only in goal history; submitted answers quote their question
+      in the transcript. Asking, revising, resolving, or withdrawing a question adds no transcript block.
+      Conversation rows show a second line of goal status;
+      goals needing an answer appear in a Needs you group without changing saved folders or pins.
     </div>
 
     <div class="m-chat-input" style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);max-width:640px">
       <textarea class="m-chat-textarea" placeholder="Send a message..." rows="2" style="background:transparent;border:none;resize:none">Scrape the API reference from docs.example.com</textarea>
       <div class="m-chat-actions">
-        <button class="btn-icon" title="Attach file"><i class="bi bi-paperclip"></i></button>
+        <button class="btn-icon" title="Add to chat" aria-label="Add to chat" aria-haspopup="menu" aria-expanded="false"><i class="bi bi-plus-lg"></i></button>
         <button class="select" type="button" role="combobox" aria-expanded="false" aria-label="Agent" style="min-width:140px;height:26px;font-size:11px;font-family:var(--font-brand);padding-left:8px">ollama-agent</button>
         <span class="spacer"></span>
+        <button class="btn btn-ghost" title="Goal details"><i class="bi bi-bullseye"></i> Goal</button>
+        <button class="btn-icon" title="Artifacts"><i class="bi bi-collection"></i></button>
+        <button class="btn-icon" title="Sub-agents"><i class="bi bi-diagram-3"></i></button>
+        <button class="btn-icon" title="Conversation details"><i class="bi bi-sliders"></i></button>
         <button class="btn-icon" title="Stop" style="color:var(--danger)"><i class="bi bi-stop-circle"></i></button>
         <button class="btn-icon" title="Send" style="color:var(--accent)"><i class="bi bi-send"></i></button>
       </div>
