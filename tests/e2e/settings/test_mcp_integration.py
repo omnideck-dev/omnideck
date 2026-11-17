@@ -1,0 +1,315 @@
+"""Real browser OAuth + app + vault + MCP subprocess, with fake upstream only."""
+
+import asyncio
+import json
+import os
+import threading
+from concurrent.futures import Future
+from urllib.parse import parse_qs, urlsplit
+
+import pytest
+from playwright.sync_api import expect
+
+from tests.e2e.pages import SettingsPage
+from tests.integration.brokering.mcp.fixtures import authorization_server
+
+
+@pytest.fixture
+def remote_service():
+    ready = Future()
+
+    def worker():
+        async def run():
+            async with authorization_server() as state:
+                state["mcp"] = True
+                stopped = asyncio.Event()
+                ready.set_result((state, asyncio.get_running_loop(), stopped))
+                await stopped.wait()
+        try:
+            asyncio.run(run())
+        except BaseException as exc:
+            if not ready.done():
+                ready.set_exception(exc)
+            else:
+                raise
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+    state, loop, stopped = ready.result(timeout=10)
+    try:
+        yield state
+    finally:
+        loop.call_soon_threadsafe(stopped.set)
+        thread.join(timeout=10)
+        assert not thread.is_alive(), "MCP fixture failed to stop"
+
+
+def connections(page):
+    base = os.environ.get("OMNIDECK_URL", "http://localhost:8080")
+    return page.request.get(f"{base}/api/integrations").json()["connections"]
+
+
+def test_slack_internal_app_setup_guides_registration_without_shared_credentials(page):
+    """Exercise the real preset UI without contacting Slack or granting access."""
+    before = {item["id"] for item in connections(page)}
+    flow = SettingsPage(page).goto_integrations().integrations.open_add_flow()
+    flow.pick_provider("slack").next_()
+    expect(page.get_by_role("heading", name="Connect Slack", exact=True)).to_be_visible()
+    connect_button = page.get_by_role("button", name="Connect", exact=True)
+    expect(connect_button).to_be_disabled()
+    client_id = page.get_by_label("Slack Client ID", exact=False)
+    expect(client_id).to_be_empty()
+    expect(page.get_by_label("Server URL", exact=True)).to_have_count(0)
+    expect(page.get_by_label("Client Secret", exact=True)).to_have_count(0)
+    guide = page.get_by_test_id("slack-app-setup")
+    expect(guide.locator("code")).not_to_be_visible()
+    guide.locator(":scope > summary").click()
+    guide.locator("summary").filter(has_text="Create an internal app").click()
+    expect(guide.locator("code")).to_be_visible()
+    manifest = json.loads(guide.locator("code").inner_text())
+    assert manifest["oauth_config"]["redirect_urls"] == [page.get_by_label("Redirect URL", exact=False).input_value()]
+    assert manifest["oauth_config"]["pkce_enabled"] is True
+    assert manifest["settings"]["is_mcp_enabled"] is True
+    assert "bot" not in manifest["oauth_config"]["scopes"]
+    assert "search:read.public" in manifest["oauth_config"]["scopes"]["user"]
+    client_id.fill("not-a-client-id")
+    expect(connect_button).to_be_disabled()
+    client_id.fill("123.456")
+    expect(connect_button).to_be_enabled()
+    page.get_by_role("button", name="Back", exact=True).click()
+    page.get_by_role("button", name="Cancel", exact=True).click()
+    expect(flow.root).not_to_be_visible()
+    assert {item["id"] for item in connections(page)} == before
+
+
+def connect(page, remote, label, *, scopes=""):
+    tab = SettingsPage(page).goto_integrations().integrations
+    flow = tab.open_add_flow()
+    flow.pick_provider("mcp").next_()
+    page.get_by_label("Connection name", exact=True).fill(label)
+    page.get_by_label("Server URL", exact=True).fill(remote["endpoint"])
+    if scopes:
+        page.get_by_text("Sign-in settings", exact=True).click()
+        page.get_by_label("Requested access", exact=False).fill(scopes)
+    with page.expect_popup(timeout=20_000) as opened:
+        page.get_by_role("button", name="Connect", exact=True).click()
+    popup = opened.value
+    expect(popup.get_by_role("heading", name="Local test service")).to_be_visible()
+    return tab, flow, popup
+
+
+def test_mcp_oauth_tools_and_cancel_cleanup(page, remote_service):
+    base = os.environ.get("OMNIDECK_URL", "http://localhost:8080")
+    label = "MCP browser fixture"
+    integration_id = None
+    try:
+        tab, flow, popup = connect(page, remote_service, label)
+        popup.get_by_role("button", name="Allow test access").click()
+        expect(flow.tools_heading).to_be_visible(timeout=20_000)
+        record = next(item for item in connections(page) if item["label"] == label)
+        integration_id = record["id"]
+        assert record["operation_grants"] == []
+        assert "fixture-access" not in str(record)
+        # The model metadata stays intact, but setup and edit pickers expose
+        # only tool names/titles, not the fixture's model-facing descriptions.
+        assert next(op for op in record["operations"] if op["id"] == "mcp.read_value")["description"] == "read value"
+        picker = page.get_by_test_id("integration-operation-picker")
+        expect(picker.get_by_role("checkbox", name="read_value", exact=True)).to_be_visible()
+        expect(picker.get_by_text("read value", exact=True)).to_have_count(0)
+        page.get_by_test_id("integration-tool-mcp.read_value").click()
+        flow.next_()
+        flow.done.click()
+        expect(tab.row(integration_id)).to_be_visible()
+        record = next(item for item in connections(page) if item["id"] == integration_id)
+        assert record["operation_grants"] == ["mcp.read_value"]
+        tab.open_detail(integration_id)
+        tab.change_tools_button(integration_id).click()
+        expect(picker.get_by_role("checkbox", name="read_value", exact=True)).to_be_visible()
+        expect(picker.get_by_text("read value", exact=True)).to_have_count(0)
+        expect(tab.tool_checkbox("mcp.read_value")).to_be_checked()
+        expect(tab.tool_checkbox("mcp.write_value")).not_to_be_checked()
+        tab.tool_checkbox("mcp.read_value").click()
+        tab.save_and_wait(integration_id)
+        assert next(item for item in connections(page) if item["id"] == integration_id)["operation_grants"] == []
+        popup.close()
+
+        _, cancelled, popup = connect(page, remote_service, "Cancelled MCP fixture")
+        popup.get_by_role("button", name="Allow test access").click()
+        expect(cancelled.tools_heading).to_be_visible(timeout=20_000)
+        page.get_by_role("button", name="Cancel", exact=True).click()
+        expect(cancelled.root).not_to_be_visible()
+        assert not any(item["label"] == "Cancelled MCP fixture" for item in connections(page))
+        popup.close()
+    finally:
+        for record in connections(page):
+            if record["label"] in {label, "Cancelled MCP fixture"}:
+                page.request.delete(f'{base}/api/integrations/{record["id"]}')
+
+
+@pytest.mark.parametrize("viewport", [{"width": 1280, "height": 900}, {"width": 390, "height": 844}], ids=["desktop", "phone"])
+def test_mcp_invalid_schema_is_disabled_while_valid_tool_can_be_saved(page, remote_service, viewport):
+    page.set_viewport_size(viewport)
+    base = os.environ.get("OMNIDECK_URL", "http://localhost:8080")
+    label = "MCP schema availability fixture"
+    remote_service["schemas"]["write_value"] = {
+        "type": "object", "properties": {"value": {"type": "integerish"}},
+    }
+    try:
+        tab, flow, popup = connect(page, remote_service, label)
+        popup.get_by_role("button", name="Allow test access").click()
+        expect(flow.tools_heading).to_be_visible(timeout=20_000)
+        record = next(item for item in connections(page) if item["label"] == label)
+        integration_id = record["id"]
+        assert record["available_operation_ids"] == ["mcp.read_value"]
+        picker = page.get_by_test_id("integration-operation-picker")
+        expect(tab.tool_checkbox("mcp.write_value")).to_be_disabled()
+        expect(picker.get_by_text("Unavailable: the service supplied an invalid input schema.", exact=True)).to_be_visible()
+        assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+        page.get_by_test_id("integration-tools-enable-all").click()
+        expect(tab.tool_checkbox("mcp.read_value")).to_be_checked()
+        expect(tab.tool_checkbox("mcp.write_value")).not_to_be_checked()
+        expect(picker.get_by_text("1 of 1 selected", exact=True)).to_be_visible()
+        flow.next_()
+        flow.done.click()
+        expect(tab.row(integration_id)).to_be_visible()
+        assert next(item for item in connections(page) if item["id"] == integration_id)["operation_grants"] == ["mcp.read_value"]
+        tab.open_detail(integration_id)
+        tab.change_tools_button(integration_id).click()
+        expect(tab.tool_checkbox("mcp.write_value")).to_be_disabled()
+        expect(tab.tool_checkbox("mcp.read_value")).to_be_checked()
+        popup.close()
+    finally:
+        for record in connections(page):
+            if record["label"] == label:
+                page.request.delete(f'{base}/api/integrations/{record["id"]}')
+
+
+def test_mcp_cancelling_browser_signin_creates_nothing(page, remote_service):
+    _, flow, popup = connect(page, remote_service, "Never authorized")
+    page.get_by_role("button", name="Exit setup", exact=True).click()
+    expect(flow.root).not_to_be_visible()
+    popup.get_by_role("button", name="Allow test access").click()
+    expect(popup.get_by_text("This sign-in attempt is no longer available.", exact=False)).to_be_visible()
+    assert not any(item["label"] == "Never authorized" for item in connections(page))
+    assert remote_service["exchanges"] == 0
+    popup.close()
+
+
+def test_mcp_reconnect_discovers_more_tools_without_enabling_them(page, remote_service):
+    """The same path upgrades a two-tool Slack connection after broader consent."""
+    base = os.environ.get("OMNIDECK_URL", "http://localhost:8080")
+    label = "MCP reconnect fixture"
+    integration_id = None
+    try:
+        tab, flow, popup = connect(page, remote_service, label, scopes="tools.read")
+        popup.get_by_role("button", name="Allow test access").click()
+        expect(flow.tools_heading).to_be_visible(timeout=20_000)
+        integration_id = next(item["id"] for item in connections(page) if item["label"] == label)
+        tab.tool_checkbox("mcp.read_value").click()
+        flow.next_()
+        flow.done.click()
+        popup.close()
+        tab.open_detail(integration_id)
+        tab.open_connection_settings()
+        tab.reconnect_button(integration_id).click()
+        reconnect = page.get_by_test_id("integration-reconnect-flow")
+        expect(reconnect).to_be_visible()
+        page.get_by_text("Sign-in settings", exact=True).click()
+        expect(page.get_by_label("Requested access", exact=False)).to_have_value("tools.read")
+        page.get_by_label("Server URL", exact=True).fill(remote_service["endpoint"])
+        with page.expect_popup(timeout=20_000) as opened:
+            page.get_by_role("button", name="Connect", exact=True).click()
+        popup = opened.value
+        expect(popup.get_by_role("heading", name="Local test service")).to_be_visible()
+        assert parse_qs(urlsplit(popup.url).query)["scope"] == ["tools.read"]
+        # The upstream catalog changes during explicit reauthorization. The UI
+        # must preserve existing choices without granting the new operation.
+        remote_service["tools"].append("search_channels")
+        popup.get_by_role("button", name="Allow test access").click()
+        expect(reconnect).not_to_be_visible(timeout=20_000)
+        records = [item for item in connections(page) if item["label"] == label]
+        assert len(records) == 1
+        assert records[0]["id"] == integration_id
+        assert records[0]["operation_grants"] == ["mcp.read_value"]
+        assert "mcp.search_channels" in records[0]["available_operation_ids"]
+        tab.change_tools_button(integration_id).click()
+        expect(tab.tool_checkbox("mcp.read_value")).to_be_checked()
+        expect(tab.tool_checkbox("mcp.search_channels")).not_to_be_checked()
+        expect(tab.tool_checkbox("mcp.write_value")).not_to_be_checked()
+        tab.tool_checkbox("mcp.search_channels").click()
+        tab.save_and_wait(integration_id)
+        saved = next(item for item in connections(page) if item["id"] == integration_id)
+        assert set(saved["operation_grants"]) == {"mcp.read_value", "mcp.search_channels"}
+        popup.close()
+    finally:
+        if integration_id:
+            page.request.delete(f"{base}/api/integrations/{integration_id}")
+
+
+@pytest.mark.parametrize("reconnect", [False, True], ids=["new-connection", "reconnect"])
+def test_mcp_saved_connection_reload_recovers_without_reauthorizing(page, remote_service, reconnect):
+    """Fail only the post-consent list reload; retry the real saved connection."""
+    base = os.environ.get("OMNIDECK_URL", "http://localhost:8080")
+    label = "MCP reload recovery fixture"
+    reload_blocked = True
+    starts = []
+
+    def observe(request):
+        if request.method == "POST" and request.url.endswith("/mcp/oauth/start"):
+            starts.append(request.url)
+
+    def fail_list(route):
+        if reload_blocked and route.request.method == "GET":
+            route.fulfill(status=503, json={"error": {"message": "Connection list temporarily unavailable"}})
+        else:
+            route.continue_()
+
+    page.on("request", observe)
+    try:
+        tab, flow, popup = connect(page, remote_service, label)
+        if reconnect:
+            popup.get_by_role("button", name="Allow test access").click()
+            expect(flow.tools_heading).to_be_visible(timeout=20_000)
+            iid = next(item["id"] for item in connections(page) if item["label"] == label)
+            tab.tool_checkbox("mcp.read_value").click()
+            flow.next_()
+            flow.done.click()
+            popup.close()
+            tab.open_detail(iid)
+            tab.open_connection_settings()
+            tab.reconnect_button(iid).click()
+            with page.expect_popup(timeout=20_000) as opened:
+                page.get_by_role("button", name="Connect", exact=True).click()
+            popup = opened.value
+            expect(popup.get_by_role("heading", name="Local test service")).to_be_visible()
+
+        page.route("**/api/integrations", fail_list)
+        popup.get_by_role("button", name="Allow test access").click()
+        expect(page.get_by_role("heading", name="Sign-in complete")).to_be_visible(timeout=20_000)
+        retry = page.get_by_role("button", name="Retry loading connection")
+        expect(retry).to_be_enabled()
+        expect(page.get_by_text("Connection list temporarily unavailable", exact=True)).to_be_visible()
+        saved = [item for item in connections(page) if item["label"] == label]
+        assert len(saved) == 1
+        if reconnect:
+            assert saved[0]["id"] == iid
+            assert saved[0]["operation_grants"] == ["mcp.read_value"]
+
+        reload_blocked = False
+        retry.click()
+        if reconnect:
+            expect(page.get_by_test_id("integration-reconnect-flow")).not_to_be_visible()
+        else:
+            expect(flow.tools_heading).to_be_visible()
+            page.get_by_role("button", name="Cancel", exact=True).click()
+            expect(flow.root).not_to_be_visible()
+            assert not any(item["label"] == label for item in connections(page))
+        assert len(starts) == (2 if reconnect else 1)
+        assert remote_service["exchanges"] == (2 if reconnect else 1)
+        popup.close()
+    finally:
+        page.unroute("**/api/integrations", fail_list)
+        page.remove_listener("request", observe)
+        for record in connections(page):
+            if record["label"] == label:
+                page.request.delete(f'{base}/api/integrations/{record["id"]}')

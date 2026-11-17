@@ -3,10 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 // Start gated features disabled so controls never flash before discovery
 // completes, and remain hidden if the request fails.
 const DEFAULTS = {
-    image_generation: false,
-    music_generation: false,
     desktop: false,
-    visual_grounding: false,
     custom_tools: false,
     custom_apps: false,
 };

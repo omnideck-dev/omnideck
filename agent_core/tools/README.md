@@ -4,7 +4,8 @@ Plumbing that sits between an LLM's tool calls and the plain Python functions
 that implement them. A "tool" here is just a callable — its signature is the
 runtime validation schema and its Google-style docstring is the model-facing
 documentation. There is no decorator and no registration step; a tool is any
-function handed to the turn loop.
+function handed to the turn loop. `SchemaTool` is the explicit-schema alternative:
+it preserves a supplied JSON Schema and validates calls against that same schema.
 
 The package does two jobs:
 
@@ -20,6 +21,7 @@ Re-exported from `agent_core.tools` (`__init__.py` is a pure facade):
 
 | Name | Source | What it does |
 | --- | --- | --- |
+| `SchemaTool` | `_schema_tool` | Advertise an explicit input schema and validate arguments before invoking its callback, without coercion. |
 | `_execute_tool_call` | `_helpers` | Resolve a tool by name, validate args, run it, return a string for the model. The inbound entry point. |
 | `_prepare_tool_arguments` | `_helpers` | Validate/coerce a raw arg dict against a callable's signature. |
 | `_normalize_tool_result` | `_helpers` | Recursively flatten a tool's return value (Pydantic models, dicts, sequences) into JSON-serializable data. |
@@ -61,6 +63,16 @@ await func(**validated)  →  _normalize_tool_result  →  str for the model
 ```
 
 ### Coercion is strict; tools are forgiving
+
+`SchemaTool` bypasses signature-based coercion in `_prepare_tool_arguments` and
+validates inside its own `__call__`, including calls made outside the agent loop.
+Construction checks the schema and selects its declared dialect (Draft 2020-12
+when omitted). Validation preserves values, does not insert defaults, and follows
+the schema's additional-property rules rather than imposing stricter ones.
+References can resolve within the supplied schema; external HTTP/file retrieval
+is disabled. `format` remains an annotation, not an additional format checker.
+Invalid arguments raise a `ValueError` with the failing input path before the
+callback runs; the agent loop reports it as an argument-validation error.
 
 `_coerce_value` validates against the annotation and **raises** on a mismatch —
 e.g. a bare string where `list[str]` is annotated is rejected with a named

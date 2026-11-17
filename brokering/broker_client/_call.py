@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from brokering._rpc import RpcError, read_frame, write_frame
+from brokering._operation_errors import UNKNOWN_OUTCOME
 from brokering.broker_client._errors import (
     IntegrationAuthFailed,
     IntegrationError,
@@ -98,6 +99,25 @@ async def call(
         code = error.get("code", "")
         message = error.get("message", "")
         if code == "AUTH":
+            generation = resolve_response["result"].get("authorization_generation")
+            if generation is not None:
+                # Renew credentials, never replay the operation. A native
+                # operation can include several provider requests, so a 401 on
+                # the last one does not prove earlier writes did not happen.
+                try:
+                    renewal = await _rpc_one_shot(app_sock_path, {
+                        "id": 1, "verb": "renew_authorization",
+                        "args": {"id": connection_id, "generation": generation},
+                    })
+                    if "error" in renewal:
+                        notice = "Authorization could not be renewed. Reconnect the integration in Settings."
+                    elif renewal["result"]["renewed"]:
+                        notice = "Authorization was renewed."
+                    else:
+                        notice = "Newer authorization is already available."
+                except (IntegrationError, OSError, asyncio.IncompleteReadError):
+                    notice = "Authorization renewal could not be confirmed. Check the integration in Settings."
+                raise IntegrationError(f"{notice} The operation was not retried. {UNKNOWN_OUTCOME}")
             raise IntegrationAuthFailed(f"{connection_id} {operation_id}: {message}")
         if code == "PERMISSION_DENIED":
             raise IntegrationPermissionDenied(f"{connection_id} {operation_id}: {message}")

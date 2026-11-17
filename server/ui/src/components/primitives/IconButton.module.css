@@ -12,7 +12,7 @@
     padding: 0;
     background: transparent;
     border: none;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
     box-shadow: none;
     color: var(--text-secondary);
     cursor: pointer;
@@ -21,14 +21,10 @@
 }
 
 .btn:hover:not(:disabled) {
-    background: var(--accent-muted);
+    background: var(--surface);
     color: var(--text-primary);
 }
 
 .xs { width: 24px; height: 24px; }
 .sm { width: 28px; height: 28px; }
 .md { width: 32px; height: 32px; }
-
-:global([data-theme="light"]) .btn:hover:not(:disabled) {
-    background: var(--border-subtle);
-}

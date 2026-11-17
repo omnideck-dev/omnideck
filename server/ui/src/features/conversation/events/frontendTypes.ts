@@ -3,7 +3,6 @@ import type {
     CompactionStats,
     ConversationEvent,
     FileOutputPayload,
-    GenerationPreviewPayload,
 } from './conversationEvents.generated';
 
 export type AgentActivityEntry =
@@ -89,11 +88,6 @@ export type WorkspaceAction =
     }
     | { type: 'UPDATE_DESKTOP_ACTIVE'; agentId: string | null }
     | {
-        type: 'UPDATE_GENERATION_PREVIEW';
-        agentId: string | null;
-        preview: GenerationPreviewPayload & { agentId: string | null };
-    }
-    | {
         type: 'OPEN_FILE';
         agentId: string;
         item: {
@@ -105,7 +99,6 @@ export type WorkspaceAction =
     | { type: 'CLEAR_BROWSER_TABS'; agentId: string }
     | { type: 'CLEAR_TERMINAL'; agentId: string }
     | { type: 'CLEAR_DESKTOP'; agentId: string }
-    | { type: 'CLEAR_GENERATION_PREVIEW'; agentId: string }
     | { type: 'CLOSE_FILE'; agentId: string; fileKey: string }
     | { type: 'RESET' };
 

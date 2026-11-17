@@ -33,11 +33,9 @@ def test_create_profile_persists_all_settings(page: Page):
     # --- System prompt ---
     builder.system_prompt.fill("You are a test agent.")
 
-    # --- Skills (toggle first available) ---
-    first_skill = None
-    if builder.skill_chips.count() > 0:
-        first_skill = builder.skill_chips.first.inner_text().strip()
-        builder.skill_chips.first.click()
+    # --- Skills (actually select one; never silently skip this assertion) ---
+    skill = next(s for s in page.request.get("/api/skills").json() if s["id"] == "coder")
+    builder.tools.add("Skills", skill["name"])
 
     # --- Advanced settings (set every inference field) ---
     builder.open_advanced()
@@ -73,10 +71,7 @@ def test_create_profile_persists_all_settings(page: Page):
     assert created["system_prompt"] == "You are a test agent."
 
     # Skills
-    if first_skill:
-        assert first_skill in created["skills"], (
-            f"Expected '{first_skill}' in skills, got {created['skills']}"
-        )
+    assert skill["id"] in created["skills"]
 
     # Inference params
     assert created["temperature"] == 0.8

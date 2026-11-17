@@ -82,13 +82,20 @@ export default function ModelPicker({
     const provs = providers || [];
     const showTabs = provs.length > 1;
 
-    // The tab the user is currently looking at inside the popover.
-    // Defaults to the selected provider (if any), else the first one.
-    const initialTab = selectedProvider || provs[0]?.name || '';
+    // Saved profiles may reference a removed provider. Browsing must fall back
+    // to a configured one without silently changing the parent's saved choice.
+    const preferredTab = provs.some((p) => p.name === selectedProvider)
+        ? selectedProvider : provs[0]?.name || '';
     const [open, setOpen] = useState(defaultOpen);
-    const [activeTab, setActiveTab] = useState(initialTab);
+    const [browsingTab, setActiveTab] = useState(preferredTab);
+    // Derive this during render, including while open, so a removed provider
+    // cannot remain active until a later effect or a close/reopen cycle.
+    const activeTab = provs.some((p) => p.name === browsingTab) ? browsingTab : preferredTab;
     const [query, setQuery] = useState('');
-    const [models, setModels] = useState(() => _modelsCache.get(initialTab) || []);
+    const [modelResult, setModelResult] = useState(() => ({
+        provider: preferredTab, models: _modelsCache.get(preferredTab) || [],
+    }));
+    const models = modelResult.provider === activeTab ? modelResult.models : [];
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [cacheRevision, setCacheRevision] = useState(0);
@@ -144,8 +151,10 @@ export default function ModelPicker({
     // Re-sync active tab when the parent's selection changes (e.g. a different
     // profile is loaded into ProfileBuilder).
     useEffect(() => {
-        if (!open && selectedProvider) setActiveTab(selectedProvider);
-    }, [selectedProvider, open]);
+        if (!open) setActiveTab(preferredTab);
+    }, [preferredTab, open]);
+
+    useEffect(() => { setQuery(''); }, [activeTab]);
 
     // Observe explicit cache invalidations. Closed pickers can wait until their
     // next open; open pickers should immediately re-query the provider they are
@@ -166,7 +175,7 @@ export default function ModelPicker({
         if (!open || !activeTab) return;
         const cached = _modelsCache.get(activeTab);
         if (cached) {
-            setModels(cached);
+            setModelResult({ provider: activeTab, models: cached });
             setLoading(false);
             setError(null);
             return;
@@ -175,7 +184,7 @@ export default function ModelPicker({
         setLoading(true);
         setError(null);
         _fetchModels(activeTab)
-            .then((m) => { if (!cancelled) { setModels(m); setLoading(false); } })
+            .then((m) => { if (!cancelled) { setModelResult({ provider: activeTab, models: m }); setLoading(false); } })
             .catch((err) => { if (!cancelled) { setError(err.message || 'error'); setLoading(false); } });
         return () => { cancelled = true; };
     }, [activeTab, cacheRevision, open]);
@@ -220,12 +229,12 @@ export default function ModelPicker({
         setOpen((v) => {
             if (!v) {
                 // Re-pin to the selected provider every time we open.
-                setActiveTab(selectedProvider || provs[0].name);
+                setActiveTab(preferredTab);
                 setQuery('');
             }
             return !v;
         });
-    }, [provs, selectedProvider]);
+    }, [provs, preferredTab]);
 
     const handlePick = useCallback((model) => {
         // Pass through the full ModelInfo so parents can read context_window,
@@ -255,7 +264,7 @@ export default function ModelPicker({
             : { top: `${popoverPos.anchor}px` }),
     } : undefined;
 
-    const popoverNode = open ? (
+    const popoverNode = open && provs.length > 0 ? (
         <div
             ref={popoverRef}
             className={`${styles.popover} ${inline ? styles.popoverInline : ''} ${popoverPos?.placement === 'above' ? styles.popoverAbove : ''}`}

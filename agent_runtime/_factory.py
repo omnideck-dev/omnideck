@@ -81,7 +81,8 @@ class AgentFactory:
         connections: ConnectionSnapshot = (),
     ) -> AgentCapabilities:
         """Build one run's state from agent settings, capabilities, and skills."""
-        from skills._policy import is_reserved_skill_id
+        from skills._policy import is_reserved_skill_id, is_restricted_tool_category
+        from agent_core.capabilities import AgentCapability
         from skills._resolve import resolve_skill, resolve_skill_by_name
 
         categories = await tool_categories(connections)
@@ -94,6 +95,12 @@ class AgentFactory:
             ),
             skill_resolver=partial(resolve_skill_by_name, categories=categories),
         )
+        direct_tools = [
+            tool for cid in profile.tool_categories
+            if not is_restricted_tool_category(cid) and cid in categories
+            for tool in categories[cid].tools
+        ]
+        state.add_capability(AgentCapability("selected-tools", "Tools", "", direct_tools))
         for skill_id in profile.skills:
             if is_reserved_skill_id(skill_id):
                 continue

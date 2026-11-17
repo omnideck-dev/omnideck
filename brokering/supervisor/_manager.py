@@ -49,6 +49,10 @@ from integrations.operation_grants import (
 )
 from brokering.supervisor._crypto import DecryptError
 from brokering.supervisor._registry import BrokeredConnectionRecord, Registry
+from brokering.supervisor._operation_metadata import bind_mcp_catalog, connection_operations
+from integrations.discovery import DiscoveredOperation
+from brokering.supervisor._mcp_refresh import refresh_mcp_authorization
+from brokering.supervisor._google_refresh import refresh_google_authorization
 from brokering.supervisor._spawn import BrokerHandle, BrokerSpawnError, connection_fields, spawn_broker
 from brokering.supervisor._store import (
     delete_connection,
@@ -131,6 +135,7 @@ class BrokerManager:
         user_suffix: str | None = None,
         label: str,
         auth_blob: BrokerConnectionData,
+        discovered_operations: tuple[DiscoveredOperation, ...] = (),
         operation_grants: OperationGrants | None = None,
         kind: ConnectionKind | None = None,
     ) -> BrokeredConnectionRecord:
@@ -153,7 +158,12 @@ class BrokerManager:
         if self._registry.contains(connection_id):
             raise RpcError("BAD_REQUEST", f"integration already exists: {connection_id}")
 
-        available_operations = entry.resolve_operations(auth_blob.granted_scopes)
+        try:
+            if entry.driver_id == "remote.mcp":
+                auth_blob = bind_mcp_catalog(auth_blob, discovered_operations)
+            available_operations = connection_operations(entry, auth_blob, discovered_operations)
+        except ValueError as exc:
+            raise RpcError("BAD_REQUEST", "Invalid connection tool catalog.") from exc
         grants = _grants_for_add(
             entry,
             available_operations=available_operations,
@@ -170,7 +180,9 @@ class BrokerManager:
         }
         meta: ConnectionMeta
         if isinstance(entry, IntegrationCatalogEntry):
-            meta = IntegrationConnectionMeta(**common, agent_operation_grants=grants)
+            meta = IntegrationConnectionMeta(
+                **common, agent_operation_grants=grants, discovered_operations=discovered_operations,
+            )
         else:
             meta = ModelProviderConnectionMeta(**common)
 
@@ -181,14 +193,7 @@ class BrokerManager:
         write_secrets(self._vault_dir, connection_id, self._master_key, auth_blob)
 
         try:
-            handle = await spawn_broker(
-                entry=entry,
-                connection_id=connection_id,
-                secret_bundle=auth_blob,
-                operation_grants=grants,
-                sockets_dir=self._sockets_dir,
-                host_paths=self._host_paths,
-            )
+            handle = await self._spawn_authorized_broker(entry, connection_id, auth_blob, grants)
         except BrokerSpawnError as exc:
             # Roll back — no broker subprocess is running at this point.
             delete_connection(self._vault_dir, connection_id)
@@ -200,6 +205,7 @@ class BrokerManager:
             meta=meta,
             broker=handle,
             available_operations=available_operations,
+            driver_id=entry.driver_id,
         )
         self._registry.add(record)
         self._start_watcher(connection_id)
@@ -227,9 +233,7 @@ class BrokerManager:
             msg = f"decrypt failed for {connection_id}: {exc}"
             raise ReconcileError(msg) from exc
 
-        available_operations = entry.resolve_operations(secret_bundle.granted_scopes)
         meta = connection_meta_from_dict(raw)
-
         expected_kind = entry.kind
         if meta.kind != expected_kind:
             raise ReconcileError(
@@ -240,15 +244,15 @@ class BrokerManager:
         # Restart must pass the saved allowlist through unchanged; the upstream
         # remains responsible for authorizing the token on each API request.
 
+        available_operations: OperationGrants = frozenset()
         try:
-            handle = await spawn_broker(
-                entry=entry,
-                connection_id=connection_id,
-                secret_bundle=secret_bundle,
-                operation_grants=_meta_grants(meta),
-                sockets_dir=self._sockets_dir,
-                host_paths=self._host_paths,
-            )
+            try:
+                available_operations = connection_operations(
+                    entry, secret_bundle, meta.discovered_operations if isinstance(meta, IntegrationConnectionMeta) else (),
+                )
+            except ValueError as exc:
+                raise BrokerSpawnError("Saved tool catalog does not match credentials; reconnect required") from exc
+            handle = await self._spawn_authorized_broker(entry, connection_id, secret_bundle, _meta_grants(meta))
         except BrokerSpawnError as exc:
             kind = "auth rejected" if exc.exit_code == _AUTH_FAIL_EXIT_CODE else "spawn failed"
             state: Literal["auth_failed", "broken"] = (
@@ -259,6 +263,7 @@ class BrokerManager:
                 broker=None,
                 available_operations=available_operations,
                 state=state,
+                driver_id=entry.driver_id,
             )
             self._registry.add(record)
             logger.warning(
@@ -274,11 +279,121 @@ class BrokerManager:
             meta=meta,
             broker=handle,
             available_operations=available_operations,
+            driver_id=entry.driver_id,
         )
         self._registry.add(record)
         self._start_watcher(connection_id)
         logger.info("reconciled %s (slug=%s)", connection_id, meta.slug)
         return record
+
+    @_serialize_connection_mutation
+    async def mcp_setup_settings(self, connection_id: str) -> dict[str, str]:
+        """Project a strict public allowlist from saved OAuth registration.
+
+        Reconnect UI must not read the vault or receive serialized OAuth state,
+        which also contains tokens. The existing credential transaction remains
+        the sole owner of replacing this registration after successful consent.
+        """
+        from brokering.mcp_protocol import OAuthStorage
+
+        record = self._registry.get(connection_id)
+        if record is None:
+            raise RpcError("NOT_FOUND", "Integration was removed.")
+        if record.driver_id != "remote.mcp":
+            raise RpcError("BAD_REQUEST", "This integration does not use MCP sign-in.")
+        try:
+            fields = read_secrets(self._vault_dir, connection_id, self._master_key)
+            oauth = OAuthStorage(fields.get("oauth_state", ""))
+        except Exception as exc:
+            raise RpcError("AUTH", "Could not load the saved sign-in settings.") from exc
+        client = oauth.client_info
+        return {"endpoint": fields.get("endpoint", ""),
+                "client_id": client.client_id if client else "",
+                "issuer": str(client.issuer) if client and client.issuer else "",
+                # Older saved connections did not retain this choice. Do not
+                # substitute provider-advertised or granted scopes for it.
+                "scopes": fields.get("requested_scopes", "")}
+
+    @_serialize_connection_mutation
+    async def ensure_fresh_authorization(self, connection_id: str) -> None:
+        """Renew either OAuth provider before resolution, serialized with edits/removal."""
+        await self._renew_authorization(connection_id, rejected_generation=None)
+
+    @_serialize_connection_mutation
+    async def renew_rejected_authorization(self, connection_id: str, generation: str) -> bool:
+        """Renew once per rejected generation; concurrent failures share renewal."""
+        return await self._renew_authorization(connection_id, rejected_generation=generation)
+
+    async def _renew_authorization(self, connection_id: str, *, rejected_generation: str | None) -> bool:
+        record = self._registry.get(connection_id)
+        if record is None:
+            raise RpcError("NOT_FOUND", "Integration was removed.")
+        entry = self._catalog.get(record.meta.slug)
+        if entry is None or entry.driver_id not in {"remote.mcp", "native.google_workspace"} or record.state != "running":
+            if rejected_generation is not None:
+                raise RpcError("AUTH", "Authorization is unavailable. Reconnect in Settings.")
+            return False
+        if rejected_generation is not None and rejected_generation != record.authorization_generation:
+            return False
+        try:
+            fields = read_secrets(self._vault_dir, connection_id, self._master_key)
+            refreshed = await self._refresh_authorization_fields(entry, connection_id, fields, force=rejected_generation is not None)
+            if refreshed is fields:
+                return False
+            # Rotation is already authoritative on disk. Both transaction
+            # recovery inputs intentionally point to the NEW credentials.
+            await self._update_credentials(
+                record, entry, refreshed, refreshed, record.meta, record.available_operations,
+            )
+            return True
+        except (Exception, asyncio.CancelledError) as exc:
+            record.state = "broken"
+            await self._stop_record_broker(record)
+            if isinstance(exc, asyncio.CancelledError):
+                raise
+            raise RpcError("AUTH", "Could not refresh access. Sign in again to reconnect.") from exc
+
+    async def _refresh_authorization_fields(
+        self, entry: CatalogEntry, connection_id: str, fields: BrokerConnectionData, *, force: bool,
+    ) -> BrokerConnectionData:
+        if entry.driver_id not in {"remote.mcp", "native.google_workspace"}:
+            return fields
+        refresh = refresh_mcp_authorization if entry.driver_id == "remote.mcp" else refresh_google_authorization
+        try:
+            task = asyncio.create_task(refresh(
+                fields, lambda updated: write_secrets(self._vault_dir, connection_id, self._master_key, updated), force=force,
+            ))
+            try:
+                return await asyncio.shield(task)
+            except asyncio.CancelledError:
+                # Hold the mutation lock until an in-flight rotation is saved.
+                # The network adapter bounds this wait; removal cannot race a
+                # late write that would resurrect deleted vault credentials.
+                await asyncio.gather(task, return_exceptions=True)
+                raise
+        except Exception as exc:
+            raise BrokerSpawnError("Could not refresh access; sign in again.", exit_code=_AUTH_FAIL_EXIT_CODE) from exc
+
+    async def _spawn_authorized_broker(
+        self, entry: CatalogEntry, connection_id: str, fields: BrokerConnectionData, grants: OperationGrants,
+    ) -> BrokerHandle:
+        refreshed = await self._refresh_authorization_fields(entry, connection_id, fields, force=False)
+        try:
+            return await spawn_broker(
+                entry=entry, connection_id=connection_id, secret_bundle=refreshed,
+                operation_grants=grants, sockets_dir=self._sockets_dir, host_paths=self._host_paths,
+            )
+        except BrokerSpawnError as exc:
+            if (exc.exit_code != _AUTH_FAIL_EXIT_CODE or refreshed is not fields
+                    or entry.driver_id not in {"remote.mcp", "native.google_workspace"}):
+                raise
+        # A startup handshake can reject a token before any tool runs (including
+        # tokens with unknown expiry). Renew once, never replay a tool operation.
+        refreshed = await self._refresh_authorization_fields(entry, connection_id, fields, force=True)
+        return await spawn_broker(
+            entry=entry, connection_id=connection_id, secret_bundle=refreshed,
+            operation_grants=grants, sockets_dir=self._sockets_dir, host_paths=self._host_paths,
+        )
 
     @_serialize_connection_mutation
     async def remove(self, connection_id: str) -> None:
@@ -399,6 +514,7 @@ class BrokerManager:
         connection_id: str,
         *,
         auth_blob: BrokerConnectionData,
+        discovered_operations: tuple[DiscoveredOperation, ...] = (),
         kind: ConnectionKind | None = None,
     ) -> BrokeredConnectionRecord:
         """Replace credentials in place, or start a broker if none is healthy.
@@ -424,9 +540,16 @@ class BrokerManager:
                 f"catalog has no {record.meta.kind!r} entry for slug {record.meta.slug!r}",
             )
         old_meta = record.meta
-        new_available = entry.resolve_operations(auth_blob.granted_scopes)
+        try:
+            if entry.driver_id == "remote.mcp":
+                auth_blob = bind_mcp_catalog(auth_blob, discovered_operations)
+            new_available = connection_operations(entry, auth_blob, discovered_operations)
+        except ValueError as exc:
+            raise RpcError("BAD_REQUEST", "Invalid connection tool catalog.") from exc
         new_grants = _meta_grants(old_meta)
         new_meta = old_meta.model_copy(update={"updated_at": datetime.now(UTC)})
+        if isinstance(new_meta, IntegrationConnectionMeta):
+            new_meta = new_meta.model_copy(update={"discovered_operations": discovered_operations})
 
         if record.broker is not None and record.broker.proc.returncode is None and record.state == "running":
             try:
@@ -461,7 +584,8 @@ class BrokerManager:
 
         Disk is authoritative for recovery after activation starts. The two
         vault files are not a crash-atomic transaction; grants do not change
-        here, and available operations are recomputed from the secret bundle.
+        here. MCP reconciliation checks the catalog checksum before spawning,
+        so an interrupted pair of writes cannot activate mismatched discovery.
         """
         broker = record.broker
         if broker is None:
@@ -510,6 +634,8 @@ class BrokerManager:
             if isinstance(exc, asyncio.CancelledError):
                 raise
             raise RpcError("UPSTREAM", "credentials saved but activation failed; reconnect required") from exc
+
+        record.authorization_generation = uuid4().hex
 
     async def stop_all(self) -> None:
         """Supervisor shutdown: stop all watchers, then SIGTERM all brokers."""
@@ -598,7 +724,8 @@ class BrokerManager:
         try:
             # Each file is atomic, not the pair. Write credentials last so a
             # failed save cannot replace the old credentials. Only updated_at
-            # changes in metadata; a crash between writes cannot change grants.
+            # and discovery change in metadata. MCP's checksum rejects a mixed
+            # catalog/credential pair after a crash; grants remain unchanged.
             write_meta(self._vault_dir, new_meta)
             meta_saved = True
             write_secrets(self._vault_dir, connection_id, self._master_key, new_secrets)
@@ -614,6 +741,7 @@ class BrokerManager:
         record.broker = new_handle
         record.meta = new_meta
         record.available_operations = new_available
+        record.authorization_generation = uuid4().hex
         record.state = "running"
         record.expected_termination = False
         self._start_watcher(connection_id)
@@ -697,6 +825,7 @@ class BrokerManager:
                     continue
 
                 record.broker = new_handle
+                record.authorization_generation = uuid4().hex
                 record.state = "running"
                 consecutive_failures = 0
                 logger.info("respawned broker for %s", connection_id)
@@ -717,14 +846,7 @@ class BrokerManager:
             raise _RespawnError(msg) from exc
 
         try:
-            return await spawn_broker(
-                entry=entry,
-                connection_id=connection_id,
-                secret_bundle=secret_bundle,
-                operation_grants=_meta_grants(record.meta),
-                sockets_dir=self._sockets_dir,
-                host_paths=self._host_paths,
-            )
+            return await self._spawn_authorized_broker(entry, connection_id, secret_bundle, _meta_grants(record.meta))
         except BrokerSpawnError as exc:
             raise _RespawnError(str(exc), exit_code=exc.exit_code) from exc
 

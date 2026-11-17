@@ -26,9 +26,11 @@ export default function ConfirmButton({
     className,
     confirmClassName,
     disabled = false,
+    appearance = 'button',
     title,
     'aria-label': ariaLabel,
     'data-testid': testid,
+    ...rest
 }) {
     const [confirming, setConfirming] = useState(false);
     const [busy, setBusy] = useState(false);
@@ -59,12 +61,14 @@ export default function ConfirmButton({
     const text = busy ? (busyLabel ?? label) : confirming ? confirmLabel : label;
     const composedClass = [
         styles.btn,
+        appearance === 'menuItem' ? styles.menuItem : '',
         className,
         confirming ? (confirmClassName ?? styles.confirming) : '',
     ].filter(Boolean).join(' ');
 
     return (
         <button
+            {...rest}
             type="button"
             className={composedClass}
             onClick={handleClick}
@@ -73,7 +77,7 @@ export default function ConfirmButton({
             aria-label={confirming ? confirmLabel : ariaLabel}
             data-testid={testid}
         >
-            {icon && <i className={`bi ${icon}`} />}
+            {icon && <i className={`bi ${icon}`} aria-hidden="true" />}
             {text}
         </button>
     );

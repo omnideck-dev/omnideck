@@ -14,6 +14,56 @@ const GROUPS = [
 ];
 
 describe('OperationPicker', () => {
+    it('disables rejected schemas and excludes them from individual, group and bulk selection', () => {
+        const onChange = vi.fn();
+        const reason = 'Unavailable: the service supplied an invalid input schema.';
+        render(<OperationPicker operations={[
+            { id: 'mcp.good', title: 'Good tool' },
+            { id: 'mcp.bad', title: 'Bad tool', unavailable_reason: reason },
+        ]} selectedIds={['mcp.bad']} onChange={onChange} collapsible />);
+        const rejected = screen.getByTestId('integration-tool-mcp.bad');
+        expect(rejected).toBeDisabled();
+        expect(rejected).not.toBeChecked();
+        expect(screen.getByText(reason)).toBeVisible();
+        expect(screen.getByText('0 of 1 selected')).toBeVisible();
+        fireEvent.click(screen.getByRole('checkbox', { name: 'Select all in Tools' }));
+        expect(onChange).toHaveBeenLastCalledWith(['mcp.good']);
+        fireEvent.click(screen.getByRole('button', { name: 'Select all', exact: true }));
+        expect(onChange).toHaveBeenLastCalledWith(['mcp.good']);
+        fireEvent.click(screen.getByTestId('integration-tool-mcp.good'));
+        expect(onChange).toHaveBeenLastCalledWith(['mcp.good']);
+    });
+
+    it('keeps an entirely unavailable catalog visible with selection controls disabled', () => {
+        render(<OperationPicker operations={[
+            { id: 'mcp.bad', title: 'Unsupported tool', unavailable_reason: 'Unavailable: unsupported schema version.' },
+        ]} selectedIds={[]} collapsible />);
+        expect(screen.getByText('Unsupported tool')).toBeVisible();
+        expect(screen.getByText('0 of 0 selected')).toBeVisible();
+        expect(screen.getByRole('button', { name: 'Select all', exact: true })).toBeDisabled();
+        expect(screen.getByRole('checkbox', { name: 'Select all in Tools' })).toBeDisabled();
+        expect(screen.getByRole('checkbox', { name: 'Select all in Tools' })).toHaveAttribute('aria-checked', 'false');
+    });
+
+    it('keeps MCP model descriptions out of rendering and search without changing metadata', () => {
+        const operations = [
+            { id: 'mcp.search', title: 'Search messages', description: '# Model-only instructions' },
+            { id: 'mcp.read_value', description: 'Model-only fallback instructions' },
+            ...OPERATIONS,
+        ];
+        render(<OperationPicker operations={operations} selectedIds={[]} />);
+        expect(screen.getByRole('checkbox', { name: 'Search messages', exact: true })).toBeVisible();
+        expect(screen.getByRole('checkbox', { name: 'read_value', exact: true })).toBeVisible();
+        expect(screen.queryByText(/Model-only/)).not.toBeInTheDocument();
+        expect(screen.getByText('List recent messages.')).toBeVisible();
+        const search = screen.getByRole('searchbox', { name: 'Search tools' });
+        fireEvent.change(search, { target: { value: 'Model-only' } });
+        expect(screen.queryByTestId('integration-tool-mcp.search')).not.toBeInTheDocument();
+        fireEvent.change(search, { target: { value: 'recent' } });
+        expect(screen.getByTestId('integration-tool-mail.list')).toBeVisible();
+        expect(operations[0].description).toBe('# Model-only instructions');
+    });
+
     it('allows collapsing search results and restores the unfiltered expansion state', () => {
         render(<OperationPicker operations={OPERATIONS} groups={GROUPS} selectedIds={[]} collapsible />);
         const toggle = () => screen.getByRole('button', { name: 'Email 0 of 2' });

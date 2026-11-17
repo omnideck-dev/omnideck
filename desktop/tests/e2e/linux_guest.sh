@@ -119,6 +119,12 @@ if [[ "${upgrade_from_sha256}" != "none" ]]; then
 fi
 inventory before
 
+apt_with_lock_wait() {
+  # Unattended upgrades can briefly hold dpkg's lock on a freshly booted guest.
+  # Let apt wait normally; a timeout or any package failure still fails the test.
+  sudo env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=120 "$@"
+}
+
 dnf_with_lock_retry() {
   local label="${1:?DNF evidence label is required}"
   shift
@@ -178,7 +184,7 @@ if [[ "${upgrade_from_sha256}" != "none" ]]; then
       ;;
     deb)
       previous_package_name="$(dpkg-deb --field "${upgrade_from_artifact}" Package)"
-      sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "${upgrade_from_artifact}"
+      apt_with_lock_wait install -y "${upgrade_from_artifact}"
       if command -v omnideck-desktop >/dev/null 2>&1; then
         previous_binary_name="omnideck-desktop"
       else
@@ -216,7 +222,7 @@ case "${package_kind}" in
   deb)
     package_name="$(dpkg-deb --field "${artifact}" Package)"
     # Exercise the exact candidate even before its release version is bumped.
-    sudo env DEBIAN_FRONTEND=noninteractive apt-get install --reinstall -y "${artifact}"
+    apt_with_lock_wait install --reinstall -y "${artifact}"
     application="$(command -v omnideck-desktop)"
     ;;
   rpm)
@@ -338,7 +344,7 @@ current_step="desktop input dependencies"
 if ! command -v WebKitWebDriver >/dev/null 2>&1; then
   if command -v apt-get >/dev/null 2>&1; then
     sudo apt-get update -qq
-    sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq webkit2gtk-driver
+    apt_with_lock_wait install -y -qq webkit2gtk-driver
   elif command -v dnf >/dev/null 2>&1; then
     dnf_with_lock_retry input-dependencies install -y webkitgtk6.0
   fi
@@ -838,11 +844,11 @@ current_step="package lifecycle"
 case "${package_kind}" in
   deb)
     dpkg-query --listfiles "${package_name}" > "${result_dir}/installed-files.txt"
-    sudo env DEBIAN_FRONTEND=noninteractive apt-get remove -y "${package_name}"
+    apt_with_lock_wait remove -y "${package_name}"
     [[ ! -e "${application}" ]]
     [[ -f "${state_path}" ]]
     podman container inspect "${container_name}" >/dev/null
-    sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "${artifact}"
+    apt_with_lock_wait install -y "${artifact}"
     [[ -x "${application}" ]]
     ;;
   rpm)

@@ -1,5 +1,7 @@
 import { createContext, useContext, useCallback, useEffect, useState } from 'react';
 
+import useConversationActivity from './useConversationActivity.js';
+
 import useListPanel from '../../../hooks/useListPanel.js';
 
 /**
@@ -23,7 +25,7 @@ async function _generateTitle(conversationId, firstMessage) {
 }
 
 /**
- * Owns the sidebar's recent-conversations list. The list is fetched once on
+ * Owns browser-session run activity and the sidebar's recent-conversations list. The list is fetched once on
  * mount and then mutated locally: new conversations are pushed in optimistically
  * the moment they start, titles are patched in place when generation returns,
  * and pin/rename/delete edit the array directly. There is no server-originated
@@ -32,6 +34,7 @@ async function _generateTitle(conversationId, firstMessage) {
 const ConversationCatalogContext = createContext(null);
 
 export function ConversationCatalogProvider({ children }) {
+    const { activity, setVisibleConversation } = useConversationActivity();
     // No refreshSignal: the list loads once on mount and is kept current by the
     // mutations below rather than refetching.
     const panel = useListPanel('/api/conversations/sessions', {
@@ -191,6 +194,8 @@ export function ConversationCatalogProvider({ children }) {
 
     const value = {
         ...panel,
+        activity,
+        setVisibleConversation,
         addStartedConversation,
         archiveConversation,
         unarchiveConversation,

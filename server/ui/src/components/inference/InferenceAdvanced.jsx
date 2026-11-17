@@ -10,7 +10,6 @@ const ADVANCED_HELP = {
     repeat_penalty: '1.0 = off, 1.1 = general, 1.5+ = strongly discourages repetition',
     context: 'Context window in tokens. Higher = more memory, slower',
     max_output: 'Max tokens per response. Leave empty for unlimited (required by Anthropic)',
-    iterations: 'Tool-call rounds per turn. Leave empty for unlimited',
     compaction: 'How full the context window gets before old messages are summarized',
     thinking: 'Step-by-step reasoning before answering. Good for math, logic, code',
     reasoning_effort: 'Low = faster/cheaper, medium = balanced, high = thorough reasoning',
@@ -71,13 +70,6 @@ export default function InferenceAdvanced({ draft, provider, onChange }) {
                         </label>
                         <span className={styles.fieldHint}>{ADVANCED_HELP.max_output}</span>
                     </div>
-                    <div className={styles.advancedField}>
-                        <label className={styles.fieldRow}>
-                            <span className={styles.fieldLabel}>Iterations</span>
-                            <input className={styles.numInput} type="number" data-testid="field-max_iterations" value={draft.max_iterations ?? ''} onChange={(e) => onChange('max_iterations', e.target.value === '' ? null : Number(e.target.value))} min={1} step={1} placeholder="unlimited" />
-                        </label>
-                        <span className={styles.fieldHint}>{ADVANCED_HELP.iterations}</span>
-                    </div>
                     {isSupported('compaction_threshold', provider) && (
                         <div className={styles.advancedField} data-testid="field-compaction_threshold">
                             <div className={styles.fieldRow}>
@@ -101,15 +93,16 @@ export default function InferenceAdvanced({ draft, provider, onChange }) {
                         </div>
                     )}
                     {isSupported('think', provider) && (
-                        <div className={styles.advancedField} data-testid="field-think">
-                            <label className={styles.fieldRow}>
-                                <span className={styles.fieldLabel}>Thinking</span>
+                        <div className={styles.thinkingRow} data-testid="field-think">
+                            <label className={styles.thinkingControl}>
+                                <span><span className={styles.fieldLabel}>Thinking</span>
+                                    <span className={styles.fieldHint}>{ADVANCED_HELP.thinking}</span></span>
                                 <ToggleSwitch
+                                    aria-label="Thinking"
                                     checked={draft.think || false}
                                     onChange={(e) => onChange('think', e.target.checked || null)}
                                 />
                             </label>
-                            <span className={styles.fieldHint}>{ADVANCED_HELP.thinking}</span>
                         </div>
                     )}
                     {draft.think && isSupported('reasoning_effort', provider) && (

@@ -33,6 +33,7 @@ export default function Popover({
     anchorRef,
     returnFocusRef = anchorRef,
     onClose,
+    onOpen,
     children,
     className = '',
     align = 'start',
@@ -47,6 +48,7 @@ export default function Popover({
     testId,
 }) {
     const popoverRef = useRef(null);
+    const opened = useRef(false);
     const [position, setPosition] = useState(null);
 
     useLayoutEffect(() => {
@@ -110,6 +112,14 @@ export default function Popover({
             window.removeEventListener('scroll', updatePosition, true);
         };
     }, [align, anchorRef, flipThreshold, gap, maxHeight, placement, viewportMargin, width]);
+
+    // Consumers can move focus only after the positioned surface is visible.
+    // Parent mount effects may run while the initial render is still hidden.
+    useLayoutEffect(() => {
+        if (!position || opened.current) return;
+        opened.current = true;
+        onOpen?.();
+    }, [position, onOpen]);
 
     useEffect(() => {
         const handleOutsideMouseDown = (event) => {

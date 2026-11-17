@@ -52,6 +52,13 @@ class TestAgentProfileModel:
         assert p.skills == []
         assert p.temperature is None
         assert p.think is None
+        assert p.icon == "bi-robot"
+
+    def test_bootstrap_icon_survives_save_reload_and_duplicate(self):
+        profile = _make_profile(icon="bi-bookshelf")
+        save_agent_profile(profile)
+        assert get_agent_profile(profile.id).icon == "bi-bookshelf"
+        assert duplicate_agent_profile(profile.id).icon == "bi-bookshelf"
 
     def test_autonomy_toggles_default_true(self):
         """allow_spawn/allow_load_skills default True, and legacy JSON without

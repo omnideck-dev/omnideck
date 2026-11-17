@@ -9,7 +9,7 @@ import useIsMobileViewport from '../../hooks/useIsMobileViewport.js';
 import DesktopTabGroup from './DesktopTabGroup.jsx';
 import DesktopViewHost from './DesktopViewHost.jsx';
 import { DESKTOP_TAB_GROUP_IDS } from './desktopLayoutReducer.js';
-import { tabGroupContainingView } from './desktopLayoutSelectors.js';
+import { tabGroupContainingView, visibleTabGroupIds, visibleViewIds } from './desktopLayoutSelectors.js';
 import styles from './DesktopLayout.module.css';
 
 /**
@@ -43,11 +43,10 @@ export default function DesktopLayout({
     const rightTabGroup = model.tabGroups[DESKTOP_TAB_GROUP_IDS.RIGHT];
     const leftVisible = leftTabGroup.viewIds.length > 0;
     const rightVisible = rightTabGroup.viewIds.length > 0;
-    const split = leftVisible && rightVisible && !isMobile;
-    // Mobile has no room for a second pane, so the right tab group stays
-    // hidden there — unless the left group is empty, in which case falling
-    // back to the right group's content beats showing a blank screen.
-    const showRightTabGroup = rightVisible && (!isMobile || !leftVisible);
+    const shownTabGroups = visibleTabGroupIds(model, isMobile);
+    const visibleIds = visibleViewIds(model, isMobile);
+    const split = shownTabGroups.length === 2;
+    const showRightTabGroup = shownTabGroups.includes(DESKTOP_TAB_GROUP_IDS.RIGHT);
 
     useEffect(() => {
         // Both panes can end up populated on mobile — restored two-pane
@@ -142,19 +141,6 @@ export default function DesktopLayout({
 
             {model.openViews.map((view) => {
                 const tabGroupId = tabGroupContainingView(model.tabGroups, view.id);
-                // A tab group that isn't actually rendered (the right group,
-                // suppressed on mobile) must not mark its active view visible
-                // either — otherwise that view stays mounted, focusable, and
-                // "visible" in a 0-width grid column with no chrome to reach it.
-                const tabGroupShown = tabGroupId === DESKTOP_TAB_GROUP_IDS.LEFT
-                    ? leftVisible
-                    : tabGroupId === DESKTOP_TAB_GROUP_IDS.RIGHT
-                        ? showRightTabGroup
-                        : false;
-                const activeInTabGroup = Boolean(
-                    tabGroupShown
-                    && model.tabGroups[tabGroupId].activeViewId === view.id,
-                );
                 const floatingView = model.floatingByViewId?.[
                     view.id
                 ] || null;
@@ -164,7 +150,7 @@ export default function DesktopLayout({
                         key={view.id}
                         view={view}
                         tabGroupId={tabGroupId}
-                        activeInTabGroup={activeInTabGroup}
+                        visible={visibleIds.includes(view.id)}
                         floatingView={floatingView}
                         focusedFloating={
                             model.focusedFloatingViewId === view.id

@@ -63,12 +63,14 @@ describe('conversation session stream delivery', () => {
         });
         const agentDispatch = vi.fn();
         const { result } = renderHook(() => useConversationSessionController({ agentDispatch }));
+        expect(result.current.savedConversationId).toBeNull();
 
         await act(async () => {
             await result.current.sendMessage('hello', null, 'profile-1');
         });
 
         expect(result.current.isStreaming).toBe(false);
+        expect(result.current.savedConversationId).toBe(result.current.activeConversationId);
         expect(result.current.turns).toHaveLength(1);
         expect(result.current.turns[0]).toMatchObject({
             agentId,

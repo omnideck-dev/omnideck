@@ -452,3 +452,18 @@ it('does not merge panes on mobile when only one pane is populated', () => {
 
     expect(mergeTabGroup).not.toHaveBeenCalled();
 });
+
+it('hides other views during fullscreen and restores them afterward', () => {
+    const base = model({ floatingView: { viewId: APP.id, x: 0, y: 0, width: 400, height: 300 } });
+    const props = {
+        commands: { setFullscreenView: vi.fn() },
+        onSelectView: vi.fn(), onCloseView: vi.fn(),
+        renderView: (view, { visible }) => <div data-testid={`visibility-${view.id}`}>{String(visible)}</div>,
+    };
+    const { rerender } = render(<DesktopLayout {...props} model={{ ...base, fullscreenViewId: CHAT.id }} />);
+    expect(screen.getByTestId(`desktop-view-${APP.id}`)).toHaveAttribute('data-visible', 'false');
+    expect(screen.getByTestId(`visibility-${APP.id}`)).toHaveTextContent('false');
+    expect(screen.getByTestId(`desktop-view-${CHAT.id}`)).toHaveAttribute('data-visible', 'true');
+    rerender(<DesktopLayout {...props} model={base} />);
+    expect(screen.getByTestId(`desktop-view-${APP.id}`)).toHaveAttribute('data-visible', 'true');
+});

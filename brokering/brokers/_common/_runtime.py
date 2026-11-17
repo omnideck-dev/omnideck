@@ -49,8 +49,8 @@ async def run_integration_broker(
 
     async def handler(operation_id: str, args: dict[str, Any]) -> dict[str, Any]:
         # Capture one dispatcher per call: never mix accounts within an operation.
-        dispatcher = session_slot.current
-        return await dispatcher.dispatch(operation_id, args)
+        async with session_slot.borrow() as dispatcher:
+            return await dispatcher.dispatch(operation_id, args)
 
     try:
         prepared_session = await session_slot.prepare(initial_connection_fields)

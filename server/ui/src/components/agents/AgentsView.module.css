@@ -163,14 +163,6 @@
 }
 
 /* detail mode: full-width editor with a back nav in the header */
-.detailHead {
-    display: flex;
-    align-items: center;
-    padding: var(--sp-2) var(--sp-3);
-    border-bottom: 1px solid var(--border);
-    flex-shrink: 0;
-}
-
 .detailBody {
     flex: 1;
     min-height: 0;

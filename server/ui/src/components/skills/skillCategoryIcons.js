@@ -7,8 +7,6 @@ const CATEGORY_ICONS = {
     memory: 'bi-bookmark-star',
     theme: 'bi-palette',
     planning: 'bi-diagram-3',
-    image_generation: 'bi-image',
-    music_generation: 'bi-music-note-beamed',
     desktop: 'bi-display',
     custom_tools: 'bi-tools',
     email: 'bi-envelope',

@@ -41,7 +41,7 @@
 
 .ghost {
     background: transparent;
-    color: var(--text-tertiary);
+    color: var(--text-secondary);
     border: none;
 }
 .ghost:hover:not(:disabled) {
@@ -49,24 +49,20 @@
     color: var(--text-primary);
 }
 
+.menuItem {
+    width: 100%;
+    justify-content: flex-start;
+    gap: var(--sp-2);
+    padding: 0 var(--sp-3);
+    background: transparent;
+    color: var(--text-primary);
+}
+.menuItem:hover:not(:disabled) { background: var(--surface); }
+
 .danger {
     background: var(--danger-muted);
     color: var(--danger);
 }
 .danger:hover:not(:disabled) {
     background: color-mix(in srgb, var(--danger) 15%, transparent);
-}
-
-.spinner {
-    width: 12px;
-    height: 12px;
-    display: inline-block;
-    border: 2px solid var(--border);
-    border-top-color: currentColor;
-    border-radius: 50%;
-    animation: spin 800ms linear infinite;
-}
-
-@keyframes spin {
-    to { transform: rotate(360deg); }
 }

@@ -91,6 +91,10 @@ system exposes:
 - DEB/RPM uninstall/reinstall without removing runtime data; and
 - NSIS silent uninstall/reinstall while preserving user/runtime data.
 
+Debian package installs and removals allow apt up to 120 seconds to acquire its
+package lock when unattended upgrades are running. A timeout or package-manager
+error still fails the lane; the suite never removes the lock or stops updates.
+
 Windows qualification also records Security event IDs across the candidate's
 repeated launches and rejects failed Windows sign-ins originating in WebView2.
 This catches upstream browser-runtime regressions that can lock out a local

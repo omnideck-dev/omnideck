@@ -8,7 +8,6 @@ import pytest
 
 from tools.browser import (
     browse_page,
-    browser_visual_action,
     click,
     close_tab,
     drag,
@@ -28,7 +27,6 @@ from tools.browser import (
 
 _TOOL_SIGNATURES = {
     browse_page: "(scope: 'str | None' = None, full_page: 'bool' = False, *, tab: 'str') -> 'str'",
-    browser_visual_action: "(task: 'str', *, tab: 'str') -> 'str'",
     click: "(ref: 'str', *, tab: 'str') -> 'str'",
     close_tab: "(*, tab: 'str') -> 'str'",
     drag: "(source: 'str', target: 'str', *, tab: 'str') -> 'str'",

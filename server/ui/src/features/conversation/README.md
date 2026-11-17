@@ -36,7 +36,8 @@ agent model for the network activity view.
 
 ## Ownership and flow
 
-`ConversationCatalogProvider` owns conversation lists and list mutations.
+`ConversationCatalogProvider` owns conversation lists, list mutations, and browser-session
+run activity (running indicators and unseen-completion dots).
 `ConversationSessionProvider` owns the open conversation and its commands.
 `AgentProvider` owns the agent graph and sub-agent activity. `WorkspaceProvider`
 owns browser, terminal, file, generation, and desktop data by agent.
@@ -79,3 +80,46 @@ any View can subsequently move to either tab group. Navigation targets and
 Views contain stable IDs and serializable metadata rather than React content.
 There is no URL synchronization yet; a future router can implement the same
 navigation-target interface without changing feature components.
+
+## Activity and desktop visibility
+
+The catalog opens one `/api/chat/activity` SSE connection through
+`conversationActivityClient`. It validates snapshot, started, and finished messages
+before dispatching them to `activityReducer`. The message types, decoder, reducer,
+and activity hook are included in the frontend TypeScript checking boundary.
+Native EventSource reconnects automatically; each connection starts with active
+run identities. The server caps each subscriber at 128 pending updates and closes
+the connection on overflow or a socket write taking longer than 30 seconds.
+Disconnect cleanup removes observers without stopping runtime-owned work. The reducer reconciles known runs without restoring historical
+completion dots on a fresh page load. Invalid messages are reported to the console
+and rejected atomically, leaving the last valid state intact.
+
+Desktop visibility is derived from layout state by `visibleViewIds`, shared by the
+renderer and `DesktopViewRuntimeProvider`. `useVisibleViewIds` exposes that result
+separately from keyboard focus. Active tabs in displayed panes and floating views
+are visible; fullscreen exposes only its view. Mobile suppresses a second pane.
+This describes app layout visibility, not browser-tab visibility or user attention.
+
+`ConversationDesktopEffects`, installed in `DesktopDomainEffects`, combines those
+view IDs with the selected conversation ID. Chat and agent-network modes both
+show the selected conversation. It supplies that visible conversation ID (or null)
+to catalog activity before paint. The session does not infer visibility from
+selection, and rendered chat components do not register themselves.
+
+```mermaid
+flowchart LR
+    Layout[Desktop layout state] --> Visibility[Shared visibility selector]
+    Visibility --> Hosts[Desktop view rendering]
+    Visibility --> Runtime[Desktop runtime context]
+    Runtime --> Effects[ConversationDesktopEffects]
+    Session[Selected conversation ID] --> Effects
+    Effects --> Activity[Catalog activity reducer]
+    SSE[Activity SSE] --> Decoder[Validated transport messages]
+    Decoder --> Activity
+    Activity --> Sidebar[Sidebar indicators]
+```
+
+A run finishing while its conversation is visible clears the spinner without
+adding a dot. A hidden completion adds a dot, even if the session is still
+selected. Showing that conversation clears the dot. These visibility updates do
+not change the selected transcript connection or stop server runs.

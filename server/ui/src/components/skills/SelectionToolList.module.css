@@ -1,0 +1,9 @@
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: var(--sp-1) var(--sp-5); margin: 0; padding: 0; list-style: none; }
+.grid li { min-width: 0; }
+.label { display: block; width: 100%; min-width: 0; padding: var(--sp-2) var(--sp-1); border: 0; border-radius: var(--radius-md); background: transparent; color: var(--text-primary); font: inherit; text-align: left; cursor: default; }
+.label:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.title, .description { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.title, .fullTitle { font-size: var(--font-size-body); font-weight: 500; }
+.description, .fullDescription { margin-top: var(--sp-1); font-size: var(--font-size-small); color: var(--text-secondary); }
+.overflow { background: var(--elevated); color: var(--text-primary); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-md); padding: var(--sp-3); overflow-y: auto; overflow-wrap: anywhere; }
+@media (pointer: coarse) { .label { min-height: 44px; } }

@@ -19,7 +19,6 @@ import logging
 from pathlib import Path
 
 from brokering._rpc import serve_rpc
-from brokering.migrations import run_vault_migrations
 from brokering.catalog import CatalogEntry, validate_catalog, validate_host_path_bindings
 from brokering.supervisor._app_sock import AppSockHandler
 from brokering.supervisor._crypto import load_or_init_master_key
@@ -89,9 +88,7 @@ class Supervisor:
         self.sockets_dir.mkdir(parents=True, exist_ok=True)
 
         self._master_key = load_or_init_master_key(self.vault_dir)
-        # Complete schema upgrades before creating any broker or listener.
-        # Failures propagate: no current-format runtime sees a partial upgrade.
-        run_vault_migrations(self.vault_dir)
+        # Container bootstrap completed schema upgrades before this service started.
         self._registry = Registry()
         self._manager = BrokerManager(
             vault_dir=self.vault_dir,

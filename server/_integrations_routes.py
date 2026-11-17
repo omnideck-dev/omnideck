@@ -22,6 +22,7 @@ from brokering.supervisor_client import SupervisorError
 from server._brokering import supervisor_call as _supervisor_call
 from server._integrations_http import error_response
 from server._integration_cache import INTEGRATION_CACHE_KEY
+from server._integration_selections import SELECTION_MUTATION_LOCK, remove_integration_assignments
 
 logger = logging.getLogger(__name__)
 
@@ -271,7 +272,9 @@ async def handle_remove_integration(request: web.Request) -> web.Response:
     deletes the vault files. On success the app refreshes discovery before
     responding, so subsequent runs no longer see this connection's tools.
 
-    On success: ``204 No Content``. On unknown id: ``404``.
+    Removes saved agent/skill assignments before reporting success. Already
+    absent IDs are also cleaned, so a partial storage failure can be retried.
+    On success (including an already absent id): ``204 No Content``.
     """
     connection_id = request.match_info.get("id", "")
     if not connection_id:
@@ -280,16 +283,23 @@ async def handle_remove_integration(request: web.Request) -> web.Response:
             "Couldn't tell which integration to remove. Refresh and try again.",
         )
 
-    try:
-        await _supervisor_call("remove", {"id": connection_id})
-    except (FileNotFoundError, ConnectionRefusedError, OSError) as exc:
-        logger.warning("supervisor unreachable for remove: %s", exc)
-        return web.json_response(
-            {"error": {"code": "UNAVAILABLE", "message": "Integrations service isn't running."}},
-            status=503,
-        )
-    except SupervisorError as exc:
-        return error_response(exc.code, exc.message)
+    async with request.app[SELECTION_MUTATION_LOCK]:
+        try:
+            await _supervisor_call("remove", {"id": connection_id})
+        except (FileNotFoundError, ConnectionRefusedError, OSError) as exc:
+            logger.warning("supervisor unreachable for remove: %s", exc)
+            return web.json_response(
+                {"error": {"code": "UNAVAILABLE", "message": "Integrations service isn't running."}},
+                status=503,
+            )
+        except SupervisorError as exc:
+            if exc.code != "NOT_FOUND":
+                return error_response(exc.code, exc.message)
+        try:
+            remove_integration_assignments(connection_id)
+        except (OSError, ValueError):
+            logger.exception("Failed to remove integration assignments")
+            return error_response("UNAVAILABLE", "Integration removed, but assignments could not be cleaned up. Retry deletion.")
 
     await request.app[INTEGRATION_CACHE_KEY].refresh()
     return web.Response(status=204)

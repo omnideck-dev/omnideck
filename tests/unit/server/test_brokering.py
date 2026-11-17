@@ -2,7 +2,8 @@
 
 from types import SimpleNamespace
 
-from server import _brokering, _integrations_oauth_routes, _integrations_routes, _provider_routes
+from server import _brokering, _integrations_routes, _provider_routes
+from server.oauth_setup import routes as oauth_routes
 
 
 async def test_supervisor_call_preserves_config_and_rollback_timeout(monkeypatch):
@@ -26,5 +27,7 @@ async def test_supervisor_call_preserves_config_and_rollback_timeout(monkeypatch
 
 
 def test_route_families_use_neutral_connection_client():
-    for module in (_integrations_routes, _integrations_oauth_routes, _provider_routes):
+    for module in (_integrations_routes, _provider_routes):
         assert module._supervisor_call is _brokering.supervisor_call
+
+    assert oauth_routes.supervisor_call is _brokering.supervisor_call

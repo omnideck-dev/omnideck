@@ -10,6 +10,8 @@ const GOOGLE_INTEGRATION_SCOPES = [
 ];
 
 const ADAPTERS = {
+    slack: { kind: 'slack_oauth', icon: 'bi-slack', vendor: 'Slack' },
+    mcp: { kind: 'mcp_oauth', icon: 'bi-plug', vendor: 'the service' },
     icloud: {
         kind: 'app_password',
         icon: 'bi-apple',
@@ -52,6 +54,8 @@ const FALLBACK_ADAPTER = {
 };
 
 const UPDATE_COPY = {
+    slack_oauth: { updateAction: 'Sign in again', updateTitle: 'Sign-in', updateDescription: 'Refresh access using your organization’s Slack app.' },
+    mcp_oauth: { updateAction: 'Sign in again', updateTitle: 'Sign-in', updateDescription: 'Refresh access and check for available tools.' },
     app_password: { updateAction: 'Update app password', updateTitle: 'Sign-in', updateDescription: 'Replace the app-specific password for this account.' },
     google_oauth: { updateAction: 'Sign in again', updateTitle: 'Sign-in', updateDescription: 'Refresh access to your Google account.' },
     http_token: { updateAction: 'Update token', updateTitle: 'API access', updateDescription: 'Replace the token and confirm your API connection details.' },

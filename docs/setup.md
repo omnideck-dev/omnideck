@@ -15,10 +15,14 @@ ready signal.
 
 ### Startup flow
 
+Before either service starts, container bootstrap runs the unified data migration
+plan as root, restores file ownership, then launches the broker and app under
+their respective users. See [Data Migrations](migrations.md).
+
 During `app.on_startup` (before the server begins accepting requests):
 
 ```
-1. _run_data_migrations runs migrations synchronously
+1. _configure_routines configures runtime services against migrated state
 2. _init_ready_signal creates app["ready"] and checks setup.is_ready()
    - If True:  app["ready"] is set immediately
    - If False: app["ready"] stays unset

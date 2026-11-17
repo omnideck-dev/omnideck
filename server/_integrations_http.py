@@ -14,6 +14,7 @@ ERROR_STATUS = {
     "WRITE_DENIED": 403,   # deprecated v1 compatibility code
     "UPSTREAM": 502,
     "INTERNAL": 500,
+    "UNAVAILABLE": 503,
 }
 
 

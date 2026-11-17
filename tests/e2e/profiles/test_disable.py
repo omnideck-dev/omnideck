@@ -42,7 +42,7 @@ def test_disable_profile_hides_from_chat_dropdown(page: Page):
         # Flip the enabled toggle off
         toggle = agents.builder.enabled_toggle
         expect(toggle).to_be_checked()
-        toggle.uncheck()
+        agents.builder.set_enabled(False)
 
         agents.builder.save()
         page.wait_for_timeout(500)
@@ -81,14 +81,16 @@ def test_disable_default_profile_shows_inline_error(page: Page):
 
     toggle = agents.builder.enabled_toggle
     expect(toggle).to_be_checked()
-    toggle.uncheck()
+    agents.builder.set_enabled(False)
     agents.builder.save()
 
     # Inline error appears
     expect(agents.builder.save_error).to_be_visible()
     expect(agents.builder.save_error).to_contain_text("default")
 
-    # Toggle should revert to checked
+    # A rejected save preserves the draft; Discard explicitly restores it.
+    expect(toggle).not_to_be_checked()
+    page.get_by_role("button", name="Discard", exact=True).click()
     expect(toggle).to_be_checked()
 
     # API confirms no change
@@ -138,7 +140,7 @@ def test_reenable_profile_restores_it(page: Page):
 
         toggle = agents.builder.enabled_toggle
         expect(toggle).not_to_be_checked()
-        toggle.check()
+        agents.builder.set_enabled(True)
         agents.builder.save()
         page.wait_for_timeout(500)
 

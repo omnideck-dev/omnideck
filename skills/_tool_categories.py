@@ -35,6 +35,8 @@ class ToolCategory:
     description: str
     tools: list[Callable[..., Any]]
     connected: bool | None = None
+    connection_id: str | None = None
+    operations: tuple[dict[str, Any], ...] = ()
 
 
 async def tool_categories(connections: ConnectionSnapshot = ()) -> dict[str, ToolCategory]:
@@ -47,7 +49,8 @@ async def tool_categories(connections: ConnectionSnapshot = ()) -> dict[str, Too
     # Imported here, not at module top: reaching into the tools package runs its
     # __init__, which pulls tools.browser -> agent_core.events -> this package — a
     # load-time cycle. By call time agent_core.events is fully initialized.
-    from tools.integrations import OperationTools, integration_tools_by_category
+    from tools.integrations._tool_resolution import connection_tools
+    from integrations.operations import operation_for_id
 
     categories = dict(_static_tool_categories())
     from settings import custom_tools_enabled
@@ -55,16 +58,28 @@ async def tool_categories(connections: ConnectionSnapshot = ()) -> dict[str, Too
     if custom_tools_enabled():
         categories["custom_tools"] = _custom_tools_category()
 
-    by_category = integration_tools_by_category(connections)
-    for cid, integration in _INTEGRATION_TOOL_CATEGORIES.items():
-        backed = by_category.get(cid, OperationTools([], available=False))
-        # A category is connected when at least one granted operation supplies a tool.
+    for connection in connections:
+        if connection.kind != "integration":
+            continue
+        cid = f"integration:{connection.id}"
+        operations = []
+        for operation_id in sorted(connection.operation_grants):
+            operation = operation_for_id(operation_id)
+            if operation is not None:
+                operations.append(operation.public_dict())
+        operations.extend(
+            {"id": op.id, "title": op.title, "description": op.description}
+            for op in connection.discovered_operations
+            if op.id in connection.operation_grants and op.unavailable_reason is None
+        )
         categories[cid] = ToolCategory(
             cid,
-            integration.label,
-            integration.description,
-            backed.tools,
-            connected=backed.available,
+            connection.label or connection.slug,
+            f"Tools from {connection.label or connection.slug}.",
+            connection_tools(connection),
+            connected=connection.state == "running",
+            connection_id=connection.id,
+            operations=tuple(operations),
         )
     return categories
 
@@ -76,8 +91,7 @@ async def tool_categories(connections: ConnectionSnapshot = ()) -> dict[str, Too
 def _static_tool_categories() -> dict[str, ToolCategory]:
     """The feature-gated static categories, built once from the active flags.
 
-    A category whose tools require a disabled feature is left out; the
-    browser/desktop grounding tools are included only when visual grounding is on.
+    A category whose tools require a disabled feature is left out.
     Tool imports stay inside the flag branches on purpose — don't hoist them, or a
     disabled feature's module gets imported regardless.
     """
@@ -135,11 +149,6 @@ def _static_tool_categories() -> dict[str, ToolCategory]:
         execute_javascript,
         save_page_content,
     ]
-    if flags.visual_grounding:
-        from tools.browser import browser_visual_action
-
-        browser_tools.append(browser_visual_action)
-
     categories: dict[str, ToolCategory] = {
         "coding": ToolCategory(
             "coding",
@@ -179,26 +188,6 @@ def _static_tool_categories() -> dict[str, ToolCategory]:
         ),
     }
 
-    if flags.image_generation:
-        from tools.generation import generate_image
-
-        categories["image_generation"] = ToolCategory(
-            "image_generation",
-            "Image Generation",
-            "Generate images from text prompts.",
-            [generate_image],
-        )
-
-    if flags.music_generation:
-        from tools.generation import generate_music
-
-        categories["music_generation"] = ToolCategory(
-            "music_generation",
-            "Music Generation",
-            "Generate music from text prompts.",
-            [generate_music],
-        )
-
     if flags.desktop:
         from tools.desktop import (
             describe_screen,
@@ -223,10 +212,6 @@ def _static_tool_categories() -> dict[str, ToolCategory]:
             scroll,
             desktop_shell,
         ]
-        if flags.visual_grounding:
-            from tools.desktop import perform_visual_action
-
-            desktop_tools.append(perform_visual_action)
         categories["desktop"] = ToolCategory(
             "desktop",
             "Desktop Control",
@@ -248,24 +233,6 @@ def _custom_tools_category() -> ToolCategory:
         "The agent can create, look up, and run reusable tools.",
         [create_custom_tool, lookup_custom_tools, run_custom_tool],
     )
-
-
-# ── Integration categories: operation-backed tools resolved per turn ──────────
-
-
-@dataclass(frozen=True)
-class _IntegrationToolCategory:
-    label: str
-    description: str
-
-
-_INTEGRATION_TOOL_CATEGORIES: dict[str, _IntegrationToolCategory] = {
-    "email": _IntegrationToolCategory("Email", "Read, search, and send mail."),
-    "calendar": _IntegrationToolCategory("Calendar", "Manage calendar events."),
-    "drive": _IntegrationToolCategory("Drive", "Manage cloud drive files."),
-    "contacts": _IntegrationToolCategory("Contacts", "Look up contacts."),
-    "http": _IntegrationToolCategory("HTTP / API", "Call external HTTP APIs."),
-}
 
 
 __all__ = ["ToolCategory", "tool_categories"]

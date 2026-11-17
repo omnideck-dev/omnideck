@@ -26,6 +26,9 @@ const ALL_TABS = [
 
 export default function SettingsView({
     initialTab = 'skills',
+    initialConnectionId,
+    initialSkillId,
+    selectionRequest,
 }) {
     const { features } = useAppData();
     const tabs = useMemo(
@@ -33,9 +36,13 @@ export default function SettingsView({
         [features],
     );
     const [activeTab, setActiveTab] = useState(initialTab);
-    useEffect(() => setActiveTab(initialTab), [initialTab]);
+    useEffect(() => setActiveTab(initialTab), [initialTab, selectionRequest]);
+    const [connectionId, setConnectionId] = useState(initialConnectionId);
+    useEffect(() => setConnectionId(initialConnectionId), [initialConnectionId, selectionRequest]);
     const active = tabs.find((t) => t.id === activeTab) ?? tabs[0];
     const Active = active.Component;
+    const [skillsVisited, setSkillsVisited] = useState(initialTab === 'skills');
+    useEffect(() => { if (active.id === 'skills') setSkillsVisited(true); }, [active.id]);
     return (
         <div className={styles.page} data-testid="settings-page">
             <BrandTabs
@@ -46,14 +53,23 @@ export default function SettingsView({
                 testIdPrefix="settings-tab"
                 idBase="settings"
             />
-            <div
+            {(skillsVisited || active.id === 'skills') && <div
+                className={active.id === 'skills' ? styles.content : styles.hidden}
+                hidden={active.id !== 'skills'}
+                id="settings-panel-skills" role="tabpanel" aria-labelledby="settings-tab-skills"
+            >
+                <SkillsTab initialSkillId={initialSkillId} selectionRequest={selectionRequest}
+                    onOpenIntegration={id => { setConnectionId(id); setActiveTab('integrations'); }} />
+            </div>}
+            {active.id !== 'skills' && <div
                 className={styles.content}
                 id={`settings-panel-${active.id}`}
                 role="tabpanel"
                 aria-labelledby={`settings-tab-${active.id}`}
             >
-                <Active />
-            </div>
+                <Active initialConnectionId={connectionId} initialSkillId={initialSkillId} selectionRequest={selectionRequest}
+                    onOpenIntegration={id => { setConnectionId(id); setActiveTab('integrations'); }} />
+            </div>}
         </div>
     );
 }

@@ -50,12 +50,6 @@ vi.mock('../components/DesktopPreview.jsx', () => ({
         : null,
 }));
 
-vi.mock('../components/GenerationPreview.jsx', () => ({
-    default: ({ preview }) => preview
-        ? <div data-testid="generation-preview">Generation: {preview.status}</div>
-        : null,
-}));
-
 vi.mock('../features/agent/AgentNetworkView.jsx', () => ({
     default: ({
         selectedAgentId,
@@ -222,6 +216,7 @@ const streamMock = vi.hoisted(() => {
         loadConversation: () => true,
         newConversation: () => {},
         activeConversationId: 'conversation-1',
+        savedConversationId: null,
     });
     return { makeDefault, value: makeDefault() };
 });
@@ -724,7 +719,11 @@ describe('App view transitions', () => {
 
         it('restores open tabs, tab group placement, and active selections after remount', async () => {
             const loadConversation = vi.fn(() => true);
-            streamMock.value = { ...streamMock.makeDefault(), loadConversation };
+            streamMock.value = {
+                ...streamMock.makeDefault(),
+                loadConversation,
+                savedConversationId: 'conversation-1',
+            };
             const firstRender = await renderApp();
 
             act(() => fireEvent.click(screen.getByTestId('open-apps')));
@@ -911,19 +910,6 @@ describe('App view transitions', () => {
 
             expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
             expect(screen.getByTestId('terminal-panel')).toBeInTheDocument();
-        });
-
-        it('ignores retired generation preview events', async () => {
-            const { dispatch } = await renderApp();
-            startRoot(dispatch, 'r1');
-            dispatch({
-                type: 'UPDATE_GENERATION_PREVIEW',
-                agentId: 'r1',
-                preview: { gen_id: 'g1', media_type: 'image', status: 'generating', step: 5, total_steps: 20 },
-            });
-
-            expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
-            expect(screen.queryByTestId('generation-preview')).not.toBeInTheDocument();
         });
 
         it('previews persist into second turn', async () => {
