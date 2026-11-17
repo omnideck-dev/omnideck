@@ -55,11 +55,8 @@ describe('getWorkspaceEventActions', () => {
         });
     });
 
-    it('ignores retired desktop and generation events', () => {
+    it('ignores retired desktop events', () => {
         expect(getWorkspaceEventActions(event('desktop_active'))).toEqual([]);
-        expect(getWorkspaceEventActions(event('generation_preview', {
-            gen_id: 'generation-1',
-        }))).toEqual([]);
     });
 
     it('ignores unrelated and missing events', () => {

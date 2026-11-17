@@ -37,10 +37,9 @@ RUN ln -fs /usr/share/zoneinfo/Etc/UTC /etc/localtime && \
     echo "Etc/UTC" > /etc/timezone
 
 # ── System packages ──────────────────────────────────────────────────────────
-# Single apt layer — one update, one clean. Deliberately lean: heavy media,
-# GPU, and desktop-environment stacks are NOT baked in. The feature-gated tools
-# that need them (image/music generation, visual grounding, viewable desktop)
-# install their dependencies on demand when the feature is toggled on.
+# Single apt layer — one update, one clean. Deliberately lean: the
+# desktop-environment stack is NOT baked in. The viewable desktop installs its
+# dependencies on demand when the feature is toggled on.
 #
 # NOTE: python3-pip is deliberately omitted.  We bootstrap pip via ensurepip
 # for Python 3.12.  The system python3-pip drags in 3.10-era packages (PIL,

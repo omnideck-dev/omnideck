@@ -16,7 +16,6 @@ _DESKTOP="${ENABLE_DESKTOP:-false}"
 # Re-export container env vars so gosu children inherit them.
 # Podman/Docker -e vars are in the process env but not always exported
 # in the bash sense when tini execs the entrypoint.
-[ -n "${HF_TOKEN:-}" ] && export HF_TOKEN
 [ -n "${GITHUB_TOKEN:-}" ] && export GITHUB_TOKEN
 [ -n "${GITHUB_USER:-}" ] && export GITHUB_USER
 # Default LLM_HOST to host Ollama if not explicitly set

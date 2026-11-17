@@ -6,7 +6,6 @@ const EMPTY_WORKSPACE = Object.freeze({
     lastBrowserTabId: null,
     terminalLines: [],
     desktopActive: false,
-    generationPreview: null,
     openFiles: [],
 });
 
@@ -22,7 +21,6 @@ function newWorkspace(previous = null) {
         lastBrowserTabId: previous.lastBrowserTabId,
         terminalLines: previous.terminalLines,
         desktopActive: previous.desktopActive,
-        generationPreview: previous.generationPreview,
         openFiles: previous.openFiles,
     };
 }
@@ -107,21 +105,6 @@ function workspaceReducer(state, action) {
             return updateWorkspace(state, action.agentId, (workspace) => ({
                 ...workspace,
                 desktopActive: false,
-            }));
-
-        case 'UPDATE_GENERATION_PREVIEW':
-            return updateWorkspace(state, action.agentId, (workspace) => {
-                const previous = workspace.generationPreview;
-                const preview = previous?.gen_id === action.preview.gen_id
-                    ? { ...previous, ...action.preview }
-                    : action.preview;
-                return { ...workspace, generationPreview: preview };
-            });
-
-        case 'CLEAR_GENERATION_PREVIEW':
-            return updateWorkspace(state, action.agentId, (workspace) => ({
-                ...workspace,
-                generationPreview: null,
             }));
 
         case 'OPEN_FILE':

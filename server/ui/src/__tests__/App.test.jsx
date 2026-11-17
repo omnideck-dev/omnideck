@@ -50,12 +50,6 @@ vi.mock('../components/DesktopPreview.jsx', () => ({
         : null,
 }));
 
-vi.mock('../components/GenerationPreview.jsx', () => ({
-    default: ({ preview }) => preview
-        ? <div data-testid="generation-preview">Generation: {preview.status}</div>
-        : null,
-}));
-
 vi.mock('../features/agent/AgentNetworkView.jsx', () => ({
     default: ({
         selectedAgentId,
@@ -916,19 +910,6 @@ describe('App view transitions', () => {
 
             expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
             expect(screen.getByTestId('terminal-panel')).toBeInTheDocument();
-        });
-
-        it('ignores retired generation preview events', async () => {
-            const { dispatch } = await renderApp();
-            startRoot(dispatch, 'r1');
-            dispatch({
-                type: 'UPDATE_GENERATION_PREVIEW',
-                agentId: 'r1',
-                preview: { gen_id: 'g1', media_type: 'image', status: 'generating', step: 5, total_steps: 20 },
-            });
-
-            expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
-            expect(screen.queryByTestId('generation-preview')).not.toBeInTheDocument();
         });
 
         it('previews persist into second turn', async () => {
