@@ -15,6 +15,8 @@ from pydantic import BaseModel, Field
 
 from config import load_config
 
+from ._policy import is_reserved_skill_id
+
 logger = logging.getLogger(__name__)
 
 SKILLS_SUBDIR = "skills"
@@ -52,6 +54,14 @@ def _load_all() -> dict[str, SkillRecord]:
 def list_skill_records() -> list[SkillRecord]:
     """All skill records, sorted by name."""
     return sorted(_load_all().values(), key=lambda r: r.name)
+
+
+def list_public_skill_records() -> list[SkillRecord]:
+    """Skill records users and agents may invoke, sorted by name.
+
+    Every record except the application's reserved capabilities.
+    """
+    return [record for record in list_skill_records() if not is_reserved_skill_id(record.id)]
 
 
 def get_skill_record(skill_id: str) -> SkillRecord | None:

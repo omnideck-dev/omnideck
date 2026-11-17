@@ -23,6 +23,7 @@ from agent_core.control import StopRequestedError
 from agent_core.events import (
     AgentEvent,
     ErrorPayload,
+    SkillContext,
     SpawnRequestedPayload,
     UserAttachment,
     UserMessagePayload,
@@ -33,8 +34,9 @@ from agent_core.turn import ExecutionContext, ExecutionResult, ToolLoopError
 from tools.virtual_computer.receive_file import receive_attachment
 
 from ._compaction import LLMCompactionStrategy
+from ._composer_effects import apply_composer_effects, composer_effects
 from ._factory import AgentFactory, persist_loaded_skills
-from ._models import AgentRunRequest, RunAttachment, RunPolicy
+from ._models import AgentRunRequest, RunAttachment, RunContext, RunPolicy
 from ._scratchpad_hook import ScratchpadHook
 from ._session import RunSession
 from ._spawn import make_spawn_tool
@@ -73,6 +75,7 @@ class AgentRunner:
                 attachments=attachments,
                 name=request.policy.agent_name,
                 policy=request.policy,
+                message_context=request.context,
             )
         except StopRequestedError:
             return ExecutionResult("stopped")
@@ -102,6 +105,7 @@ class AgentRunner:
         attachments: list[UserAttachment] | None = None,
         policy: RunPolicy = _CHILD_POLICY,
         correlation_id: str | None = None,
+        message_context: Sequence[RunContext] = (),
     ) -> ExecutionResult:
         """Use explicit session-owned identity, controls, history, and event delivery."""
         prepared = None
@@ -162,9 +166,21 @@ class AgentRunner:
                     ))
                     publish_event(
                         AgentEvent(
-                            payload=UserMessagePayload(type="user_message", content=message, attachments=attachments or [])
+                            payload=UserMessagePayload(
+                                type="user_message",
+                                content=message,
+                                attachments=attachments or [],
+                                context=[
+                                    SkillContext(type="skill", skill_id=item.skill_id, name=item.name)
+                                    for item in message_context
+                                ],
+                            )
                         )
                     )
+                    # Applied after the user's message so the transcript shows it
+                    # first, and before the model's first call so the skill's
+                    # instructions and tools are there from the start.
+                    await apply_composer_effects(composer_effects(message_context), prepared.capabilities)
                     parallel = load_config().parallel
                     result = await AgentExecutor().execute(
                         history=history,

@@ -23,6 +23,7 @@ export const CONVERSATION_EVENT_TYPES = Object.freeze(/** @type {const} */ ({
     ITERATION: 'iteration',
     TOOL_RESULT: 'tool_result',
     COMPACTION: 'compaction',
+    SKILL_LOADED: 'skill_loaded',
 }));
 
 /** Item names understood by the chat transcript's Turn renderer. */
@@ -33,6 +34,7 @@ export const TRANSCRIPT_ITEM_KINDS = Object.freeze(/** @type {const} */ ({
     FILE_OUTPUT: 'file_output',
     COMPACTION: 'compaction',
     SPAWN_REQUESTED: 'spawn_requested',
+    SKILL_LOADED: 'skill_loaded',
     ERROR: 'error',
 }));
 

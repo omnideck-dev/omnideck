@@ -90,6 +90,46 @@ class TestAgentCapabilities:
         assert ls.skill_ids == frozenset({"base", "extra"})
         assert ls.loaded_skill_ids == frozenset({"extra"})
 
+    def test_loads_append_in_order_and_restore_the_same(self):
+        """A later load only appends, and restoring in the recorded order
+        rebuilds the same prompt section and tool list — otherwise the
+        provider's cached prefix is invalidated."""
+        base = _make_skill("base", ["a"])
+        live = AgentCapabilities([])
+        live.add(base)
+        live.load(_make_skill("zeta", ["z"]))
+        live.load(_make_skill("alpha", ["y"]))
+        assert live.loaded_skill_order == ("zeta", "alpha")
+        assert [t.__name__ for t in live.tools] == ["a", "z", "y"]
+
+        restored = AgentCapabilities([])
+        restored.add(base)
+        for name, tool in (("zeta", "z"), ("alpha", "y")):
+            restored.load(_make_skill(name, [tool]))
+
+        assert live.build_prompt_extensions() == restored.build_prompt_extensions()
+        assert [t.__name__ for t in restored.tools] == ["a", "z", "y"]
+
+    def test_skill_heading_carries_the_composer_token(self):
+        """The heading names the `/token` a user types, so the model can tie a
+        typed token to the skill it invokes."""
+        ls = AgentCapabilities([])
+        ls.add(Skill(name="Joke teller", description="", prompt="Tell jokes.", tools=[]))
+        assert "### Joke teller (/joke-teller)\nTell jokes." in ls.build_prompt_extensions()
+
+    def test_skill_heading_falls_back_to_id_when_name_has_no_slug(self):
+        ls = AgentCapabilities([])
+        ls.add(Skill(id="sk_1", name="!!!", description="", prompt="p", tools=[]))
+        assert "### !!! (/sk_1)" in ls.build_prompt_extensions()
+
+    def test_already_loaded_line_only_when_skills_are_attached(self):
+        """An agent with capabilities but no skills isn't told about load_skill."""
+        caps = AgentCapabilities([])
+        caps.add_capability(AgentCapability("selected-tools", "Tools", "", []))
+        assert "load_skill" not in caps.build_prompt_extensions()
+        caps.add(_make_skill("coder", ["a"]))
+        assert "already loaded" in caps.build_prompt_extensions()
+
     def test_add_idempotent(self):
         """Adding the same skill twice is a no-op."""
         sk = _make_skill("sk", ["t"])
@@ -120,7 +160,8 @@ class TestAgentCapabilities:
         ls.add(coder)
         prompt = ls.build_prompt_extensions()
         assert "── Capabilities & Skills ──" in prompt
-        assert "### browser" in prompt
+        assert "already loaded" in prompt
+        assert "### browser (/browser)" in prompt
         assert "Browse the web." in prompt
-        assert "### coder" in prompt
+        assert "### coder (/coder)" in prompt
         assert "Edit files." in prompt

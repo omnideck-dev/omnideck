@@ -13,6 +13,11 @@ import {
 } from 'vitest';
 
 import { AgentProvider, useAgentDispatch } from '../../features/agent/AgentState.jsx';
+
+// Current skill names feed the transcript's skill notes; none are needed here.
+vi.mock('../../contexts/AppData.jsx', () => ({
+    useAppData: () => ({ skillsHook: { skills: [] } }),
+}));
 import ChatMessages from '../ChatMessages.jsx';
 
 function Harness({ turns }) {

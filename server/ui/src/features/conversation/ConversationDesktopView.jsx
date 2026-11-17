@@ -56,11 +56,11 @@ export default function ConversationDesktopView({ view, tabGroupId }) {
     const mode = navigationTarget?.kind || 'chat';
     const selectedAgentId = navigationTarget?.agentId || null;
 
-    const handleSend = useCallback((message, attachments) => {
+    const handleSend = useCallback((message, attachments, context) => {
         if (isStreaming) {
             if (!stopRequested) sendNudge(message);
         } else {
-            sendMessage(message, attachments, selectedProfileId);
+            sendMessage(message, attachments, selectedProfileId, context);
         }
     }, [
         isStreaming,

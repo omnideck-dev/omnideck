@@ -22,6 +22,24 @@ class RunAttachment:
 
 
 @dataclass(frozen=True, slots=True)
+class SkillContextRef:
+    """A skill the user explicitly selected for this run.
+
+    The skill is loaded by ``skill_id``. ``name`` is the label the user saw,
+    recorded with the message and used to report a skill that can no longer
+    be loaded.
+    """
+
+    skill_id: str
+    name: str
+
+
+# What a user can explicitly attach to a run, one variant per kind. Agents
+# and artifacts become further variants.
+RunContext = SkillContextRef
+
+
+@dataclass(frozen=True, slots=True)
 class RunPolicy:
     """Explicit history, prompt, and resource lifetime choices for a root run."""
 
@@ -45,6 +63,8 @@ class AgentRunRequest:
     attachments: Sequence[RunAttachment] | None
     profile_id: str | None
     policy: RunPolicy = RunPolicy()
+    # Items the user explicitly selected for this message, in message order.
+    context: Sequence[RunContext] = ()
 
 
 @dataclass(frozen=True, slots=True)

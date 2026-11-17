@@ -227,4 +227,4 @@ def persist_loaded_skills(agent_capabilities: AgentCapabilities, conversation_id
     """Persist the conversation's dynamically loaded skill IDs."""
     from conversations import save_loaded_skills
 
-    save_loaded_skills(conversation_id, agent_capabilities.loaded_skill_ids)
+    save_loaded_skills(conversation_id, agent_capabilities.loaded_skill_order)

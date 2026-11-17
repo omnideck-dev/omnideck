@@ -17,7 +17,9 @@ from conversations._store import (
     list_conversations,
     load_conversation_metadata,
     load_conversation_profile,
+    load_loaded_skills,
     save_conversation_folder,
+    save_loaded_skills,
     save_conversation_pinned,
     save_conversation_profile,
     save_conversation_title,
@@ -368,3 +370,16 @@ class TestConversationProfile:
         meta = load_conversation_metadata("conv-1")
         assert meta["title"] == "My Title"
         assert meta["profile_id"] == "research"
+
+
+@pytest.mark.unit
+def test_loaded_skills_round_trip_in_load_order(_conv_dir: Path) -> None:
+    """Restored skills come back in the order they were loaded, so the rebuilt
+    system prompt matches across turns and restarts."""
+    save_loaded_skills("c1", ("zeta", "alpha", "mid"))
+    assert load_loaded_skills("c1") == ["zeta", "alpha", "mid"]
+
+
+@pytest.mark.unit
+def test_load_loaded_skills_empty_when_unset(_conv_dir: Path) -> None:
+    assert load_loaded_skills("missing") == []

@@ -47,6 +47,12 @@ export interface IterationToolCall {
     arguments: Record<string, unknown> | null;
 }
 
+export interface SkillContext {
+    type: 'skill';
+    skill_id: string;
+    name: string;
+}
+
 export interface UserAttachment {
     filename: string;
     content_type: string;
@@ -151,6 +157,7 @@ export interface UserMessagePayload {
     content: string;
     attachments: Array<UserAttachment>;
     is_nudge: boolean;
+    context: Array<SkillContext>;
 }
 
 export interface IterationPayload {
@@ -178,6 +185,13 @@ export interface CompactionPayload {
     stats: CompactionStats | null;
 }
 
+export interface SkillLoadedPayload {
+    type: 'skill_loaded';
+    skill_id: string;
+    skill_name: string;
+    status: 'loaded' | 'already_loaded' | 'unavailable';
+}
+
 export interface ErrorPayload {
     type: 'error';
     message: string;
@@ -202,6 +216,7 @@ export type ConversationEventPayload =
     | IterationPayload
     | ToolResultPayload
     | CompactionPayload
+    | SkillLoadedPayload
     | ErrorPayload;
 
 export type ConversationEvent =
@@ -222,6 +237,7 @@ export type ConversationEvent =
     | (ConversationEventMetadata & IterationPayload)
     | (ConversationEventMetadata & ToolResultPayload)
     | (ConversationEventMetadata & CompactionPayload)
+    | (ConversationEventMetadata & SkillLoadedPayload)
     | (ConversationEventMetadata & ErrorPayload);
 
 export type StreamEnvelope = StreamEnvelopeMetadata & {

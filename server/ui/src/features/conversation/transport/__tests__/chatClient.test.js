@@ -74,6 +74,15 @@ describe('streamChatTurn', () => {
         });
     });
 
+    it('sends composer context items', async () => {
+        const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true, body: null });
+        const context = [{ type: 'skill', skill_id: 'j1', name: 'Joke teller' }];
+
+        await collect(streamChatTurn({ message: '/joke-teller', context }));
+
+        expect(JSON.parse(fetchSpy.mock.calls[0][1].body).context).toEqual(context);
+    });
+
     it('omits optional request fields when they are not supplied', async () => {
         const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true, body: null });
 

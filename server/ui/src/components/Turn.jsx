@@ -6,6 +6,7 @@ import {
 import { containerFileUrl } from '../utils/containerFileUrl.js';
 import Message from './Message.jsx';
 import CompactionChip from './CompactionChip.jsx';
+import SkillLoadedNote from './SkillLoadedNote.jsx';
 import Callout from './primitives/Callout.jsx';
 import styles from './Message.module.css';
 
@@ -86,6 +87,7 @@ export default function Turn({
     onSelectAgent,
     streaming,
     stalled = false,
+    currentSkillNames,
 }) {
     if (!turn || !Array.isArray(turn.children)) return null;
 
@@ -106,6 +108,12 @@ export default function Turn({
         } else if (child.kind === ITEM.COMPACTION) {
             flushAssistant();
             items.push({ kind: 'compaction', child });
+        } else if (child.kind === ITEM.SKILL_LOADED) {
+            // Skills a message loads arrive together; show them as one note.
+            flushAssistant();
+            const last = items[items.length - 1];
+            if (last?.kind === 'skills') last.skills.push(child);
+            else items.push({ kind: 'skills', skills: [child] });
         } else if (child.kind === ITEM.ERROR) {
             flushAssistant();
             items.push({ kind: 'error', child });
@@ -156,6 +164,15 @@ export default function Turn({
                             userIntentSummary={item.child.userIntentSummary}
                             stats={item.child.stats}
                             timestamp={item.child.timestamp}
+                        />
+                    );
+                }
+                if (item.kind === 'skills') {
+                    return (
+                        <SkillLoadedNote
+                            key={`s-${item.skills[0].id}`}
+                            skills={item.skills}
+                            currentNames={currentSkillNames}
                         />
                     );
                 }

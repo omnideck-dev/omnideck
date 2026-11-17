@@ -119,7 +119,7 @@ async def test_shared_runner_preserves_delegation_ownership_and_real_tool_result
         assert includes_memory == (entry != "routine" and request["context"].parent_execution_id is None)
     assert runtime._runs_by_id == {}
     assert set(h.exited_agents) == {e["agent_id"] for e in starts}
-    assert load_loaded_skills(conversation) == set()
+    assert load_loaded_skills(conversation) == []
     for tool in provider.spawn_tools.values():
         with pytest.raises(RuntimeError, match="owning parent"):
             await tool(instructions=say("must not run"), profile="leaf")

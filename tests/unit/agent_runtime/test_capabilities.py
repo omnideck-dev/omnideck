@@ -265,7 +265,7 @@ async def test_build_without_conversation_id_skips_restore(monkeypatch):
 
 @pytest.mark.unit
 async def test_persist_loaded_skills_writes_ids(monkeypatch):
-    """persist_loaded_skills hands the state's loaded ids to the conversation store."""
+    """persist_loaded_skills hands the state's loaded ids, in load order, to the conversation store."""
     saved = {}
     monkeypatch.setattr(
         "conversations.save_loaded_skills",
@@ -276,7 +276,7 @@ async def test_persist_loaded_skills_writes_ids(monkeypatch):
     await _restore_persisted_loaded_skills(state, ["coder"])
     persist_loaded_skills(state, "c1")
     assert saved["cid"] == "c1"
-    assert saved["ids"] == frozenset({"coder"})
+    assert saved["ids"] == ("coder",)
 
 
 @pytest.mark.unit

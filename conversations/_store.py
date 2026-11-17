@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -50,8 +51,8 @@ def _get_archived_conv_dir(conversation_id: str) -> Path:
 # -- Conversation metadata persistence ---------------------------------------
 
 
-def save_loaded_skills(conversation_id: str, skills: frozenset[str]) -> None:
-    """Persist loaded skill names to conversation metadata."""
+def save_loaded_skills(conversation_id: str, skills: Sequence[str]) -> None:
+    """Persist loaded skill ids to conversation metadata, in load order."""
     conv_dir = _get_conv_dir(conversation_id)
     conv_dir.mkdir(parents=True, exist_ok=True)
 
@@ -63,17 +64,17 @@ def save_loaded_skills(conversation_id: str, skills: frozenset[str]) -> None:
         except Exception:
             pass
 
-    metadata["loaded_skills"] = sorted(skills)
+    metadata["loaded_skills"] = list(dict.fromkeys(skills))
     tmp = metadata_path.with_suffix(".tmp")
     tmp.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
     tmp.replace(metadata_path)
 
 
-def load_loaded_skills(conversation_id: str) -> set[str]:
-    """Load persisted skill names from conversation metadata."""
+def load_loaded_skills(conversation_id: str) -> list[str]:
+    """Load persisted skill ids from conversation metadata, in load order."""
     metadata = load_conversation_metadata(conversation_id)
     raw = metadata.get("loaded_skills", [])
-    return set(raw) if isinstance(raw, list) else set()
+    return list(dict.fromkeys(raw)) if isinstance(raw, list) else []
 
 
 def save_conversation_title(conversation_id: str, title: str) -> None:

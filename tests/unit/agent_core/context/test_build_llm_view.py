@@ -219,6 +219,36 @@ def test_compaction_applies_summary_marker_and_kept_range():
     ]
 
 
+def _skill_loaded(evt_id: str) -> dict:
+    return {
+        "id": evt_id, "type": "skill_loaded", "timestamp": "2026-01-01T00:00:02",
+        "agent_id": ROOT, "depth": 0, "skill_id": "s", "skill_name": "S", "status": "loaded",
+    }
+
+
+def test_skill_loaded_events_are_not_model_messages_and_keep_compaction_bounds():
+    """Rebuilding history only reads what was recorded: skill_loaded events
+    add nothing to the model view, before or after a compaction boundary."""
+    events = [
+        _started(ROOT, "COMPUTRON"),
+        _user(ROOT, "/s first user msg", evt_id="evt_u1"),
+        _skill_loaded("evt_s1"),
+        _iter(ROOT, 0, content="working", evt_id="evt_i1"),
+        _iter(ROOT, 1, content="recent", evt_id="evt_i2"),
+        _compaction(ROOT, "summary text", kept_from_id="evt_i2", kept_to_id="evt_i2"),
+        _user(ROOT, "/s again", evt_id="evt_u2"),
+        _skill_loaded("evt_s2"),
+        _iter(ROOT, 2, content="after compaction", evt_id="evt_i3"),
+    ]
+    assert build_llm_view(events) == [
+        {"role": "user", "content": "/s first user msg"},
+        {"role": "assistant", "content": _SUMMARY_PREFIX + "summary text"},
+        {"role": "assistant", "content": "recent", "agent_name": "COMPUTRON"},
+        {"role": "user", "content": "/s again"},
+        {"role": "assistant", "content": "after compaction", "agent_name": "COMPUTRON"},
+    ]
+
+
 def test_compaction_user_intent_summary_overrides_first_user_message():
     events = [
         _started(ROOT, "COMPUTRON"),

@@ -10,11 +10,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from agent_runtime import AgentRuntime, AgentRunner, AgentRunRequest, RunAttachment
+from agent_runtime import AgentRuntime, AgentRunner, AgentRunRequest, RunAttachment, RunPolicy, SkillContextRef
 from agent_runtime import _runner as runner_module
 from agent_runtime import _factory as factory_module
 from agents._agent_profiles import AgentProfile
-from conversations import load_events_jsonl
+from conversations import load_events_jsonl, load_loaded_skills
+from skills._store import SkillRecord, save_skill_record
 from agent_core.context import ConversationHistory
 from agent_core.events import (
     AgentCompletedPayload,
@@ -296,3 +297,118 @@ async def test_stopped_root_lifecycle_precedes_turn_end(
     assert root_completed[-1].payload.status == "stopped"
     assert seen.index(root_completed[-1]) < len(seen) - 1
     assert seen[-1].payload.type == "turn_end"
+
+
+def _skill_record(id_: str = "skill_review", name: str = "review-code") -> SkillRecord:
+    return save_skill_record(SkillRecord(id=id_, name=name, description="", prompt="Review carefully.", tool_categories=[]))
+
+
+async def _run_capturing(monkeypatch, request: AgentRunRequest, profile: AgentProfile | None = None) -> dict[str, Any]:
+    captured: dict[str, Any] = {}
+
+    async def _capture_execute(self, *, history: ConversationHistory, capabilities, **_kwargs: Any) -> ExecutionResult:
+        captured["messages"] = history.non_system_messages
+        captured["skill_ids"] = capabilities.skill_ids
+        captured["tools"] = [tool.__name__ for tool in capabilities.tools]
+        captured["prompt_extensions"] = capabilities.build_prompt_extensions()
+        return ExecutionResult("success")
+
+    monkeypatch.setattr(factory_module, "get_agent_profile", lambda _pid: profile or _profile())
+    monkeypatch.setattr(runner_module.AgentExecutor, "execute", _capture_execute)
+    info = await AgentRuntime().start(request)
+    _ = [record async for record in info.events(after_seq=0)]
+    return captured
+
+
+async def test_selected_skill_is_loaded_before_the_first_model_call(monkeypatch, tmp_path) -> None:
+    """The skill's instructions and tools are attached before the agent runs,
+    and the model gets the message exactly as typed."""
+    monkeypatch.setattr("skills._store._skills_dir", lambda: tmp_path / "skills")
+    _skill_record()
+    conversation_id = "runner-composer-skill"
+    message = "Fix the bug using /review-code"
+
+    captured = await _run_capturing(monkeypatch, AgentRunRequest(
+        conversation_id=conversation_id, message=message, attachments=None, profile_id="profile-1",
+        context=(SkillContextRef("skill_review", "review-code"),),
+    ))
+
+    assert "skill_review" in captured["skill_ids"]
+    assert "### review-code (/review-code)\nReview carefully." in captured["prompt_extensions"]
+    assert captured["messages"][0]["content"] == message
+
+    persisted = load_events_jsonl(conversation_id)
+    user = next(event for event in persisted if event["type"] == "user_message")
+    assert user["content"] == message
+    assert user["context"] == [{"type": "skill", "skill_id": "skill_review", "name": "review-code"}]
+    types = [event["type"] for event in persisted]
+    assert types.index("user_message") < types.index("skill_loaded")
+    loaded = next(event for event in persisted if event["type"] == "skill_loaded")
+    assert (loaded["skill_id"], loaded["skill_name"], loaded["status"]) == ("skill_review", "review-code", "loaded")
+    assert load_loaded_skills(conversation_id) == ["skill_review"]
+
+
+async def test_selected_skill_loads_without_granting_the_load_skill_tool(monkeypatch, tmp_path) -> None:
+    """A profile that can't load skills on its own still gets a skill the user
+    explicitly selected, and the model's loading tool stays absent."""
+    monkeypatch.setattr("skills._store._skills_dir", lambda: tmp_path / "skills")
+    _skill_record()
+    locked = _profile().model_copy(update={"allow_load_skills": False})
+
+    captured = await _run_capturing(monkeypatch, AgentRunRequest(
+        conversation_id="runner-composer-locked", message="/review-code go", attachments=None,
+        profile_id="profile-1", context=(SkillContextRef("skill_review", "review-code"),),
+    ), profile=locked)
+
+    assert "skill_review" in captured["skill_ids"]
+    assert "load_skill" not in captured["tools"]
+    assert "list_available_skills" not in captured["tools"]
+
+
+async def test_missing_selected_skill_is_reported_before_the_model_runs(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr("skills._store._skills_dir", lambda: tmp_path / "skills")
+    conversation_id = "runner-composer-missing"
+
+    captured = await _run_capturing(monkeypatch, AgentRunRequest(
+        conversation_id=conversation_id, message="/gone do it", attachments=None, profile_id="profile-1",
+        context=(SkillContextRef("gone", "Deleted skill"),),
+    ))
+
+    assert "gone" not in captured["skill_ids"]
+    loaded = next(event for event in load_events_jsonl(conversation_id) if event["type"] == "skill_loaded")
+    assert (loaded["skill_name"], loaded["status"]) == ("Deleted skill", "unavailable")
+
+
+async def test_shortcut_text_without_a_selection_loads_nothing(monkeypatch, tmp_path) -> None:
+    """Only explicit composer selections load skills. Text that looks like a
+    shortcut — typed, or from a routine task or spawned agent — does not."""
+    monkeypatch.setattr("skills._store._skills_dir", lambda: tmp_path / "skills")
+    _skill_record()
+    conversation_id = "runner-composer-text-only"
+
+    captured = await _run_capturing(monkeypatch, AgentRunRequest(
+        conversation_id=conversation_id, message="next, run /review-code to finish", attachments=None,
+        profile_id="profile-1",
+    ))
+
+    assert "skill_review" not in captured["skill_ids"]
+    assert not any(e["type"] == "skill_loaded" for e in load_events_jsonl(conversation_id))
+
+
+async def test_selected_skill_and_attachment_together(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr("skills._store._skills_dir", lambda: tmp_path / "skills")
+    monkeypatch.setattr(runner_module, "receive_attachment", lambda *_a, **_k: "/home/omnideck/uploads/a.txt")
+    _skill_record()
+    conversation_id = "runner-composer-attachment"
+
+    captured = await _run_capturing(monkeypatch, AgentRunRequest(
+        conversation_id=conversation_id, message="/review-code check this", profile_id="profile-1",
+        attachments=[RunAttachment(base64_encoded="aGk=", content_type="text/plain", filename="a.txt")],
+        context=(SkillContextRef("skill_review", "review-code"),),
+    ))
+
+    assert "skill_review" in captured["skill_ids"]
+    assert captured["messages"][0]["content"].startswith("/review-code check this\n\n[Attached files")
+    user = next(e for e in load_events_jsonl(conversation_id) if e["type"] == "user_message")
+    assert user["content"] == "/review-code check this"
+    assert user["attachments"][0]["filename"] == "a.txt"
