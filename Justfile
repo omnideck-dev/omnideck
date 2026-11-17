@@ -163,15 +163,13 @@ stop:
 shell:
     @bash scripts/container-engine.sh exec -it {{_ctr}} bash
 
-# Follow app + inference logs side by side
+# Follow app logs
 logs:
     #!/usr/bin/env bash
     set -euo pipefail
     engine=$(just _engine)
     just _require-running
-    "$engine" logs -f {{_ctr}} 2>&1 | sed 's/^/[app] /' &
-    "$engine" exec {{_ctr}} tail -f /tmp/inference_server.log 2>/dev/null | sed 's/^/[inference] /' &
-    wait
+    "$engine" logs -f {{_ctr}}
 
 
 # =============================================================================

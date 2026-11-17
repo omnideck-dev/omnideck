@@ -27,8 +27,8 @@ logger = logging.getLogger(__name__)
 # Types persisted to events.jsonl. Excludes purely transient dispatcher
 # events: streaming ``content`` deltas (rolled up into ``iteration``),
 # the legacy ``tool_call`` notification (carried inside ``iteration``),
-# turn boundary signals, and UI-only previews (generation_preview,
-# audio_playback, desktop_active). Panel state is also excluded — the UI
+# turn boundary signals, and UI-only previews (audio_playback,
+# desktop_active). Panel state is also excluded — the UI
 # shows only the latest snapshot per browser tab and the last N terminal
 # commands, so those live in bounded overwrite-in-place sidecars
 # (browser_tabs.json, terminal.json) instead of growing the append-only

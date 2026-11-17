@@ -109,20 +109,6 @@ export interface TerminalOutputPayload {
     exit_code: number | null;
 }
 
-export interface GenerationPreviewPayload {
-    type: 'generation_preview';
-    gen_id: string;
-    media_type: string;
-    status: 'loading' | 'generating' | 'complete' | 'failed';
-    step: number | null;
-    total_steps: number | null;
-    preview: string | null;
-    message: string | null;
-    output: string | null;
-    output_content_type: string | null;
-    output_path: string | null;
-}
-
 export interface ContextUsagePayload {
     type: 'context_usage';
     context_used: number;
@@ -207,7 +193,6 @@ export type ConversationEventPayload =
     | ToolCreatedPayload
     | AudioPlaybackPayload
     | TerminalOutputPayload
-    | GenerationPreviewPayload
     | ContextUsagePayload
     | DesktopActivePayload
     | AgentStartedPayload
@@ -228,7 +213,6 @@ export type ConversationEvent =
     | (ConversationEventMetadata & ToolCreatedPayload)
     | (ConversationEventMetadata & AudioPlaybackPayload)
     | (ConversationEventMetadata & TerminalOutputPayload)
-    | (ConversationEventMetadata & GenerationPreviewPayload)
     | (ConversationEventMetadata & ContextUsagePayload)
     | (ConversationEventMetadata & DesktopActivePayload)
     | (ConversationEventMetadata & AgentStartedPayload)

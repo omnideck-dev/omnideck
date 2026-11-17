@@ -6,8 +6,6 @@ const CATEGORY_ICONS = {
     webfetch: 'bi-cloud-arrow-down',
     memory: 'bi-bookmark-star',
     planning: 'bi-diagram-3',
-    image_generation: 'bi-image',
-    music_generation: 'bi-music-note-beamed',
     desktop: 'bi-display',
     custom_tools: 'bi-tools',
     email: 'bi-envelope',

@@ -91,8 +91,7 @@ async def tool_categories(connections: ConnectionSnapshot = ()) -> dict[str, Too
 def _static_tool_categories() -> dict[str, ToolCategory]:
     """The feature-gated static categories, built once from the active flags.
 
-    A category whose tools require a disabled feature is left out; the
-    browser/desktop grounding tools are included only when visual grounding is on.
+    A category whose tools require a disabled feature is left out.
     Tool imports stay inside the flag branches on purpose — don't hoist them, or a
     disabled feature's module gets imported regardless.
     """
@@ -149,11 +148,6 @@ def _static_tool_categories() -> dict[str, ToolCategory]:
         execute_javascript,
         save_page_content,
     ]
-    if flags.visual_grounding:
-        from tools.browser import browser_visual_action
-
-        browser_tools.append(browser_visual_action)
-
     categories: dict[str, ToolCategory] = {
         "coding": ToolCategory(
             "coding",
@@ -187,26 +181,6 @@ def _static_tool_categories() -> dict[str, ToolCategory]:
         ),
     }
 
-    if flags.image_generation:
-        from tools.generation import generate_image
-
-        categories["image_generation"] = ToolCategory(
-            "image_generation",
-            "Image Generation",
-            "Generate images from text prompts.",
-            [generate_image],
-        )
-
-    if flags.music_generation:
-        from tools.generation import generate_music
-
-        categories["music_generation"] = ToolCategory(
-            "music_generation",
-            "Music Generation",
-            "Generate music from text prompts.",
-            [generate_music],
-        )
-
     if flags.desktop:
         from tools.desktop import (
             describe_screen,
@@ -231,10 +205,6 @@ def _static_tool_categories() -> dict[str, ToolCategory]:
             scroll,
             desktop_shell,
         ]
-        if flags.visual_grounding:
-            from tools.desktop import perform_visual_action
-
-            desktop_tools.append(perform_visual_action)
         categories["desktop"] = ToolCategory(
             "desktop",
             "Desktop Control",

@@ -2,7 +2,7 @@
 
 ## Architecture
 
-Omnideck runs as a single container. The app server (aiohttp + React), desktop environment (Xfce + VNC), browser (Chrome), and inference models all live inside one image. Ollama runs on the host and is accessed via `--network=host`.
+Omnideck runs as a single container. The app server (aiohttp + React), desktop environment (Xfce + VNC), and browser (Chrome) all live inside one image. Ollama runs on the host and is accessed via `--network=host`.
 
 ```
 Container (everything runs as omnideck)
@@ -12,7 +12,6 @@ Container (everything runs as omnideck)
     server/ — HTTP API + React UI
   Desktop (Xfce + VNC :5900 + noVNC :6080)
     Chrome, Firefox, terminal, file manager
-  Inference (GPU models for image/music/video/grounding)
 
 Host
   Ollama — LLM inference (accessed at localhost:11434 via --network=host)
@@ -63,10 +62,7 @@ the Justfile supplies the native Docker or Podman argument.
 
 | Feature | Env Var | Requires |
 |---------|---------|----------|
-| Image generation | `ENABLE_IMAGE_GEN=1` | GPU + HF_TOKEN |
-| Music generation | `ENABLE_MUSIC_GEN=1` | GPU |
 | Desktop agent | `ENABLE_DESKTOP=1` | — |
-| Visual grounding | `ENABLE_GROUNDING=1` | GPU |
 
 Custom Tools and Apps are user-controlled from **Settings → System → Experimental**.
 

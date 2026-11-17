@@ -215,40 +215,6 @@ class ContextUsagePayload(BaseModel):
     max_iterations: int | None = None
 
 
-class GenerationPreviewPayload(BaseModel):
-    """Emitted during image/video generation to stream progress and previews.
-
-    Multiple events share the same ``gen_id`` to track a single generation.
-    For images, ``preview`` contains a TAESD-decoded JPEG at each step.
-    For video, ``preview`` is sent periodically (first frame only).
-    On completion, ``output`` contains the base64-encoded final file.
-
-    Attributes:
-        type: Discriminator; always "generation_preview".
-        gen_id: Unique identifier correlating progress events.
-        media_type: Either "image" or "video".
-        status: Current generation phase.
-        step: Current inference step number.
-        total_steps: Total inference steps.
-        preview: Base64-encoded JPEG preview image.
-        message: Human-readable status text.
-        output: Base64-encoded final file on completion.
-        output_content_type: MIME type of the final output.
-    """
-
-    type: Literal["generation_preview"]
-    gen_id: str
-    media_type: str
-    status: Literal["loading", "generating", "complete", "failed"]
-    step: int | None = None
-    total_steps: int | None = None
-    preview: str | None = None
-    message: str | None = None
-    output: str | None = None
-    output_content_type: str | None = None
-    output_path: str | None = None
-
-
 class AgentStartedPayload(BaseModel):
     """Emitted when an agent begins execution.
 
@@ -496,7 +462,6 @@ AgentEventPayload = Annotated[
     | ToolCreatedPayload
     | AudioPlaybackPayload
     | TerminalOutputPayload
-    | GenerationPreviewPayload
     | ContextUsagePayload
     | DesktopActivePayload
     | AgentStartedPayload
@@ -570,7 +535,6 @@ __all__ = [
     "DesktopActivePayload",
     "ErrorPayload",
     "FileOutputPayload",
-    "GenerationPreviewPayload",
     "IterationPayload",
     "IterationToolCall",
     "SpawnRequestedPayload",

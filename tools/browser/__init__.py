@@ -16,8 +16,6 @@ Public API:
 - click, fill_field, press_keys, select_option, scroll_page, go_back, drag:
   Interaction tools that return a formatted rendered-document string.
 - inspect_page: Visually inspect the current page and answer a question about it.
-- browser_visual_action: Ask a vision model to decide and execute the next GUI
-  action (click, type, scroll, drag, etc.).
 - execute_javascript: Execute arbitrary JavaScript for advanced scenarios (use sparingly;
   prefer structured tools like click, fill_field for reliability).
 """
@@ -39,14 +37,12 @@ from .save import save_page_content
 from .scripting import execute_javascript
 from .select import select_option
 from .vision import (
-    browser_visual_action,
     inspect_page,
 )
 
 __all__ = [
     "BrowserToolError",
     "browse_page",
-    "browser_visual_action",
     "click",
     "close_tab",
     "drag",
