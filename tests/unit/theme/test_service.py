@@ -152,6 +152,39 @@ def test_unknown_setting_suggests_the_closest_match():
         update_theme(light={"acent": "#7c3aed"})
 
 
+def test_a_guessed_plain_name_is_pointed_at_the_real_setting():
+    with pytest.raises(ThemeError, match=r"light\.background: unknown color setting \(did you mean 'canvas'\?\)"):
+        update_theme(light={"background": "#ffffff"})
+
+
+def test_unknown_color_settings_are_followed_by_the_valid_names_once():
+    with pytest.raises(ThemeError) as excinfo:
+        update_theme(light={"background": "#ffffff"}, dark={"sidebar": "#000000"})
+    message = str(excinfo.value)
+    assert message.count("valid color settings:") == 1
+    assert "valid color settings: canvas, surface, elevated," in message
+    assert "valid font settings" not in message
+
+
+def test_unknown_font_settings_list_the_valid_fonts():
+    pattern = r"fonts\.font: unknown font setting \(did you mean 'font-body'\?\).*valid font settings: font-brand, font-body, font-code"
+    with pytest.raises(ThemeError, match=pattern):
+        update_theme(fonts={"font": "serif"})
+
+
+def test_a_wrong_group_error_does_not_dump_the_whole_list():
+    with pytest.raises(ThemeError) as excinfo:
+        update_theme(light={"font-body": "serif"})
+    assert "valid color settings" not in str(excinfo.value)
+
+
+def test_a_rejected_guess_leaves_the_saved_theme_alone():
+    update_theme(light={"accent": "#7c3aed"})
+    with pytest.raises(ThemeError):
+        update_theme(light={"canvas": "#ffffff", "background": "#000000"})
+    assert get_theme_state()["overrides"]["light"] == {"accent": "#7c3aed"}
+
+
 def test_a_font_id_in_a_color_group_points_to_the_right_group():
     with pytest.raises(ThemeError, match=r"light\.font-body: this is a font setting, set it under 'fonts'"):
         update_theme(light={"font-body": "serif"})

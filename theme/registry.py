@@ -78,6 +78,28 @@ FONT_SETTINGS: tuple[ThemeSetting, ...] = (
     _font("font-code", "Code and terminal typeface", "'JetBrains Mono', 'Fira Mono', 'Consolas', monospace"),
 )
 
+# Plain names callers tend to guess, mapped to the setting they most likely mean. They only
+# power the "did you mean" suggestion in an error; an alias is never accepted as a setting id.
+SETTING_ALIASES: dict[str, str] = {
+    "background": "canvas",
+    "background-color": "canvas",
+    "bg": "canvas",
+    "page": "canvas",
+    "page-background": "canvas",
+    "panel": "surface",
+    "card": "surface",
+    "modal": "elevated",
+    "popover": "elevated",
+    "text": "text-primary",
+    "foreground": "text-primary",
+    "primary": "accent",
+    "link": "accent",
+    "hover": "accent-hover",
+    "font": "font-body",
+    "body-font": "font-body",
+    "code-font": "font-code",
+}
+
 _BY_KIND: dict[SettingKind, dict[str, ThemeSetting]] = {
     "color": {setting.id: setting for setting in COLOR_SETTINGS},
     "font": {setting.id: setting for setting in FONT_SETTINGS},

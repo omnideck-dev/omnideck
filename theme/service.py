@@ -7,7 +7,7 @@ import threading
 from typing import Any
 
 from .css import css_version, render_css
-from .registry import COLOR_SETTINGS, FONT_SETTINGS, settings_for
+from .registry import COLOR_SETTINGS, FONT_SETTINGS, SETTING_ALIASES, settings_for
 from .store import load_overrides, save_overrides
 from .types import SettingKind, ThemeError, ThemeOverrides
 from .validation import COLOR_FORMAT, FONT_FORMAT, validate_value
@@ -68,19 +68,36 @@ def get_theme_state() -> dict[str, Any]:
     }
 
 
-def _unknown_setting_message(group: str, key: object, kind: SettingKind) -> str:
+def _unknown_setting_message(group: str, key: object, kind: SettingKind) -> tuple[str, bool]:
+    """Describe a rejected setting id; the flag says whether the valid ids should be listed too."""
     known = settings_for(kind)
     text = str(key)
     other_kind: SettingKind = "font" if kind == "color" else "color"
     if text in settings_for(other_kind):
-        return f"{group}.{text}: this is a {other_kind} setting, set it under {_KIND_GROUP[other_kind]}"
-    close = difflib.get_close_matches(text, known, n=1)
+        return f"{group}.{text}: this is a {other_kind} setting, set it under {_KIND_GROUP[other_kind]}", False
+    alias = SETTING_ALIASES.get(text.strip().lower().replace("_", "-").replace(" ", "-"))
+    close = [alias] if alias in known else difflib.get_close_matches(text, known, n=1)
     hint = f" (did you mean '{close[0]}'?)" if close else ""
-    return f"{group}.{text}: unknown {kind} setting{hint}; call get_theme to list the supported settings"
+    return f"{group}.{text}: unknown {kind} setting{hint}", True
 
 
-def _apply_group(target: dict[str, str], updates: object, group: str, errors: list[str]) -> None:
-    """Merge ``updates`` into ``target``; a ``None`` value clears that setting. Problems are appended to ``errors``."""
+def _valid_settings_message(kinds: set[SettingKind]) -> str:
+    """Name every valid id of the given kinds, so a caller's retry does not have to guess again."""
+    listed = [f"valid {kind} settings: {', '.join(settings_for(kind))}" for kind in ("color", "font") if kind in kinds]
+    return "; ".join(listed) + " (get_theme describes each one)"
+
+
+def _apply_group(
+    target: dict[str, str],
+    updates: object,
+    group: str,
+    errors: list[str],
+    unknown_kinds: set[SettingKind],
+) -> None:
+    """Merge ``updates`` into ``target``; a ``None`` value clears that setting.
+
+    Problems are appended to ``errors``, and the kinds that had an unrecognized id to ``unknown_kinds``.
+    """
     if updates is None:
         return
     if not isinstance(updates, dict):
@@ -91,7 +108,10 @@ def _apply_group(target: dict[str, str], updates: object, group: str, errors: li
     for key, value in updates.items():
         setting = known.get(key) if isinstance(key, str) else None
         if setting is None:
-            errors.append(_unknown_setting_message(group, key, kind))
+            message, list_valid = _unknown_setting_message(group, key, kind)
+            errors.append(message)
+            if list_valid:
+                unknown_kinds.add(kind)
         elif value is None:
             target.pop(key, None)
         else:
@@ -122,9 +142,12 @@ def update_theme(
         current = load_overrides()
         updated = ThemeOverrides() if reset else current.copy()
         errors: list[str] = []
-        _apply_group(updated.light, light, "light", errors)
-        _apply_group(updated.dark, dark, "dark", errors)
-        _apply_group(updated.fonts, fonts, "fonts", errors)
+        unknown_kinds: set[SettingKind] = set()
+        _apply_group(updated.light, light, "light", errors, unknown_kinds)
+        _apply_group(updated.dark, dark, "dark", errors, unknown_kinds)
+        _apply_group(updated.fonts, fonts, "fonts", errors, unknown_kinds)
+        if unknown_kinds:
+            errors.append(_valid_settings_message(unknown_kinds))
         if errors:
             raise ThemeError("; ".join(errors))
         if updated != current:

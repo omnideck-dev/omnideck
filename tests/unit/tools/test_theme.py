@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
 
 from agent_core.tools._callable_schema import callable_to_json_schema
+from theme.registry import COLOR_SETTINGS, FONT_SETTINGS
 from tools.theme import get_theme, set_theme
 
 pytestmark = pytest.mark.unit
@@ -83,3 +85,18 @@ def test_tool_schemas_expose_structured_arguments():
     # Every argument is optional, so a bare reset or a single-mode change is a valid call.
     assert parameters["required"] == []
     assert callable_to_json_schema(get_theme)["function"]["parameters"]["properties"] == {}
+
+
+def test_set_theme_description_names_every_supported_setting():
+    """A model that skips get_theme can only use the names the description gives it."""
+    description = callable_to_json_schema(set_theme)["function"]["description"]
+    named = set(re.findall(r"[a-z][a-z-]*[a-z]", description))
+    missing = [setting.id for setting in (*COLOR_SETTINGS, *FONT_SETTINGS) if setting.id not in named]
+    assert missing == []
+
+
+async def test_a_guessed_setting_name_gets_a_usable_error():
+    result = await set_theme(light={"background": "#ffffff"})
+    assert result["status"] == "error"
+    assert "did you mean 'canvas'?" in result["error"]
+    assert "valid color settings:" in result["error"]

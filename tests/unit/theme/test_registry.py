@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from theme.registry import COLOR_SETTINGS, FONT_SETTINGS, settings_for
+from theme.registry import COLOR_SETTINGS, FONT_SETTINGS, SETTING_ALIASES, settings_for
 from theme.validation import validate_value
 
 pytestmark = pytest.mark.unit
@@ -79,3 +79,10 @@ def test_every_themeable_token_in_global_css_is_in_the_allowlist(light_tokens):
     }
     registered = {setting.id for setting in (*COLOR_SETTINGS, *FONT_SETTINGS)}
     assert themeable == registered
+
+
+def test_aliases_point_at_real_settings_and_never_shadow_one():
+    ids = set(settings_for("color")) | set(settings_for("font"))
+    for alias, target in SETTING_ALIASES.items():
+        assert target in ids, f"alias {alias!r} points at the unknown setting {target!r}"
+        assert alias not in ids, f"alias {alias!r} is also a real setting id"
