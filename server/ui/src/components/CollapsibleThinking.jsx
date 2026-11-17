@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import ChevronIcon from './icons/ChevronIcon.jsx';
 import MarkdownContent from './MarkdownContent.jsx';
 import styles from './CollapsibleThinking.module.css';
+import useSavedThinking from '../hooks/useSavedThinking.js';
+import SavedThinkingStatus from './SavedThinkingStatus.jsx';
 
 /**
  * Collapsible thinking block used in both the chat view and the agent
@@ -13,12 +15,13 @@ import styles from './CollapsibleThinking.module.css';
  * @param {boolean} [compact=false] — Smaller, more subdued styling (activity view).
  * @param {boolean} [streaming=false] — Whether this block is still streaming.
  */
-export default function CollapsibleThinking({ text, compact = false, streaming = false }) {
+export default function CollapsibleThinking({ text, thinkingRef, compact = false, streaming = false }) {
     // Live thinking starts open; a finished block (e.g. from a resumed
     // conversation) starts closed.
     const [expanded, setExpanded] = useState(streaming);
     const userToggled = useRef(false);
     const wasStreaming = useRef(streaming);
+    const savedThinking = useSavedThinking(thinkingRef ? [thinkingRef] : [], expanded);
 
     // When streaming ends, collapse — unless the reader has taken control.
     useEffect(() => {
@@ -28,7 +31,7 @@ export default function CollapsibleThinking({ text, compact = false, streaming =
         wasStreaming.current = streaming;
     }, [streaming]);
 
-    if (!text) return null;
+    if (!text && !thinkingRef) return null;
 
     const toggle = () => {
         userToggled.current = true;
@@ -45,7 +48,8 @@ export default function CollapsibleThinking({ text, compact = false, streaming =
             </div>
             {expanded && (
                 <div className={styles.body}>
-                    <MarkdownContent streaming={streaming}>{text}</MarkdownContent>
+                    <SavedThinkingStatus {...savedThinking} />
+                    <MarkdownContent streaming={streaming}>{thinkingRef ? savedThinking.text(thinkingRef) : text}</MarkdownContent>
                 </div>
             )}
         </div>

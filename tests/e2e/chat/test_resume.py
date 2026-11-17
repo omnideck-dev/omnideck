@@ -85,6 +85,7 @@ def test_resume_payload_omits_duplicate_transcript(resumed):
     """The restored chat receives its history once, as canonical events."""
     snapshot = resumed["snapshot"]
     assert "messages" not in snapshot
+    assert all(event["type"] != "tool_result" for event in snapshot["events"])
     user_events = [event for event in snapshot["events"] if event["type"] == "user_message"]
     assert len(user_events) == 2
     assert resumed["cw1"] in user_events[0]["content"]

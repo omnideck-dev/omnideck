@@ -138,13 +138,13 @@ function _agentReducer(state, action) {
         // backend's finalized record. On restore there is no temporary text,
         // so the same action simply appends the finalized entries.
         case 'FINALIZE_AGENT_ITERATION': {
-            const { agentId, content, thinking, toolCalls, timestamp } = action;
+            const { agentId, content, thinking, thinkingRef, toolCalls, timestamp } = action;
             const agent = state.agents[agentId];
             if (!agent) return state;
             const log = agent.inflightActivityStart === null
                 ? [...agent.activityLog]
                 : agent.activityLog.slice(0, agent.inflightActivityStart);
-            if (thinking) log.push({ type: 'thinking', thinking, timestamp });
+            if (thinking || thinkingRef) log.push({ type: 'thinking', thinking, ...(thinkingRef ? { thinkingRef } : {}), timestamp });
             if (content) log.push({ type: 'content', content, timestamp });
             for (const toolCall of (toolCalls || [])) {
                 log.push({

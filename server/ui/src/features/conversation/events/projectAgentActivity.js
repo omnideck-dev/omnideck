@@ -20,8 +20,8 @@ export function projectAgentActivity(turns, agentId) {
         if (turn?.agentId !== agentId || !Array.isArray(turn.children)) continue;
         for (const child of turn.children) {
             if (child.kind === ITEM.ITERATION) {
-                if (child.thinking) {
-                    entries.push({ type: 'thinking', thinking: child.thinking });
+                if (child.thinking || child.thinkingRef) {
+                    entries.push({ type: 'thinking', thinking: child.thinking, ...(child.thinkingRef ? { thinkingRef: child.thinkingRef } : {}) });
                 }
                 if (child.content) {
                     entries.push({ type: 'content', content: child.content });

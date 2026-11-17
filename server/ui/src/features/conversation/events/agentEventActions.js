@@ -3,7 +3,7 @@ import {
     isSubAgentEvent,
 } from './eventTypes.js';
 
-/** @param {import('./conversationEvents.generated').ConversationEvent} event */
+/** @param {import('./frontendTypes').DisplayEvent} event */
 function eventTime(event) {
     const timestamp = Date.parse(event.timestamp);
     return Number.isFinite(timestamp) ? timestamp : Date.now();
@@ -24,7 +24,7 @@ function activityAction(agentId, entry) {
  * Immediate actions update lifecycle and context metadata. Batched actions
  * enter the animation-frame queue to avoid rendering for every stream record.
  *
- * @param {import('./conversationEvents.generated').ConversationEvent|null|undefined} event
+ * @param {import('./frontendTypes').DisplayEvent|null|undefined} event
  * @returns {{immediate: Array<import('./frontendTypes').AgentAction>, batched: Array<import('./frontendTypes').AgentAction>}}
  */
 export function getAgentEventActions(event) {
@@ -89,6 +89,7 @@ export function getAgentEventActions(event) {
         case EVENT.ITERATION:
             if (retainActivity) batched.push({
                 type: 'FINALIZE_AGENT_ITERATION',
+                ...(event.thinking_ref ? { thinkingRef: event.thinking_ref } : {}),
                 agentId,
                 content: event.content || null,
                 thinking: event.thinking || null,

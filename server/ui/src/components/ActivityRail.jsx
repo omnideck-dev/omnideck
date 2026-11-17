@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import useSavedThinking from '../hooks/useSavedThinking.js';
+import SavedThinkingStatus from './SavedThinkingStatus.jsx';
 import MarkdownContent from './MarkdownContent.jsx';
 import SpawnCard from './SpawnCard.jsx';
 import FileOutput from './FileOutput.jsx';
@@ -91,7 +93,7 @@ function _renderRow(entry, idx, opts) {
                 </div>
                 <div className={styles.main}>
                     <div className={styles.thinking}>
-                        <MarkdownContent>{entry.thinking || ''}</MarkdownContent>
+                        <MarkdownContent>{entry.thinkingRef ? opts.savedThinking.text(entry.thinkingRef) : entry.thinking || ''}</MarkdownContent>
                     </div>
                 </div>
             </div>
@@ -212,6 +214,9 @@ function _renderRow(entry, idx, opts) {
  * shown; click expands the full key/value list.
  */
 export default function ActivityRail({ entries, spawnedAgents, onSelectAgent, onPreview }) {
+    const savedThinking = useSavedThinking(
+        (entries || []).map((entry) => entry.thinkingRef).filter(Boolean), true,
+    );
     if (!entries || entries.length === 0) return null;
 
     const spawnedAgentsById = new Map();
@@ -221,8 +226,10 @@ export default function ActivityRail({ entries, spawnedAgents, onSelectAgent, on
 
     return (
         <div className={styles.stream}>
+            <SavedThinkingStatus {...savedThinking} />
             {entries.map((entry, i) => _renderRow(entry, i, {
                 entries,
+                savedThinking,
                 spawnedAgentsById,
                 onSelectAgent,
                 onPreview,

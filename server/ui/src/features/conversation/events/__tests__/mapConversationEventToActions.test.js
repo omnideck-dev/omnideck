@@ -2,6 +2,27 @@ import { describe, expect, it } from 'vitest';
 import { mapConversationEventToActions } from '../mapConversationEventToActions.js';
 
 describe('mapConversationEventToActions', () => {
+    it('does not retain raw tool results in any UI state owner', () => {
+        const event = {
+            id: 'result-1',
+            type: 'tool_result',
+            agent_id: 'root-1',
+            depth: 0,
+            timestamp: '2026-01-01T00:00:00Z',
+            tool_call_id: 'call-1',
+            tool_name: 'lookup',
+            content: 'Large model-only output',
+        };
+        for (const depth of [0, 1]) {
+            expect(mapConversationEventToActions({ ...event, depth })).toEqual({
+                session: [],
+                agent: { immediate: [], batched: [] },
+                workspace: [],
+                effects: [],
+            });
+        }
+    });
+
     it('assembles the actions for every state owner', () => {
         const event = {
             id: 'event-1',
