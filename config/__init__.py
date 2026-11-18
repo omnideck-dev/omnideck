@@ -105,10 +105,7 @@ class DesktopConfig(BaseModel):
 class FeaturesConfig(BaseModel):
     """Feature flags for optional capabilities."""
 
-    image_generation: bool = False
-    music_generation: bool = False
     desktop: bool = False
-    visual_grounding: bool = False
 
 
 class VirtualComputerConfig(BaseModel):

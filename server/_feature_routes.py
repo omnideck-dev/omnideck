@@ -10,10 +10,7 @@ async def handle_features(_request: web.Request) -> web.Response:
     """Return enabled feature flags for the UI."""
     features = load_config().features
     return web.json_response({
-        "image_generation": features.image_generation,
-        "music_generation": features.music_generation,
         "desktop": features.desktop,
-        "visual_grounding": features.visual_grounding,
         "custom_tools": custom_tools_enabled(),
         "custom_apps": custom_apps_enabled(),
         "goals": goals_enabled(),

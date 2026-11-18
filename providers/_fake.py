@@ -199,7 +199,6 @@ _REQUIRED_SKILL: dict[str, str] = {
     "press_and_hold": "browser",
     "execute_javascript": "browser",
     "save_page_content": "browser",
-    "browser_visual_action": "browser",
 }
 
 _COUNTER = {"n": 0}

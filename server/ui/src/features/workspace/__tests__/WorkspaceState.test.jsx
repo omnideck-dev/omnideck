@@ -50,17 +50,8 @@ const TERMINAL_EVENT = {
     agentId: 'root-1',
 };
 
-const GENERATION_PREVIEW = {
-    gen_id: 'generation-1',
-    media_type: 'image',
-    status: 'generating',
-    step: 5,
-    total_steps: 20,
-    agentId: 'root-1',
-};
-
 describe('WorkspaceProvider', () => {
-    it('stores browser, terminal, desktop, generation, and file state by agent', () => {
+    it('stores browser, terminal, desktop, and file state by agent', () => {
         const { getState, dispatch } = renderWithProvider();
         dispatch(started('root-1'));
         dispatch({
@@ -71,11 +62,6 @@ describe('WorkspaceProvider', () => {
         dispatch({ type: 'UPDATE_TERMINAL', agentId: 'root-1', event: TERMINAL_EVENT });
         dispatch({ type: 'UPDATE_DESKTOP_ACTIVE', agentId: 'root-1' });
         dispatch({
-            type: 'UPDATE_GENERATION_PREVIEW',
-            agentId: 'root-1',
-            preview: GENERATION_PREVIEW,
-        });
-        dispatch({
             type: 'OPEN_FILE',
             agentId: 'root-1',
             item: { filename: 'report.md', path: '/tmp/report.md' },
@@ -85,7 +71,6 @@ describe('WorkspaceProvider', () => {
             browserTabs: { 1: BROWSER_SNAPSHOT },
             lastBrowserTabId: 1,
             desktopActive: true,
-            generationPreview: GENERATION_PREVIEW,
             openFiles: [{ filename: 'report.md', path: '/tmp/report.md' }],
         });
         expect(getState().byAgentId['root-1'].terminalLines).toHaveLength(1);
@@ -153,29 +138,6 @@ describe('WorkspaceProvider', () => {
         expect(Object.keys(getState().byAgentId['root-1'].browserTabs)).toEqual(['2']);
     });
 
-    it('merges generation progress and replaces a different generation', () => {
-        const { getState, dispatch } = renderWithProvider();
-        dispatch(started('root-1'));
-        dispatch({
-            type: 'UPDATE_GENERATION_PREVIEW',
-            agentId: 'root-1',
-            preview: GENERATION_PREVIEW,
-        });
-        dispatch({
-            type: 'UPDATE_GENERATION_PREVIEW',
-            agentId: 'root-1',
-            preview: { ...GENERATION_PREVIEW, step: 10 },
-        });
-        expect(getState().byAgentId['root-1'].generationPreview.step).toBe(10);
-
-        dispatch({
-            type: 'UPDATE_GENERATION_PREVIEW',
-            agentId: 'root-1',
-            preview: { ...GENERATION_PREVIEW, gen_id: 'generation-2', step: 1 },
-        });
-        expect(getState().byAgentId['root-1'].generationPreview.gen_id).toBe('generation-2');
-    });
-
     it('keys files by full path and supports explicit close actions', () => {
         const { getState, dispatch } = renderWithProvider();
         dispatch(started('root-1'));
@@ -183,15 +145,12 @@ describe('WorkspaceProvider', () => {
         dispatch({ type: 'OPEN_FILE', agentId: 'root-1', item: { filename: 'X.md', path: '/b/X.md' } });
         dispatch({ type: 'CLOSE_FILE', agentId: 'root-1', fileKey: '/a/X.md' });
         dispatch({ type: 'UPDATE_DESKTOP_ACTIVE', agentId: 'root-1' });
-        dispatch({ type: 'UPDATE_GENERATION_PREVIEW', agentId: 'root-1', preview: GENERATION_PREVIEW });
         dispatch({ type: 'CLEAR_DESKTOP', agentId: 'root-1' });
-        dispatch({ type: 'CLEAR_GENERATION_PREVIEW', agentId: 'root-1' });
 
         expect(getState().byAgentId['root-1'].openFiles).toEqual([
             { filename: 'X.md', path: '/b/X.md' },
         ]);
         expect(getState().byAgentId['root-1'].desktopActive).toBe(false);
-        expect(getState().byAgentId['root-1'].generationPreview).toBeNull();
     });
 
     it('resets all workspace state', () => {

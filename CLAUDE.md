@@ -12,7 +12,7 @@
 - `just rebuild-ui` — Sync latest UI source, rebuild dist/
 - `just stop` — Stop the dev container (state at `~/.omnideck/` persists)
 - `just shell` — Bash inside the dev container
-- `just logs` — Tail app + inference logs
+- `just logs` — Tail app logs
 
 ### Testing
 - `just unit` — Run unit tests (`tests/unit/`)

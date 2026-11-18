@@ -32,7 +32,7 @@ The package exports these tools from `tools.browser`:
 | Navigation | `goto`, `new_tab`, `close_tab`, `go_back` |
 | DOM interaction | `click`, `press_and_hold`, `drag`, `fill_field`, `press_keys`, `select_option`, `scroll_page` |
 | Page access | `browse_page`, `read_page`, `save_page_content` |
-| Advanced access | `execute_javascript`, `inspect_page`, `browser_visual_action` |
+| Advanced access | `execute_javascript`, `inspect_page` |
 
 Every agent tool has a Google-style docstring. Contract tests pin each tool's
 parameters, defaults, keyword-only boundaries, and documentation sections.
@@ -161,8 +161,7 @@ tools/browser/
   save.py               save page content
   scripting.py          JavaScript execution
   select.py             select-element interaction
-  vision.py             screenshots and visual actions
-  _visual_actions.py    internal visual-action dispatch
+  vision.py             screenshots and visual inspection
   _tool_context.py      per-call Browser, Tab, and Document resolution
   _tool_support.py      coordinated-action result formatting
   events.py             UI screenshots and tab-state events

@@ -3,7 +3,7 @@
 ``tool_categories()`` returns every tool category with the tools it currently
 grants: feature-gated static categories carry a fixed tool set, integration
 categories resolve against the connected integrations. These cover which static
-categories the flags expose, grounding tools following visual grounding, and
+categories the flags expose and
 integration categories resolving (or staying empty) by connection state.
 """
 
@@ -28,8 +28,6 @@ _STATIC_IDS = {
     "webfetch",
     "memory",
     "planning",
-    "image_generation",
-    "music_generation",
     "desktop",
     "custom_tools",
 }
@@ -38,10 +36,7 @@ _STATIC_IDS = {
 
 def _features(**overrides) -> FeaturesConfig:
     base = {
-        "image_generation": True,
-        "music_generation": True,
         "desktop": True,
-        "visual_grounding": True,
     }
     base.update(overrides)
     return FeaturesConfig(**base)
@@ -130,11 +125,10 @@ async def test_static_category_carries_its_tools():
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("flag", ["desktop", "image_generation", "music_generation"])
-async def test_feature_off_drops_static_category(monkeypatch, flag):
-    _set_flags(monkeypatch, **{flag: False})
+async def test_desktop_off_drops_desktop_category(monkeypatch):
+    _set_flags(monkeypatch, desktop=False)
     cats = await tool_categories()
-    assert flag not in cats
+    assert "desktop" not in cats
     assert "coding" in cats
 
 
@@ -147,16 +141,6 @@ async def test_custom_tools_follows_runtime_setting(monkeypatch):
     monkeypatch.setattr("settings.custom_tools_enabled", lambda: True)
     custom_tools = (await tool_categories())["custom_tools"]
     assert custom_tools.description == "The agent can create, look up, and run reusable tools."
-
-
-@pytest.mark.unit
-async def test_grounding_tool_follows_visual_grounding(monkeypatch):
-    on = _names((await tool_categories())["browser"].tools)
-    _set_flags(monkeypatch, visual_grounding=False)
-    off = _names((await tool_categories())["browser"].tools)
-    assert "browser_visual_action" in on
-    assert "browser_visual_action" not in off
-    assert "goto" in off
 
 
 @pytest.mark.unit

@@ -16,7 +16,6 @@ export const CONVERSATION_EVENT_TYPES = Object.freeze(/** @type {const} */ ({
     TERMINAL_OUTPUT: 'terminal_output',
     DESKTOP_ACTIVE: 'desktop_active',
     CONTEXT_USAGE: 'context_usage',
-    GENERATION_PREVIEW: 'generation_preview',
     AGENT_STARTED: 'agent_started',
     AGENT_COMPLETED: 'agent_completed',
     ERROR: 'error',

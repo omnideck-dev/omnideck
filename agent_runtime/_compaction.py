@@ -695,7 +695,6 @@ _TOOL_ARG_KEYS: dict[str, list[str]] = {
     "fill_field": ["ref"],
     "grep": ["pattern", "query"],
     "list_dir": ["path"],
-    "generate_image": ["prompt"],
     "describe_image": ["path", "image_path"],
 }
 

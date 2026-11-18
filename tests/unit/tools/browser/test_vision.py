@@ -1,4 +1,4 @@
-"""Tests for browser vision tools (inspect_page + browser_visual_action)."""
+"""Tests for the browser inspect_page vision tool."""
 
 from __future__ import annotations
 
@@ -11,9 +11,8 @@ import pytest
 from agent_core.providers import ProviderError
 from browser.core.document import Document
 from browser.core.rendering import RenderedDocument
-from tools._grounding import GroundingResponse
 from tools.browser import BrowserToolError
-from tools.browser.vision import browser_visual_action, inspect_page
+from tools.browser.vision import inspect_page
 
 # ── Shared helpers ────────────────────────────────────────────────────
 
@@ -286,142 +285,3 @@ async def test_ref_mode_missing_ref(monkeypatch: pytest.MonkeyPatch) -> None:
 
     msg = str(excinfo.value)
     assert "Ref 99 not found" in msg
-
-
-# ── browser_visual_action tests ───────────────────────────────────────
-
-
-_CLICK_GROUNDING_RESPONSE = GroundingResponse(
-    x=500,
-    y=300,
-    thought="Found the login button",
-    action_type="click",
-    raw={"x": 500, "y": 300, "coordinates": [{"screen": [500, 300]}]},
-)
-
-_TYPE_GROUNDING_RESPONSE = GroundingResponse(
-    x=None,
-    y=None,
-    thought="Need to type text",
-    action_type="type",
-    raw={"type_content": "hello world"},
-)
-
-_FINISHED_GROUNDING_RESPONSE = GroundingResponse(
-    x=None,
-    y=None,
-    thought="Done",
-    action_type="finished",
-    raw={"finished_content": "Login was successful"},
-)
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_browser_visual_action_click(monkeypatch: pytest.MonkeyPatch) -> None:
-    """browser_visual_action with a click response should execute the click."""
-    page = _ScreenshotFakePage(b"fake-bytes")
-    browser = _FakeBrowser(page)
-
-    module = importlib.import_module("tools.browser.vision")
-    grounding_module = importlib.import_module("tools._grounding")
-
-    monkeypatch.setattr(module, "get_document", _make_fake_get_document(browser))
-
-    async def fake_run_grounding(screenshot_bytes, task, *, screenshot_filename=""):
-        return _CLICK_GROUNDING_RESPONSE
-
-    monkeypatch.setattr(grounding_module, "run_grounding", fake_run_grounding)
-
-    # Mock execute_action to avoid needing real Playwright
-    from unittest.mock import AsyncMock
-
-    mock_execute = AsyncMock()
-    monkeypatch.setattr("tools.browser._visual_actions.execute_action", mock_execute)
-
-    # Mock format_action_result — patch the name bound in the vision module.
-    async def fake_format_action_result(result, *, tool_name, resolution=None):
-        return "[page snapshot]"
-
-    monkeypatch.setattr(module, "format_action_result", fake_format_action_result)
-
-    result = await browser_visual_action("Click the login button", tab="1")
-    assert isinstance(result, str)
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_browser_visual_action_finished(monkeypatch: pytest.MonkeyPatch) -> None:
-    """browser_visual_action with finished response should return snapshot with note."""
-    page = _ScreenshotFakePage(b"fake-bytes")
-    browser = _FakeBrowser(page)
-
-    module = importlib.import_module("tools.browser.vision")
-    grounding_module = importlib.import_module("tools._grounding")
-
-    monkeypatch.setattr(module, "get_document", _make_fake_get_document(browser))
-
-    async def fake_run_grounding(screenshot_bytes, task, *, screenshot_filename=""):
-        return _FINISHED_GROUNDING_RESPONSE
-
-    monkeypatch.setattr(grounding_module, "run_grounding", fake_run_grounding)
-
-    fake_snapshot = RenderedDocument(
-        title="Test Page",
-        url="https://example.com",
-        status_code=200,
-        content="Page content here",
-        viewport=None,
-        truncated=False,
-        node_count=0,
-        dom_walk_ms=0.0,
-        render_ms=0.0,
-    )
-
-    browser._tab._snapshot = fake_snapshot
-
-    result = await browser_visual_action("Check if login succeeded", tab="1")
-    assert "finished" in result.lower() or "Login was successful" in result
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_browser_visual_action_empty_task() -> None:
-    """Empty task should raise BrowserToolError."""
-    with pytest.raises(BrowserToolError):
-        await browser_visual_action("   ", tab="1")
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_browser_visual_action_grounding_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    """RuntimeError from grounding should become BrowserToolError."""
-    page = _ScreenshotFakePage(b"fake")
-    browser = _FakeBrowser(page)
-
-    module = importlib.import_module("tools.browser.vision")
-    grounding_module = importlib.import_module("tools._grounding")
-
-    monkeypatch.setattr(module, "get_document", _make_fake_get_document(browser))
-
-    async def failing_grounding(*args, **kwargs):
-        raise RuntimeError("Grounding failed: container not running")
-
-    monkeypatch.setattr(grounding_module, "run_grounding", failing_grounding)
-
-    with pytest.raises(BrowserToolError, match="Grounding request failed"):
-        await browser_visual_action("Click login", tab="1")
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_browser_visual_action_requires_navigation(monkeypatch: pytest.MonkeyPatch) -> None:
-    """browser_visual_action should require a navigated page."""
-    page = _ScreenshotFakePage(b"bytes", url="about:blank")
-    browser = _FakeBrowser(page)
-    module = importlib.import_module("tools.browser.vision")
-
-    monkeypatch.setattr(module, "get_document", _make_fake_get_document(browser))
-
-    with pytest.raises(BrowserToolError):
-        await browser_visual_action("Click login", tab="1")

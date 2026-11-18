@@ -20,10 +20,7 @@ async def test_user_feature_comes_from_settings(
     monkeypatch.setattr(
         "server._feature_routes.load_config",
         lambda: SimpleNamespace(features=SimpleNamespace(
-            image_generation=False,
-            music_generation=False,
             desktop=False,
-            visual_grounding=False,
         )),
     )
     monkeypatch.setattr(
