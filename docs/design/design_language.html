@@ -699,6 +699,7 @@ body {
   flex-shrink: 0;
 }
 
+.m-sidebar-pill { position: absolute; top: -2px; right: -4px; min-width: 14px; height: 14px; padding: 0 3px; border-radius: var(--radius-full); background: var(--warning-muted); color: var(--warning); font-size: 9px; font-weight: 600; line-height: 14px; text-align: center; }
 .m-sidebar-icon {
   width: 28px;
   height: 28px;
@@ -4497,6 +4498,8 @@ body {
       Vertical icon navigation, always visible on desktop. Width: <code>--sidebar-width</code> (44px).
       Icons stack vertically; a separator divides primary destinations from secondary ones; the bottom
       reserves space for Settings. Active state shows the Signal Line on the left edge.
+      The Goals row alone shows a warning pill with how many goals need the user, hidden at zero;
+      collapsed, it sits on the icon's top right corner.
     </div>
 
     <div style="display:flex;gap:24px;align-items:flex-start">
@@ -4504,6 +4507,7 @@ body {
         <button class="m-sidebar-icon active" title="Chat"><i class="bi bi-chat"></i></button>
         <button class="m-sidebar-icon" title="Agent Network"><i class="bi bi-diagram-3"></i></button>
         <button class="m-sidebar-icon" title="Routines"><i class="bi bi-alarm"></i></button>
+        <button class="m-sidebar-icon" title="2 goals need you" aria-label="Goals, 2 need you" style="position:relative"><i class="bi bi-bullseye"></i><span class="m-sidebar-pill" aria-hidden="true">2</span></button>
         <button class="m-sidebar-icon" title="Memory"><i class="bi bi-database"></i></button>
         <div class="m-sidebar-sep"></div>
         <button class="m-sidebar-icon" title="Conversations"><i class="bi bi-clock-history"></i></button>
