@@ -47,6 +47,7 @@ from server._settings_routes import register_settings_routes
 from server._setup_routes import register_setup_routes
 from server._skill_routes import register_skill_routes
 from server._task_routes import ROUTINE_SERVICE_KEY, register_task_routes
+from server._theme_routes import register_theme_routes
 from server._tool_category_routes import register_tool_category_routes
 from server._ui_routes import register_ui_routes
 
@@ -177,6 +178,9 @@ def create_app(
 
     # Task engine routes
     register_task_routes(app)
+
+    # Theme stylesheet and version
+    register_theme_routes(app)
 
     # Integrations (supervisor / brokers)
     register_integrations_routes(app)

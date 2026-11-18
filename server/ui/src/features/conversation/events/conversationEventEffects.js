@@ -2,6 +2,8 @@ import { CONVERSATION_EVENT_TYPES as EVENT } from './eventTypes.js';
 import { isRootAgentEvent } from './eventTypes.js';
 import { APP_EFFECT_TYPES } from '../../app/appEffectTypes.js';
 
+const SET_THEME_TOOL = 'set_theme';
+
 /**
  * Map a conversation event to application-wide one-time effects. Delivery is
  * performed elsewhere so feature owners can subscribe independently of where
@@ -37,6 +39,13 @@ export function getConversationEventEffects(event) {
         case EVENT.TOOL_CREATED:
             return [{
                 type: APP_EFFECT_TYPES.REFRESH_CUSTOM_TOOLS_REQUESTED,
+                payload: null,
+            }];
+        case EVENT.TOOL_RESULT:
+            // Only a theme change needs the UI to react; every other tool result is transcript content.
+            if (event.tool_name !== SET_THEME_TOOL) return [];
+            return [{
+                type: APP_EFFECT_TYPES.REFRESH_THEME_REQUESTED,
                 payload: null,
             }];
         case EVENT.AUDIO_PLAYBACK:

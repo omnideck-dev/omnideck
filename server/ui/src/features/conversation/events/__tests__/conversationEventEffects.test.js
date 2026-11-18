@@ -16,6 +16,32 @@ describe('getConversationEventEffects', () => {
         ]);
     });
 
+    it('maps a finished set_theme call to a theme refresh', () => {
+        expect(getConversationEventEffects(event('tool_result', {
+            tool_name: 'set_theme',
+            tool_call_id: 'call-1',
+            content: '{"status": "ok"}',
+        }))).toEqual([
+            {
+                type: APP_EFFECT_TYPES.REFRESH_THEME_REQUESTED,
+                payload: null,
+            },
+        ]);
+    });
+
+    it('also refreshes the theme when set_theme reports an error, since the check is cheap', () => {
+        expect(getConversationEventEffects(event('tool_result', {
+            tool_name: 'set_theme',
+            content: '{"status": "error"}',
+        }))).toHaveLength(1);
+    });
+
+    it('leaves the results of other tools alone, including a read of the theme', () => {
+        for (const tool_name of ['get_theme', 'remember', 'run_bash_cmd']) {
+            expect(getConversationEventEffects(event('tool_result', { tool_name }))).toEqual([]);
+        }
+    });
+
     it('builds a playable data URL for audio events', () => {
         expect(getConversationEventEffects(event('audio_playback', {
             content_type: 'audio/wav', content: 'base64-audio',

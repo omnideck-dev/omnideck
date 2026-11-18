@@ -5,17 +5,14 @@ import { ToastProvider } from './components/ToastProvider.jsx';
 import { AppDataProvider } from './contexts/AppData.jsx';
 import { ThemeProvider } from './contexts/Theme.jsx';
 import { csrfFetch } from './utils/csrfFetch.js';
+import { installThemeStylesheet } from './features/theme/themeStylesheet.js';
 import 'bootstrap-icons/font/bootstrap-icons.css';
 import './global.css';
 import './hljs-tokens.css';
 
-// Appended (not imported) so it lands after the bundled core styles in the
-// document — later <link> tags win the cascade on equal specificity, letting
-// user overrides in custom.css take effect without touching core CSS.
-const customStylesLink = document.createElement('link');
-customStylesLink.rel = 'stylesheet';
-customStylesLink.href = '/custom.css';
-document.head.appendChild(customStylesLink);
+// Added after the bundled core styles so the saved theme wins the cascade, and
+// kept current as the theme changes, without a page reload.
+installThemeStylesheet();
 
 // Patch fetch so mutating application requests carry the CSRF header.
 // The server requires X-Requested-With: XMLHttpRequest on POST/PUT/DELETE.

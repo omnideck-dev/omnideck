@@ -3,11 +3,13 @@ import { ConversationSessionProvider } from '../conversation/session/Conversatio
 import { WorkspaceProvider } from '../workspace/WorkspaceState.jsx';
 import { AgentProvider } from '../agent/AgentState.jsx';
 import { CustomAppsProvider } from '../customApps/CustomApps.jsx';
+import ThemeRefreshBridge from '../theme/ThemeRefreshBridge.jsx';
 import { AppEffectsProvider } from './AppEffects.jsx';
 
 export default function AppStateProviders({ children }) {
     return (
         <AppEffectsProvider>
+            <ThemeRefreshBridge />
             <AgentProvider>
                 <WorkspaceProvider>
                     <ConversationCatalogProvider>

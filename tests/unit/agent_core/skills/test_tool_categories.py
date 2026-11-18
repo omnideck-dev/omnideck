@@ -27,6 +27,7 @@ _STATIC_IDS = {
     "browser",
     "webfetch",
     "memory",
+    "theme",
     "planning",
     "desktop",
     "custom_tools",

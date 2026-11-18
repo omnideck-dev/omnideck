@@ -155,6 +155,7 @@ include = [
     "repls*",
     "server*",
     "tasks*",
+    "theme*",
     "tools*",
     "tool_schemas*",
     "utils*",

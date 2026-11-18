@@ -14,6 +14,7 @@ export type AppEffectPayloads = {
         };
     };
     [APP_EFFECT_TYPES.REFRESH_CUSTOM_TOOLS_REQUESTED]: null;
+    [APP_EFFECT_TYPES.REFRESH_THEME_REQUESTED]: null;
     [APP_EFFECT_TYPES.ROOT_WORKSPACE_RESOURCE_AVAILABLE]: {
         conversationId: string | null;
         agentId: string;
