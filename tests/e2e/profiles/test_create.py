@@ -48,7 +48,8 @@ def test_create_profile_persists_all_settings(page: Page):
     builder.field("max_iterations").fill("25")
     page.get_by_test_id("compaction-threshold-select").click()
     page.locator('[role="option"][data-value="0.85"]').click()
-    page.locator("label", has_text="Thinking").click()
+    page.get_by_test_id("thinking-level-select").click()
+    page.locator('[role="option"][data-value="high"]').click()
 
     # --- Save ---
     builder.save()
@@ -79,6 +80,7 @@ def test_create_profile_persists_all_settings(page: Page):
     assert created["top_p"] == 0.9
     assert created["repeat_penalty"] == 1.2
     assert created["think"] is True
+    assert created["reasoning_effort"] == "high"
 
     # Resource limits
     assert created["context_window"] == 16000

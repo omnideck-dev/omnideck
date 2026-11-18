@@ -165,4 +165,5 @@ exclude = [
 
 [tool.setuptools.package-data]
 "agent_core.skills" = ["default_skills/*.json"]
+"agent_core.providers" = ["model_metadata.json"]
 "tools.browser" = ["capability.json"]

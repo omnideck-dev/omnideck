@@ -7,12 +7,12 @@ from playwright.sync_api import expect
 from tests.e2e.pages import AgentsPage
 
 
-VISIBLE_FIELDS = ("temperature", "top_p", "num_predict", "max_iterations", "think", "context_window")
-HIDDEN_FIELDS = ("top_k", "repeat_penalty")
+VISIBLE_FIELDS = ("temperature", "top_p", "num_predict", "max_iterations", "thinking-level")
+HIDDEN_FIELDS = ("top_k", "repeat_penalty", "context_window")
 
 
 def test_compat_field_visibility(page, provider_profile):
-    """OpenAI-compat shows basic fields and think toggle, hides Ollama-only fields."""
+    """OpenAI-compat shows basic fields and a thinking level, hides Ollama-only fields."""
     provider_profile("test_prov_compat_vis", "openai_compat")
 
     agents = AgentsPage(page).goto()
@@ -26,8 +26,8 @@ def test_compat_field_visibility(page, provider_profile):
 
 
 def test_compat_code_preset(page, provider_profile):
-    """Code preset on openai_compat sets temperature=0.3 (no think — not all compat endpoints support it)."""
-    provider_profile("test_prov_compat_code", "openai_compat", temperature=0.3)
+    """Code preset on openai_compat sets temperature=0.3 and thinking at the default level."""
+    provider_profile("test_prov_compat_code", "openai_compat", temperature=0.3, think=True)
 
     agents = AgentsPage(page).goto()
     agents.profiles.select("test_prov_compat_code")
@@ -36,13 +36,14 @@ def test_compat_code_preset(page, provider_profile):
 
 
 def test_compat_reasoning_fields_with_think(page, provider_profile):
-    """OpenAI-compat shows reasoning_effort when think is enabled."""
+    """OpenAI-compat shows the thinking level at its default when thinking is on."""
     provider_profile("test_prov_compat_reason", "openai_compat", think=True)
 
     agents = AgentsPage(page).goto()
     agents.profiles.select("test_prov_compat_reason")
     agents.builder.open_advanced()
 
-    expect(agents.builder.field("reasoning_effort")).to_be_visible()
+    expect(page.get_by_test_id("thinking-level-select")).to_have_attribute("data-value", "medium")
     expect(agents.builder.field("reasoning_summary")).not_to_be_attached()
-    expect(agents.builder.field("thinking_budget")).not_to_be_attached()
+    # Chat Completions keeps sampling while reasoning.
+    expect(agents.builder.field("temperature")).to_be_visible()

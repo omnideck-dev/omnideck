@@ -11,14 +11,13 @@ from typing import Any
 from agents import AgentProfile, get_agent_profile
 from agent_core.agent import Agent
 from agent_core.agent_capabilities import AgentCapabilities
-from agent_core.providers import Provider
+from agent_core.providers import Provider, accepted_options, find_model
 from providers import get_provider
 from integrations.connection_cache import ConnectionSnapshot
 from skills._tool_categories import ToolCategory, tool_categories
 from tools.memory import load_memory
 
 logger = logging.getLogger(__name__)
-
 
 @dataclass(frozen=True)
 class PreparedAgent:
@@ -56,6 +55,8 @@ class AgentFactory:
         connections: ConnectionSnapshot = (),
     ) -> PreparedAgent:
         agent = self.build_agent(profile, name=name)
+        provider = get_provider(agent.provider)
+        agent = await self.resolve_runtime_metadata(agent, provider)
         capabilities = await self.build_capabilities(
             profile,
             spawn_agent=spawn_agent,
@@ -70,7 +71,7 @@ class AgentFactory:
             instruction = (
                 f"\n── Memory (persisted across sessions) ──────────────────────────\n{lines}\n{sep}\n" + instruction
             )
-        return PreparedAgent(profile, agent, capabilities, get_provider(agent.provider), instruction)
+        return PreparedAgent(profile, agent, capabilities, provider, instruction)
 
     async def build_capabilities(
         self,
@@ -173,6 +174,34 @@ class AgentFactory:
             compaction_threshold=profile.compaction_threshold or 0.75,
             max_iterations=profile.max_iterations or 0,
         )
+
+    @staticmethod
+    async def resolve_runtime_metadata(agent: Agent, provider: Provider) -> Agent:
+        """Apply live model capabilities to one execution without persisting them.
+
+        Profiles retain user choices, while fixed cloud context capacity and
+        accepted inference parameters belong to the selected model. Resolve
+        those properties through the provider's cached model catalog for every
+        root, child, and routine execution prepared by this factory.
+        """
+        model_info = await find_model(provider, agent.model)
+        if model_info is None:
+            logger.debug("Model details not found for %s/%s; using profile values", agent.provider, agent.model)
+            return agent
+
+        think = model_info.thinking_required or (agent.think and model_info.supports_thinking)
+        # A model whose context size the user cannot set runs at its own size.
+        context_window = agent.context_window
+        if model_info.context_window and (
+            "context_window" not in (model_info.inference_controls or ()) or context_window <= 0
+        ):
+            context_window = model_info.context_window
+
+        return agent.model_copy(update={
+            "context_window": context_window,
+            "options": accepted_options(model_info, agent.options, think=think),
+            "think": think,
+        })
 
 
 def _base_tools(

@@ -40,24 +40,17 @@ _DEFAULTS: dict[str, Any] = {
     "vision_provider": "",
     "vision_model": "",
     "vision_think": False,
-    "vision_options": {
-        "num_ctx": 60000,
-        "num_predict": 512,
-        "temperature": 0.3,
-        "top_k": 20,
-    },
+    # Empty means provider/model-native defaults. Specialized runtime helpers
+    # add only the small output ceiling appropriate to the role.
+    "vision_options": {},
     "compaction_provider": "",
     "compaction_model": "",
-    "compaction_options": {
-        "num_ctx": 32768,
-        "num_predict": 8192,
-        "temperature": 0.3,
-        "top_k": 20,
-    },
+    "compaction_options": {},
     "title_provider": "",
     "title_model": "",
     "custom_apps_enabled": False,
     "custom_tools_enabled": False,
+    "aperture_enabled": False,
     # Custom App shown as Home; None keeps Chat as Home.
     "home_app_slug": None,
     # Install updates without being asked. Only the desktop application acts on
@@ -111,6 +104,7 @@ class SettingsUpdate(BaseModel):
     title_model: str | None = None
     custom_apps_enabled: bool | None = None
     custom_tools_enabled: bool | None = None
+    aperture_enabled: bool | None = None
     home_app_slug: str | None = None
     software_updates_automatic: bool | None = None
     software_updates_notify: bool | None = None
@@ -201,8 +195,14 @@ def custom_tools_enabled() -> bool:
     return load_settings().get("custom_tools_enabled", False) is True
 
 
+def aperture_enabled() -> bool:
+    """Return whether the user has enabled the experimental Tailscale Aperture provider."""
+    return load_settings().get("aperture_enabled", False) is True
+
+
 __all__ = [
     "SettingsUpdate",
+    "aperture_enabled",
     "custom_apps_enabled",
     "custom_tools_enabled",
     "load_settings",

@@ -4,6 +4,8 @@ import logging
 from typing import Any
 
 from settings import load_settings
+from ._registry import get_provider
+from ._role_options import resolve_role_options
 
 logger = logging.getLogger(__name__)
 
@@ -42,8 +44,10 @@ async def vision_generate(
     vision_options: dict[str, Any] = dict(settings.get("vision_options") or {})
     vision_think: bool = bool(settings.get("vision_think") or False)
 
-    from . import get_provider
     provider = get_provider(vision_provider)
+    request = await resolve_role_options(
+        provider, vision_model, "vision", vision_options, think=vision_think,
+    )
     messages: list[dict[str, Any]] = [{
         "role": "user",
         "content": prompt,
@@ -53,7 +57,7 @@ async def vision_generate(
     response = await provider.chat(
         model=vision_model,
         messages=messages,
-        options=vision_options,
-        think=vision_think,
+        options=request.options,
+        think=request.think,
     )
     return response.message.content or ""

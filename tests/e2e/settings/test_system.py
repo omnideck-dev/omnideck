@@ -121,11 +121,23 @@ def test_vision_advanced_defaults_load(page: Page):
 
 
 def test_change_vision_advanced_settings(page: Page):
-    """Every advanced field (Thinking + all four options) persists."""
-    settings = SettingsPage(page).goto_system()
-
+    """Every advanced field (thinking level + all four options) persists."""
     original = page.request.get("/api/settings").json()
-    original_think = bool(original.get("vision_think"))
+    # The wizard's vision model cannot think, so the thinking control only
+    # appears for a model that can.
+    page.request.put("/api/settings", data={"vision_model": "kimi-k2.5:cloud"})
+    try:
+        _change_vision_advanced_settings(page, original)
+    finally:
+        page.request.put("/api/settings", data={
+            "vision_model": original["vision_model"],
+            "vision_think": original["vision_think"],
+            "vision_options": original["vision_options"],
+        })
+
+
+def _change_vision_advanced_settings(page: Page, original: dict) -> None:
+    settings = SettingsPage(page).goto_system()
     original_opts = dict(original["vision_options"])
 
     # Pick a new value for each numeric option that's guaranteed different.
@@ -138,8 +150,10 @@ def test_change_vision_advanced_settings(page: Page):
 
     settings.system.open_vision_advanced()
 
-    # Toggle thinking.
-    settings.system.vision_think_toggle.click()
+    # Turn thinking on at a chosen level.
+    level = page.get_by_role("combobox", name="Vision thinking level")
+    level.click()
+    page.locator('[role="option"][data-value="medium"]').click()
     page.wait_for_timeout(300)
 
     # Change every option.
@@ -150,13 +164,15 @@ def test_change_vision_advanced_settings(page: Page):
         page.wait_for_timeout(300)
 
     saved = page.request.get("/api/settings").json()
-    assert saved["vision_think"] == (not original_think), "vision_think did not persist"
+    assert saved["vision_think"] is True, "vision_think did not persist"
+    assert saved["vision_options"]["reasoning_effort"] == "medium"
     for key, expected in new_values.items():
         actual = saved["vision_options"][key]
         assert actual == expected, f"{key} did not persist: got {actual!r}, expected {expected!r}"
 
     # Restore.
-    settings.system.vision_think_toggle.click()
+    level.click()
+    page.locator('[role="option"][data-value="off"]').click()
     page.wait_for_timeout(200)
     for key, value in original_opts.items():
         field = settings.system.vision_option(key)

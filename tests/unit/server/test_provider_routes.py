@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from agent_core.providers import ModelInfo
 from server._provider_routes import (
     _brokered_provider_connections,
     _sanitize,
@@ -153,3 +155,104 @@ async def test_brokered_provider_update_uses_transactional_reconnect(monkeypatch
         },
     )
     assert all(verb != "remove" for verb, _args in calls)
+
+
+@pytest.mark.unit
+async def test_add_aperture_normalizes_and_stores_a_direct_provider() -> None:
+    request = MagicMock()
+    request.json = AsyncMock(return_value={
+        "name": "aperture",
+        "base_url": "ai.example.ts.net/ui/chat",
+    })
+    provider = MagicMock()
+    provider.list_models = AsyncMock(return_value=[ModelInfo(name="bedrock/claude")])
+
+    with (
+        patch("server._provider_routes.aperture_enabled", return_value=True),
+        patch("server._provider_routes.load_settings", return_value={"direct_providers": {}}),
+        patch("server._provider_routes.save_settings") as save_settings,
+        patch("server._provider_routes.get_provider", return_value=provider),
+        patch("server._provider_routes.reset_provider"),
+    ):
+        response = await handle_add_provider(request)
+
+    assert response.status == 201
+    assert json.loads(response.body)["provider"]["base_url"] == "http://ai.example.ts.net"
+    save_settings.assert_called_once_with({
+        "direct_providers": {
+            "aperture": {"base_url": "http://ai.example.ts.net"},
+        }
+    })
+
+
+@pytest.mark.unit
+async def test_add_aperture_rejects_api_keys() -> None:
+    request = MagicMock()
+    request.json = AsyncMock(return_value={
+        "name": "aperture",
+        "base_url": "http://ai.example.ts.net",
+        "api_key": "not-needed",
+    })
+
+    with patch("server._provider_routes.aperture_enabled", return_value=True):
+        response = await handle_add_provider(request)
+
+    assert response.status == 400
+    assert "does not use an API key" in json.loads(response.body)["error"]
+
+
+@pytest.mark.unit
+async def test_add_aperture_is_refused_until_the_experiment_is_on() -> None:
+    request = MagicMock()
+    request.json = AsyncMock(return_value={
+        "name": "aperture",
+        "base_url": "http://ai.example.ts.net",
+    })
+
+    with (
+        patch("server._provider_routes.aperture_enabled", return_value=False),
+        patch("server._provider_routes.save_settings") as save_settings,
+    ):
+        response = await handle_add_provider(request)
+
+    assert response.status == 403
+    assert "Experimental" in json.loads(response.body)["error"]
+    save_settings.assert_not_called()
+
+
+@pytest.mark.unit
+async def test_update_aperture_is_refused_until_the_experiment_is_on() -> None:
+    request = MagicMock()
+    request.match_info = {"name": "aperture"}
+    request.json = AsyncMock(return_value={"base_url": "http://ai.example.ts.net"})
+
+    with (
+        patch("server._provider_routes.aperture_enabled", return_value=False),
+        patch("server._provider_routes.save_settings") as save_settings,
+    ):
+        response = await handle_update_provider(request)
+
+    assert response.status == 403
+    save_settings.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(("enabled", "expected"), [(False, ["ollama"]), (True, ["ollama", "aperture"])])
+async def test_provider_list_shows_aperture_only_when_the_experiment_is_on(
+    enabled: bool, expected: list[str],
+) -> None:
+    settings = {
+        "direct_providers": {
+            "ollama": {"base_url": "http://localhost:11434"},
+            "aperture": {"base_url": "http://ai.example.ts.net"},
+        },
+    }
+
+    with (
+        patch("server._provider_routes.aperture_enabled", return_value=enabled),
+        patch("server._provider_routes.load_settings", return_value=settings),
+        patch("server._provider_routes._brokered_provider_connections", new=AsyncMock(return_value=[])),
+    ):
+        response = await handle_list_providers(MagicMock())
+
+    assert [provider["name"] for provider in json.loads(response.body)["providers"]] == expected

@@ -361,6 +361,8 @@ class TestStreamingOutOfOrderEvents:
 
         # Create a provider instance and inject a mock client
         provider = OpenAIResponsesProvider.__new__(OpenAIResponsesProvider)
+        provider._model_cache = None
+        provider._model_details = None
         provider._client = AsyncMock()
         provider._client.responses.create.return_value = _fake_stream()
 
@@ -425,6 +427,10 @@ class TestStreamingOutOfOrderEvents:
                 yield ev
 
         provider = OpenAIResponsesProvider.__new__(OpenAIResponsesProvider)
+
+        provider._model_cache = None
+
+        provider._model_details = None
         provider._client = AsyncMock()
         provider._client.responses.create.return_value = _fake_stream()
 
@@ -480,6 +486,10 @@ class TestStreamingOutOfOrderEvents:
                 yield ev
 
         provider = OpenAIResponsesProvider.__new__(OpenAIResponsesProvider)
+
+        provider._model_cache = None
+
+        provider._model_details = None
         provider._client = AsyncMock()
         provider._client.responses.create.return_value = _fake_stream()
 
@@ -546,6 +556,10 @@ class TestStreamingOutOfOrderEvents:
                 yield ev
 
         provider = OpenAIResponsesProvider.__new__(OpenAIResponsesProvider)
+
+        provider._model_cache = None
+
+        provider._model_details = None
         provider._client = AsyncMock()
         provider._client.responses.create.return_value = _fake_stream()
 
@@ -563,3 +577,51 @@ class TestStreamingOutOfOrderEvents:
         assert len(final.message.tool_calls) == 2
         assert final.message.tool_calls[0].function.arguments == {"x": 1}
         assert final.message.tool_calls[1].function.arguments == {"y": 2}
+
+
+@pytest.mark.unit
+class TestBuildKwargsSamplingControls:
+    def _provider(self):
+        from agent_core.providers._openai_responses import OpenAIResponsesProvider
+
+        provider = OpenAIResponsesProvider.__new__(OpenAIResponsesProvider)
+        provider._model_cache = None
+        provider._model_details = None
+        return provider
+
+    def test_provider_qualified_gpt_sol_drops_sampling(self):
+        kwargs = self._provider()._build_kwargs(
+            "bedrock/openai.gpt-5.6-sol",
+            [{"role": "user", "content": "hi"}],
+            None,
+            {"temperature": 0.7, "top_p": 0.9},
+            False,
+        )
+
+        assert "temperature" not in kwargs
+        assert "top_p" not in kwargs
+
+    def test_reasoning_request_drops_sampling_for_unknown_model(self):
+        kwargs = self._provider()._build_kwargs(
+            "custom-reasoning-model",
+            [{"role": "user", "content": "hi"}],
+            None,
+            {"temperature": 0.7, "top_p": 0.9},
+            True,
+        )
+
+        assert "temperature" not in kwargs
+        assert "top_p" not in kwargs
+        assert kwargs["reasoning"] == {"effort": "medium", "summary": "auto"}
+
+    def test_unknown_non_reasoning_model_keeps_sampling(self):
+        kwargs = self._provider()._build_kwargs(
+            "custom-chat-model",
+            [{"role": "user", "content": "hi"}],
+            None,
+            {"temperature": 0.7, "top_p": 0.9},
+            False,
+        )
+
+        assert kwargs["temperature"] == 0.7
+        assert kwargs["top_p"] == 0.9

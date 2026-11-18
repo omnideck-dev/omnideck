@@ -24,6 +24,7 @@ class ContextHook:
     ) -> Any:
         """Delegate to the context manager after each LLM call."""
         await self._ctx_manager.after_model(
+            response=response,
             iteration=iteration, max_iterations=self._max_iterations,
         )
         return response

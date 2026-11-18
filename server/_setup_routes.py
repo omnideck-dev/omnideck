@@ -18,6 +18,7 @@ from aiohttp import web
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from agents import apply_llm_config_to_profiles
+from agent_core.providers import find_model
 from artifacts import list_artifacts, reconcile
 from conversations import conversation_exists
 from migrations._welcome_constants import (
@@ -119,9 +120,18 @@ async def handle_complete(request: web.Request) -> web.Response:
         return web.json_response({"error": "Unknown or invalid field"}, status=400)
 
     try:
-        get_provider(spec.provider)
+        configured_provider = get_provider(spec.provider)
     except ValueError as exc:
         return web.json_response({"error": str(exc)}, status=400)
+
+    vision_think = False
+    if spec.vision_model:
+        vision_info = await find_model(configured_provider, spec.vision_model)
+        vision_think = bool(vision_info and vision_info.thinking_required)
+
+    # Profiles keep a context size only for a model that lets the user set one.
+    main_info = await find_model(configured_provider, spec.main_model)
+    configurable_context = main_info is not None and "context_window" in (main_info.inference_controls or ())
 
     save_settings({
         "default_agent": spec.default_agent,
@@ -130,8 +140,11 @@ async def handle_complete(request: web.Request) -> web.Response:
         # error rather than half-resolving.
         "vision_provider": spec.provider if spec.vision_model else "",
         "vision_model": spec.vision_model or "",
+        "vision_think": vision_think,
+        "vision_options": {},
         "compaction_provider": spec.provider,
         "compaction_model": spec.main_model,
+        "compaction_options": {},
         "title_provider": spec.provider,
         "title_model": spec.main_model,
     })
@@ -139,7 +152,7 @@ async def handle_complete(request: web.Request) -> web.Response:
     apply_llm_config_to_profiles(
         spec.main_model,
         provider=spec.provider,
-        context_window=spec.context_window,
+        context_window=spec.context_window if configurable_context else None,
     )
 
     saved = save_settings({"setup_complete": True})

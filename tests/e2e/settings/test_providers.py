@@ -59,6 +59,34 @@ def test_catalog_excludes_already_configured_provider(page: Page):
         expect(page.get_by_test_id(f"provider-catalog-card-{name}")).to_be_visible()
 
 
+def test_aperture_is_offered_only_after_the_experiment_is_turned_on(page: Page):
+    """Aperture stays out of the Add list until its experimental switch is on."""
+    settings = SettingsPage(page)
+    try:
+        settings.goto_providers()
+        page.get_by_test_id("providers-add-btn").click()
+        expect(page.get_by_test_id("provider-catalog-card-anthropic")).to_be_visible()
+        expect(page.get_by_test_id("provider-catalog-card-aperture")).to_have_count(0)
+        page.get_by_role("button", name="Cancel").click()
+
+        settings.goto_system()
+        switch = page.get_by_role("switch", name="Tailscale Aperture")
+        expect(switch).not_to_be_checked()
+        with page.expect_response(
+            lambda r: r.url.endswith("/api/settings") and r.request.method == "PUT",
+        ) as saved:
+            page.get_by_test_id("aperture-toggle").click()
+        assert saved.value.ok
+        expect(switch).to_be_checked()
+
+        settings.goto_providers()
+        page.get_by_test_id("providers-add-btn").click()
+        expect(page.get_by_test_id("provider-catalog-card-aperture")).to_be_visible()
+        page.get_by_role("button", name="Cancel").click()
+    finally:
+        page.request.put("/api/settings", data={"aperture_enabled": False})
+
+
 def test_add_modal_cancel_closes_it(page: Page):
     """Cancel button in the catalog step dismisses the modal."""
     SettingsPage(page).goto_providers()

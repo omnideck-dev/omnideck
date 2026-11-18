@@ -1,5 +1,6 @@
 """Anthropic provider implementation."""
 
+import inspect
 import json
 import logging
 import time
@@ -7,11 +8,18 @@ from collections.abc import AsyncGenerator, Callable
 from pathlib import Path
 from typing import Any
 
-from ._base import BaseAPIProvider
+from ._base import BaseAPIProvider, ModelDetails
+from ._model_metadata import (
+    build_model_info,
+    discovered_metadata,
+    request_sampling,
+)
 from ._models import ChatDelta, ChatMessage, ChatResponse, ModelInfo, ProviderError, TokenUsage, ToolCall, ToolCallFunction
 from agent_core.tools import callable_to_json_schema
 
 logger = logging.getLogger(__name__)
+
+_REQUIRED_MESSAGE_ARGUMENTS = {"model", "messages", "max_tokens"}
 
 _MODEL_CACHE_TTL = 300.0  # 5 minutes
 
@@ -27,14 +35,18 @@ _STOP_REASON_MAP: dict[str, str] = {
 class AnthropicProvider(BaseAPIProvider):
     """LLM provider backed by the Anthropic Messages API."""
 
+    inference_api = "anthropic_messages"
+
     def __init__(
         self,
         api_key: str | None = None,
         base_url: str | None = None,
         *,
         proxy_socket: Path | None = None,
+        send_authorization: bool = True,
+        model_details: ModelDetails | None = None,
     ) -> None:
-        super().__init__(api_key, base_url)
+        super().__init__(api_key, base_url, model_details=model_details)
         import anthropic
 
         if proxy_socket is not None:
@@ -51,14 +63,26 @@ class AnthropicProvider(BaseAPIProvider):
                 api_key="proxy",
             )
         else:
+            client_class = anthropic.AsyncAnthropic
+            if not send_authorization:
+
+                class _NoAuthAsyncAnthropic(anthropic.AsyncAnthropic):
+                    @property
+                    def auth_headers(self) -> dict[str, str]:
+                        return {}
+
+                client_class = _NoAuthAsyncAnthropic
             kwargs: dict[str, Any] = {}
-            if api_key:
+            if api_key and send_authorization:
                 kwargs["api_key"] = api_key
+            elif not send_authorization:
+                # The SDK requires a credential even though this subclass
+                # deliberately emits no credential header.
+                kwargs["api_key"] = "not-required"
             if base_url:
                 kwargs["base_url"] = base_url
-            self._client = anthropic.AsyncAnthropic(**kwargs)
+            self._client = client_class(**kwargs)
 
-        self._model_cache: list[ModelInfo] | None = None
         self._model_cache_at: float = 0.0
 
     def _build_kwargs(
@@ -80,23 +104,41 @@ class AnthropicProvider(BaseAPIProvider):
         }
         if system_prompt:
             kwargs["system"] = system_prompt
-        if opts.get("temperature") is not None:
-            kwargs["temperature"] = opts["temperature"]
-        if opts.get("top_k") is not None:
-            kwargs["top_k"] = opts["top_k"]
-        if opts.get("top_p") is not None:
-            kwargs["top_p"] = opts["top_p"]
+        info = self._listed_model(model)
+        kwargs.update(request_sampling(info, opts, think=think))
 
         if tools:
             kwargs["tools"] = _convert_tools(tools)
 
-        if think:
-            kwargs["temperature"] = 1
-            max_tok = kwargs["max_tokens"]
-            thinking_budget = opts.get("thinking_budget", "standard")
-            budget_map = {"minimal": 1024, "standard": max_tok // 2, "extended": max_tok}
-            budget = budget_map.get(thinking_budget, max_tok // 2)
-            kwargs["thinking"] = {"type": "enabled", "budget_tokens": max(1024, budget)}
+        effort = opts.get("reasoning_effort")
+        if not think and info.thinking_control == "reasoning_effort" and not info.thinking_required:
+            # Newer Claude models think unless told not to. Leaving the field
+            # out would let a request the user set to "off" think anyway.
+            kwargs["thinking"] = {"type": "disabled"}
+        elif think:
+            if effort or info.thinking_control == "reasoning_effort":
+                # Newer Claude models only accept adaptive thinking and reject
+                # a token budget. Effort is a soft depth control and belongs in
+                # output_config. Without one the model uses its own default.
+                kwargs["thinking"] = {"type": "adaptive"}
+                if effort:
+                    kwargs["output_config"] = {"effort": effort}
+            else:
+                # Manual extended thinking requires budget_tokens >= 1024 and
+                # strictly less than max_tokens.
+                max_tok = max(kwargs["max_tokens"], 2048)
+                kwargs["max_tokens"] = max_tok
+                thinking_budget = opts.get("thinking_budget", "standard")
+                budget_map = {
+                    "minimal": 1024,
+                    "standard": max_tok // 2,
+                    "extended": max_tok - 1,
+                }
+                budget = budget_map.get(thinking_budget, max_tok // 2)
+                kwargs["thinking"] = {
+                    "type": "enabled",
+                    "budget_tokens": min(max_tok - 1, max(1024, budget)),
+                }
 
         # Automatic prompt caching — Anthropic places a cache breakpoint at
         # the end of the cacheable prefix. Subsequent turns with the same
@@ -115,7 +157,10 @@ class AnthropicProvider(BaseAPIProvider):
         think: bool = False,
     ) -> ChatResponse:
         """Send a chat request via Anthropic and normalize the response."""
-        kwargs = self._build_kwargs(model, messages, tools, options, think)
+        kwargs = _supported_message_kwargs(
+            self._client.messages.stream,
+            self._build_kwargs(model, messages, tools, options, think),
+        )
 
         try:
             async with self._client.messages.stream(**kwargs) as stream:
@@ -134,7 +179,10 @@ class AnthropicProvider(BaseAPIProvider):
         think: bool = False,
     ) -> AsyncGenerator[ChatDelta | ChatResponse, None]:
         """Stream token deltas followed by a final ChatResponse."""
-        kwargs = self._build_kwargs(model, messages, tools, options, think)
+        kwargs = _supported_message_kwargs(
+            self._client.messages.stream,
+            self._build_kwargs(model, messages, tools, options, think),
+        )
 
         try:
             async with self._client.messages.stream(**kwargs) as stream:
@@ -156,15 +204,10 @@ class AnthropicProvider(BaseAPIProvider):
             return self._model_cache
         try:
             response = await self._client.models.list(limit=100)
-            results: list[ModelInfo] = []
-            for m in response.data:
-                results.append(ModelInfo(
-                    name=m.id,
-                    context_window=getattr(m, "max_input_tokens", None),
-                    max_output_tokens=getattr(m, "max_tokens", None),
-                    supports_images=_supports_images(m.id),
-                    supports_thinking=_supports_thinking(m.id),
-                ))
+            results = [
+                build_model_info(m.id, "anthropic_messages", discovered_metadata(m))
+                for m in response.data
+            ]
             self._model_cache = results
             self._model_cache_at = now
             return self._model_cache
@@ -177,20 +220,40 @@ class AnthropicProvider(BaseAPIProvider):
         self._model_cache_at = 0.0
 
 
-def _supports_images(model_id: str) -> bool:
-    """All Claude 3+ models support image input."""
-    return any(
-        prefix in model_id
-        for prefix in ("claude-3", "claude-sonnet-4", "claude-opus-4", "claude-haiku-4")
-    )
+def _supported_message_kwargs(method: Callable[..., Any], kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Keep request fields accepted by the installed Anthropic SDK client.
 
+    Anthropic exposes different ``messages.stream`` signatures for direct and
+    Bedrock clients, and those signatures have changed between SDK releases.
+    Inspecting the bound method keeps optional sampling fields from failing a
+    request before it reaches Aperture while retaining the required request
+    envelope. Wrappers accepting ``**kwargs`` remain untouched.
+    """
+    try:
+        parameters = inspect.signature(method).parameters.values()
+    except (TypeError, ValueError):
+        return kwargs
+    if any(parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters):
+        return kwargs
 
-def _supports_thinking(model_id: str) -> bool:
-    """Claude 3.7 Sonnet and Claude 4+ support extended thinking."""
-    return any(
-        prefix in model_id
-        for prefix in ("claude-3-7-sonnet", "claude-sonnet-4", "claude-opus-4")
-    )
+    supported = {
+        parameter.name
+        for parameter in parameters
+        if parameter.kind in {
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            inspect.Parameter.KEYWORD_ONLY,
+        }
+    }
+    supported.update(_REQUIRED_MESSAGE_ARGUMENTS)
+    filtered = {key: value for key, value in kwargs.items() if key in supported}
+    dropped = kwargs.keys() - filtered.keys()
+    if dropped:
+        logger.debug(
+            "Ignoring request options unsupported by %s: %s",
+            type(getattr(method, "__self__", None)).__name__,
+            ", ".join(sorted(dropped)),
+        )
+    return filtered
 
 
 def _convert_messages(

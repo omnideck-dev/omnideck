@@ -7,8 +7,8 @@ to generate concise titles (3-5 words) that capture the essence of the conversat
 
 import logging
 
+from providers import get_provider, resolve_role_options
 from settings import load_settings
-from providers import get_provider
 
 logger = logging.getLogger(__name__)
 
@@ -46,14 +46,15 @@ async def generate_conversation_title(first_message: str) -> str:
             {"role": "user", "content": f"Generate a title for this conversation: {first_message}"}
         ]
 
-        # Titles are tiny — cap output and keep sampling focused.
-        options = {"num_predict": 50, "temperature": 0.3}
+        # Titles are tiny, so cap output. Sampling stays provider-native; some
+        # reasoning models reject temperature overrides entirely.
+        request = await resolve_role_options(provider, title_model, "title")
 
         response = await provider.chat(
             model=title_model,
             messages=messages,
-            options=options,
-            think=False,
+            options=request.options,
+            think=request.think,
         )
         
         if response and response.message and response.message.content:
@@ -92,6 +93,3 @@ def _truncate_for_title(message: str, max_length: int = 50) -> str:
     if len(clean) > max_length:
         return clean[:max_length - 3] + "..."
     return clean
-
-
-

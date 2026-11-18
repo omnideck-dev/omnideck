@@ -2,10 +2,11 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import SystemSettings from '../SystemSettings.jsx';
+import { invalidateModelCache } from '../ModelPicker.jsx';
 import { OmnideckHostProvider } from '../../features/app/OmnideckHost.jsx';
 
 const refreshFeatures = vi.fn();
-const providersHook = { providers: [] };
+const providersHook = { providers: [], refresh: vi.fn() };
 
 vi.mock('../../contexts/AppData.jsx', () => ({
     useAppData: () => ({ providersHook, refreshFeatures }),
@@ -13,6 +14,9 @@ vi.mock('../../contexts/AppData.jsx', () => ({
 
 describe('SystemSettings', () => {
     beforeEach(() => {
+        providersHook.providers = [];
+        providersHook.refresh.mockReset();
+        invalidateModelCache();
         refreshFeatures.mockReset();
         globalThis.fetch = vi.fn((url, init = {}) => {
             if (url === '/api/settings' && init.method === 'PUT') {
@@ -23,6 +27,7 @@ describe('SystemSettings', () => {
                         default_agent: 'omnideck',
                         custom_apps_enabled: true,
                         custom_tools_enabled: true,
+                        aperture_enabled: true,
                     }),
                 });
             }
@@ -34,6 +39,7 @@ describe('SystemSettings', () => {
                         default_agent: 'omnideck',
                         custom_apps_enabled: false,
                         custom_tools_enabled: false,
+                        aperture_enabled: false,
                     }),
                 });
             }
@@ -74,6 +80,35 @@ describe('SystemSettings', () => {
             }),
         ));
         await waitFor(() => expect(refreshFeatures).toHaveBeenCalledOnce());
+        expect(toggle).toBeChecked();
+    });
+
+    it('persists Tailscale Aperture and refreshes features and providers', async () => {
+        await act(async () => {
+            render(
+                <OmnideckHostProvider host={null}>
+                    <SystemSettings />
+                </OmnideckHostProvider>,
+            );
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        });
+
+        const toggle = await screen.findByRole('switch', { name: 'Tailscale Aperture' });
+        expect(toggle).not.toBeChecked();
+        await act(async () => {
+            fireEvent.click(toggle);
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        });
+
+        await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledWith(
+            '/api/settings',
+            expect.objectContaining({
+                method: 'PUT',
+                body: JSON.stringify({ aperture_enabled: true }),
+            }),
+        ));
+        await waitFor(() => expect(refreshFeatures).toHaveBeenCalledOnce());
+        expect(providersHook.refresh).toHaveBeenCalledOnce();
         expect(toggle).toBeChecked();
     });
 
@@ -135,5 +170,75 @@ describe('SystemSettings', () => {
         expect(within(models).getByText('Compaction')).toBeInTheDocument();
         expect(within(models).getByText('Title generation')).toBeInTheDocument();
         expect(within(models).getAllByTestId('model-picker')).toHaveLength(3);
+    });
+
+    it('detects independent model defaults for vision, compaction, and titles', async () => {
+        providersHook.providers = [{ name: 'aperture', label: 'Tailscale Aperture' }];
+        const settings = {
+            setup_complete: true,
+            default_agent: 'omnideck',
+            vision_provider: 'aperture',
+            vision_model: 'openai.gpt-5.6-luna',
+            vision_think: false,
+            vision_options: {},
+            compaction_provider: 'aperture',
+            compaction_model: 'openai.gpt-5.6-luna',
+            compaction_options: {},
+            title_provider: 'aperture',
+            title_model: 'openai.gpt-5.6-luna',
+            role_output_caps: { vision: 512, compaction: 8192, title: 50 },
+        };
+        globalThis.fetch = vi.fn((url) => {
+            if (url.startsWith('/api/models')) {
+                return Promise.resolve({
+                    ok: true,
+                    json: async () => ({ models: [{
+                        name: 'openai.gpt-5.6-luna',
+                        context_window: 1_050_000,
+                        max_output_tokens: 128_000,
+                        supports_images: true,
+                        supports_thinking: true,
+                        wire_api: 'Responses',
+                        inference_api: 'openai_responses',
+                        inference_controls: [
+                            'temperature', 'top_p', 'num_predict',
+                            'think', 'reasoning_effort', 'reasoning_summary',
+                        ],
+                        thinking_control: 'reasoning_effort',
+                        thinking_levels: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+                    }] }),
+                });
+            }
+            if (url === '/api/settings') {
+                return Promise.resolve({ ok: true, json: async () => settings });
+            }
+            if (url === '/api/profiles') {
+                return Promise.resolve({
+                    ok: true,
+                    json: async () => [{ id: 'omnideck', name: 'Omnideck' }],
+                });
+            }
+            return Promise.resolve({ ok: true, json: async () => ({}) });
+        });
+
+        render(
+            <OmnideckHostProvider host={null}>
+                <SystemSettings />
+            </OmnideckHostProvider>,
+        );
+
+        expect(await screen.findAllByText(/Responses · 1.1M context/)).toHaveLength(3);
+        expect(screen.getByTestId('vision-model-detection')).toHaveTextContent('512-token role cap');
+        expect(screen.getByTestId('compaction-model-detection')).toHaveTextContent('8K-token role cap');
+        expect(screen.getByTestId('title-model-detection')).toHaveTextContent('50-token role cap');
+
+        fireEvent.click(screen.getByTestId('vision-advanced-toggle'));
+        expect(screen.getByTestId('vision-option-temperature')).toBeInTheDocument();
+        expect(screen.queryByTestId('vision-option-top_k')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('vision-option-num_ctx')).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByTestId('compaction-advanced-toggle'));
+        expect(screen.queryByTestId('compaction-option-num_ctx')).not.toBeInTheDocument();
+        expect(screen.getByTestId('compaction-model-detection')).toHaveTextContent('1.1M context');
     });
 });

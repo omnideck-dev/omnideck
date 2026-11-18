@@ -17,7 +17,7 @@ from agent_runtime._compaction import (
     _serialize_messages,
 )
 from agent_core.events import CompactionPayload
-from agent_core.providers import ProviderError
+from agent_core.providers import ModelInfo, ProviderError
 
 
 def _make_stats(fill_ratio: float = 0.8) -> ContextStats:
@@ -26,6 +26,66 @@ def _make_stats(fill_ratio: float = 0.8) -> ContextStats:
 
 def _build_history(messages: list[dict]) -> ConversationHistory:
     return ConversationHistory(messages)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_compaction_chunk_size_uses_discovered_model_context():
+    """Auto context follows the selected model instead of assuming 8K."""
+    strategy = LLMCompactionStrategy(summary_model="large-context-model")
+    messages = [{"role": "user", "content": "x" * 40_000}]
+
+    with patch.object(strategy, "_call_summarizer", new_callable=AsyncMock) as call, \
+         patch("agent_runtime._compaction.load_settings", return_value={
+             "compaction_provider": "test-provider",
+             "compaction_model": "large-context-model",
+             "compaction_options": {},
+         }), \
+         patch("agent_runtime._compaction.get_provider", return_value=MagicMock(
+             list_models=AsyncMock(return_value=[
+                 ModelInfo(name="large-context-model", context_window=100_000),
+             ]),
+         )):
+        call.return_value = ("summary", "large-context-model")
+        result = await strategy._summarize(messages)
+
+    assert result == ("summary", "large-context-model")
+    call.assert_awaited_once()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@pytest.mark.parametrize("controls, expected_temperature", [
+    (["temperature", "num_predict"], 0),
+    (["reasoning_effort", "num_predict"], None),
+])
+async def test_intent_extraction_only_sets_supported_temperature(
+    controls,
+    expected_temperature,
+):
+    strategy = LLMCompactionStrategy(summary_model="test-model")
+    provider = MagicMock()
+    provider.chat = AsyncMock(return_value=MagicMock(
+        message=MagicMock(content="current intent"),
+    ))
+    provider.list_models = AsyncMock(return_value=[ModelInfo(
+        name="test-model",
+        inference_controls=controls,
+    )])
+
+    with patch("agent_runtime._compaction.load_settings", return_value={
+        "compaction_provider": "test-provider",
+        "compaction_model": "test-model",
+        "compaction_options": {},
+    }), patch("agent_runtime._compaction.get_provider", return_value=provider):
+        result = await strategy._extract_intent(["first", "second"])
+
+    assert result == "current intent"
+    sent_options = provider.chat.await_args.kwargs["options"]
+    if expected_temperature is None:
+        assert "temperature" not in sent_options
+    else:
+        assert sent_options["temperature"] == expected_temperature
 
 
 # ── compaction publishes a CompactionPayload ────────────────────────────

@@ -12,8 +12,8 @@ from pydantic import BaseModel, ConfigDict, Field
 class LLMConfig(BaseModel):
     """Connection parameters for constructing a direct-connect LLM provider.
 
-    Direct providers carry no credentials (Ollama and no-auth OpenAI-compat
-    endpoints) — just the base URL to connect to.
+    Direct providers carry no credentials (Ollama, Aperture, and no-auth
+    OpenAI-compat endpoints) — just the base URL to connect to.
     """
 
     provider: str = "ollama"
@@ -96,6 +96,7 @@ class ModelInfo(BaseModel):
     """Metadata for an available model, returned by provider.list_models()."""
 
     name: str
+    display_name: str | None = None
     context_window: int | None = None
     max_output_tokens: int | None = None
     supports_images: bool = False
@@ -103,5 +104,20 @@ class ModelInfo(BaseModel):
     parameter_size: str | None = None
     quantization_level: str | None = None
     family: str | None = None
+    wire_api: str | None = None
+    # The request format and the request settings this model accepts.
+    # ``wire_api`` is only a readable label for that format.
+    inference_api: str | None = None
+    inference_controls: list[str] | None = None
+    # How a thinking level is sent, which levels the model accepts, and the
+    # level it uses when none is chosen. None means thinking cannot be set.
+    thinking_control: str | None = None
+    thinking_levels: list[str] | None = None
+    thinking_default: str | None = None
+    thinking_required: bool = False
+    # Controls the request format rejects while thinking is on, and groups of
+    # controls the model rejects when more than one of them is set.
+    thinking_excluded_controls: list[str] | None = None
+    exclusive_controls: list[list[str]] | None = None
     capabilities: list[str] = Field(default_factory=list)
     is_cloud: bool = False

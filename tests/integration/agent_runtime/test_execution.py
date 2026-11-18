@@ -61,7 +61,9 @@ async def test_profile_configuration_reaches_provider_through_every_entry(harnes
     first, second = requests
     assert first["options"]["temperature"] == 0.23
     assert first["options"]["top_p"] == 0.7
-    assert first["options"]["num_ctx"] == 120_000
+    # num_ctx is an Ollama-only runtime allocation and must not leak to a
+    # non-Ollama provider. The context capacity still drives compaction.
+    assert "num_ctx" not in first["options"]
     assert first["think"] is True
     assert "system:leaf" in first["messages"][0]["content"]
     assert "guidance:leaf-skill" in first["messages"][0]["content"]

@@ -7,9 +7,25 @@ from collections.abc import AsyncGenerator, Callable
 from pathlib import Path
 from typing import Any
 
-from ._base import BaseAPIProvider
-from ._models import ChatDelta, ChatMessage, ChatResponse, LLMConfig, ModelInfo, ProviderError, TokenUsage, ToolCall, ToolCallFunction
 from agent_core.tools import callable_to_json_schema
+
+from ._base import BaseAPIProvider, ModelDetails
+from ._models import (
+    ChatDelta,
+    ChatMessage,
+    ChatResponse,
+    LLMConfig,
+    ModelInfo,
+    ProviderError,
+    TokenUsage,
+    ToolCall,
+    ToolCallFunction,
+)
+from ._model_metadata import (
+    build_model_info,
+    discovered_metadata,
+    request_sampling,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,14 +45,18 @@ _RETRYABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
 class OpenAIProvider(BaseAPIProvider):
     """LLM provider backed by the OpenAI API or any OpenAI-compatible endpoint."""
 
+    inference_api = "openai_chat"
+
     def __init__(
         self,
         api_key: str | None = None,
         base_url: str | None = None,
         *,
         proxy_socket: Path | None = None,
+        send_authorization: bool = True,
+        model_details: ModelDetails | None = None,
     ) -> None:
-        super().__init__(api_key, base_url)
+        super().__init__(api_key, base_url, model_details=model_details)
         # Lazy import — the openai package is an optional heavy dep.
         import openai
 
@@ -45,6 +65,7 @@ class OpenAIProvider(BaseAPIProvider):
             # The broker injects the real API key; we pass a placeholder so
             # the SDK doesn't complain about a missing key.
             import httpx
+
             transport = httpx.AsyncHTTPTransport(uds=str(proxy_socket))
             http_client = httpx.AsyncClient(transport=transport)
             self._client = openai.AsyncOpenAI(
@@ -59,9 +80,17 @@ class OpenAIProvider(BaseAPIProvider):
             # Many OpenAI-compatible servers require a non-empty api_key even when
             # auth is disabled; use a placeholder so the SDK doesn't complain.
             kwargs["api_key"] = api_key or "not-required"
-            self._client = openai.AsyncOpenAI(**kwargs)
+            client_class = openai.AsyncOpenAI
+            if not send_authorization:
 
-        self._model_cache: list[ModelInfo] | None = None
+                class _NoAuthAsyncOpenAI(openai.AsyncOpenAI):
+                    @property
+                    def auth_headers(self) -> dict[str, str]:
+                        return {}
+
+                client_class = _NoAuthAsyncOpenAI
+            self._client = client_class(**kwargs)
+
         self._model_cache_at: float = 0.0
 
     @classmethod
@@ -86,10 +115,8 @@ class OpenAIProvider(BaseAPIProvider):
         max_tokens = opts.get("num_predict") or opts.get("max_tokens")
         if max_tokens:
             kwargs["max_tokens"] = max_tokens
-        if opts.get("temperature") is not None:
-            kwargs["temperature"] = opts["temperature"]
-        if opts.get("top_p") is not None:
-            kwargs["top_p"] = opts["top_p"]
+        info = self._listed_model(model)
+        kwargs.update(request_sampling(info, opts, think=think))
         if tools:
             kwargs["tools"] = _convert_tools(tools)
             kwargs["tool_choice"] = "auto"
@@ -228,16 +255,17 @@ def _parse_model_object(m: Any) -> ModelInfo:
     OpenRouter includes extra fields (context_length, architecture, etc.)
     that the SDK may preserve as extra attributes. Parse them when present.
     """
-    ctx: int | None = getattr(m, "context_length", None)
-    max_out: int | None = None
-    images = False
+    discovered = discovered_metadata(m)
+    ctx: int | None = discovered.get("context_window", getattr(m, "context_length", None))
+    max_out: int | None = discovered.get("max_output_tokens")
+    images: bool | None = discovered.get("supports_images")
 
     # OpenRouter: top_provider.max_completion_tokens
     top_provider = getattr(m, "top_provider", None)
     if top_provider is not None:
-        max_out = getattr(top_provider, "max_completion_tokens", None)
+        max_out = getattr(top_provider, "max_completion_tokens", None) or max_out
         if isinstance(top_provider, dict):
-            max_out = top_provider.get("max_completion_tokens")
+            max_out = top_provider.get("max_completion_tokens") or max_out
 
     # OpenRouter: architecture.input_modalities
     arch = getattr(m, "architecture", None)
@@ -249,18 +277,28 @@ def _parse_model_object(m: Any) -> ModelInfo:
             images = "image" in modalities
 
     # OpenRouter: supported_parameters contains "reasoning" for thinking models
-    thinking = False
-    supported_params = getattr(m, "supported_parameters", None)
-    if isinstance(supported_params, list):
-        thinking = "reasoning" in supported_params
-
-    return ModelInfo(
-        name=m.id,
-        context_window=ctx if isinstance(ctx, int) else None,
-        max_output_tokens=max_out if isinstance(max_out, int) else None,
-        supports_images=images,
-        supports_thinking=thinking,
+    thinking: bool | None = discovered.get("supports_thinking")
+    supported_params = discovered.get(
+        "supported_parameters", getattr(m, "supported_parameters", None),
     )
+    if isinstance(supported_params, list):
+        thinking = any(
+            parameter in supported_params
+            for parameter in ("reasoning", "reasoning_effort", "thinking", "thinking_budget")
+        )
+
+    listed = dict(discovered)
+    if isinstance(ctx, int) and not isinstance(ctx, bool) and ctx > 0:
+        listed["context_window"] = ctx
+    if isinstance(max_out, int) and not isinstance(max_out, bool) and max_out > 0:
+        listed["max_output_tokens"] = max_out
+    if images is not None:
+        listed["supports_images"] = images
+    if thinking is not None:
+        listed["supports_thinking"] = thinking
+    if isinstance(supported_params, list):
+        listed["supported_parameters"] = supported_params
+    return build_model_info(m.id, "openai_chat", listed)
 
 
 # ---------------------------------------------------------------------------
@@ -282,19 +320,23 @@ def _convert_messages_for_openai(messages: list[dict[str, Any]]) -> list[dict[st
             for tc in msg["tool_calls"]:
                 func = tc.get("function", {})
                 args = func.get("arguments", {})
-                openai_tcs.append({
-                    "id": tc.get("id", ""),
-                    "type": "function",
-                    "function": {
-                        "name": func.get("name", ""),
-                        "arguments": json.dumps(args) if isinstance(args, dict) else args,
-                    },
-                })
-            converted.append({
-                "role": "assistant",
-                "content": msg.get("content"),
-                "tool_calls": openai_tcs,
-            })
+                openai_tcs.append(
+                    {
+                        "id": tc.get("id", ""),
+                        "type": "function",
+                        "function": {
+                            "name": func.get("name", ""),
+                            "arguments": json.dumps(args) if isinstance(args, dict) else args,
+                        },
+                    }
+                )
+            converted.append(
+                {
+                    "role": "assistant",
+                    "content": msg.get("content"),
+                    "tool_calls": openai_tcs,
+                }
+            )
         elif msg.get("images"):
             content_parts: list[dict[str, Any]] = []
             text = msg.get("content")
@@ -302,10 +344,12 @@ def _convert_messages_for_openai(messages: list[dict[str, Any]]) -> list[dict[st
                 content_parts.append({"type": "text", "text": text})
             for img in msg["images"]:
                 media_type = img.get("media_type", "image/png")
-                content_parts.append({
-                    "type": "image_url",
-                    "image_url": {"url": f"data:{media_type};base64,{img['data']}"},
-                })
+                content_parts.append(
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{media_type};base64,{img['data']}"},
+                    }
+                )
             converted.append({"role": msg.get("role", "user"), "content": content_parts})
         else:
             converted.append(msg)
@@ -334,10 +378,12 @@ def _build_tool_calls(tc_accum: dict[int, dict[str, str]]) -> list[ToolCall] | N
                 args = json.loads(tc["arguments"])
             except json.JSONDecodeError:
                 args = {}
-        result.append(ToolCall(
-            id=tc["id"] or None,
-            function=ToolCallFunction(name=tc["name"], arguments=args),
-        ))
+        result.append(
+            ToolCall(
+                id=tc["id"] or None,
+                function=ToolCallFunction(name=tc["name"], arguments=args),
+            )
+        )
     return result or None
 
 
@@ -389,10 +435,12 @@ def _normalize_response(raw: Any) -> ChatResponse:
                     args = json.loads(tc.function.arguments)
                 except json.JSONDecodeError:
                     args = {}
-            tool_calls.append(ToolCall(
-                id=tc.id,
-                function=ToolCallFunction(name=tc.function.name, arguments=args),
-            ))
+            tool_calls.append(
+                ToolCall(
+                    id=tc.id,
+                    function=ToolCallFunction(name=tc.function.name, arguments=args),
+                )
+            )
 
     thinking = getattr(msg, "reasoning", None) or getattr(msg, "reasoning_content", None) or None
 

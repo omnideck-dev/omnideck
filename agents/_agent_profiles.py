@@ -142,7 +142,9 @@ def apply_llm_config_to_profiles(
             updates: dict = {"model": model}
             if provider is not None:
                 updates["provider"] = provider
-            if context_window is not None:
+                # A new provider replaces any context size from the old one.
+                updates["context_window"] = context_window
+            elif context_window is not None:
                 updates["context_window"] = context_window
             updated = profile.model_copy(update=updates)
             path = d / f"{updated.id}.json"

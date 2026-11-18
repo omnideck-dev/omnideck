@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from settings import (
     SettingsUpdate,
+    aperture_enabled,
     custom_apps_enabled,
     custom_tools_enabled,
     load_settings,
@@ -35,12 +36,15 @@ class TestLoadSettings:
         assert s["direct_providers"] == {}
         assert s["vision_provider"] == ""
         assert s["vision_model"] == ""
+        assert s["vision_options"] == {}
         assert s["compaction_provider"] == ""
         assert s["compaction_model"] == ""
+        assert s["compaction_options"] == {}
         assert s["title_provider"] == ""
         assert s["title_model"] == ""
         assert s["custom_apps_enabled"] is False
         assert s["custom_tools_enabled"] is False
+        assert s["aperture_enabled"] is False
         assert s["home_app_slug"] is None
 
     def test_missing_custom_apps_setting_is_disabled(self, tmp_path):
@@ -52,6 +56,11 @@ class TestLoadSettings:
         """Existing settings files predate the toggle and remain safely off."""
         (tmp_path / "settings.json").write_text(json.dumps({"setup_complete": True}))
         assert custom_tools_enabled() is False
+
+    def test_missing_aperture_setting_is_disabled(self, tmp_path):
+        """Existing settings files predate the toggle and remain safely off."""
+        (tmp_path / "settings.json").write_text(json.dumps({"setup_complete": True}))
+        assert aperture_enabled() is False
 
     def test_loads_from_disk(self, tmp_path):
         """Reads saved settings."""
@@ -123,6 +132,11 @@ class TestSettingsUpdate:
         """The Custom Tools feature flag is a valid settings update."""
         u = SettingsUpdate(custom_tools_enabled=True)
         assert u.custom_tools_enabled is True
+
+    def test_aperture_toggle_accepted(self):
+        """The Tailscale Aperture feature flag is a valid settings update."""
+        u = SettingsUpdate(aperture_enabled=True)
+        assert u.aperture_enabled is True
 
     def test_home_app_slug_rejects_invalid_value(self):
         with pytest.raises(ValidationError, match="lowercase app slug"):

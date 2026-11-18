@@ -18,6 +18,24 @@
     margin-bottom: var(--sp-2);
 }
 
+.detectedCapabilities {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    margin: calc(-1 * var(--sp-1)) 0 var(--sp-3);
+    padding: var(--sp-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+    color: var(--text-secondary);
+    font-size: 11px;
+    line-height: 1.35;
+}
+
+.detectedCapabilities i {
+    color: var(--accent);
+}
+
 /* ---- Preset buttons ---- */
 .presetGrid {
     display: grid;
@@ -139,7 +157,3 @@
     line-height: 1.3;
 }
 
-.thinkingRow { grid-column: 1 / -1; padding: var(--sp-3) 0; }
-.thinkingControl { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-5); }
-.thinkingControl > span { display: flex; flex-direction: column; gap: var(--sp-1); }
-.thinkingControl:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-md); }

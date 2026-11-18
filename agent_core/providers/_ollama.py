@@ -13,6 +13,7 @@ from rich.panel import Panel
 from rich.text import Text
 from agent_core.tools._schema_tool import SchemaTool
 
+from ._model_metadata import build_model_info, listed_model
 from ._models import ChatDelta, ChatMessage, ChatResponse, LLMConfig, ModelInfo, ProviderError, TokenUsage, ToolCall, ToolCallFunction
 
 logger = logging.getLogger(__name__)
@@ -32,18 +33,28 @@ def _build_ollama_kwargs(
     tools: list[Callable[..., Any]] | None,
     options: dict[str, Any] | None,
     think: bool,
+    *,
+    thinking_required: bool = False,
 ) -> dict[str, Any]:
     """Build kwargs dict for the Ollama chat API."""
+    clean_options = dict(options or {})
+    # Ollama exposes graded thinking as the top-level `think` string. Reuse
+    # the provider-neutral reasoning_effort profile field, but never leak it
+    # into Ollama's model `options` object.
+    thinking_level = clean_options.pop("reasoning_effort", None)
+    effective_think = thinking_level if think and thinking_level else think
+    if thinking_required and not effective_think:
+        effective_think = True
     kwargs: dict[str, Any] = {
         "model": model,
         "messages": _convert_messages_for_ollama(messages),
         "stream": True,
-        "think": think,
+        "think": effective_think,
     }
     if tools:
         kwargs["tools"] = [tool.definition() if isinstance(tool, SchemaTool) else tool for tool in tools]
-    if options:
-        kwargs["options"] = options
+    if clean_options:
+        kwargs["options"] = clean_options
     return kwargs
 
 
@@ -66,6 +77,8 @@ def _convert_messages_for_ollama(messages: list[dict[str, Any]]) -> list[dict[st
 class OllamaProvider:
     """LLM provider backed by an Ollama server."""
 
+    inference_api = "ollama"
+
     def __init__(self, host: str | None = None) -> None:
         self._client = AsyncClient(host=host, timeout=_DEFAULT_TIMEOUT)
         self._model_cache: list[ModelInfo] | None = None
@@ -86,7 +99,10 @@ class OllamaProvider:
         think: bool = False,
     ) -> ChatResponse:
         """Send a chat request via Ollama and normalize the response."""
-        kwargs = _build_ollama_kwargs(model, messages, tools, options, think)
+        kwargs = _build_ollama_kwargs(
+            model, messages, tools, options, think,
+            thinking_required=listed_model(self._model_cache, model, "ollama").thinking_required,
+        )
 
         try:
             raw = None
@@ -144,7 +160,10 @@ class OllamaProvider:
         think: bool = False,
     ) -> AsyncGenerator[ChatDelta | ChatResponse, None]:
         """Stream token deltas followed by a final ChatResponse."""
-        kwargs = _build_ollama_kwargs(model, messages, tools, options, think)
+        kwargs = _build_ollama_kwargs(
+            model, messages, tools, options, think,
+            thinking_required=listed_model(self._model_cache, model, "ollama").thinking_required,
+        )
 
         try:
             raw = None
@@ -211,7 +230,7 @@ class OllamaProvider:
         response = await self._client.list()
         models = [m for m in response.models if m.model is not None]
 
-        async def _show_details(name: str) -> tuple[list[str], int | None]:
+        async def _show_details(name: str) -> tuple[list[str] | None, int | None]:
             try:
                 show_resp = await self._client.show(name)
                 caps = list(getattr(show_resp, "capabilities", None) or [])
@@ -228,7 +247,7 @@ class OllamaProvider:
                 return caps, ctx
             except Exception:
                 logger.debug("Failed to fetch details for model '%s'", name)
-                return [], None
+                return None, None
 
         detail_lists = await asyncio.gather(
             *(_show_details(m.model) for m in models)
@@ -238,15 +257,20 @@ class OllamaProvider:
         for m, (capabilities, context_window) in zip(models, detail_lists, strict=True):
             name = m.model
             details = getattr(m, "details", None)
-            results.append(ModelInfo(
-                name=name,
-                context_window=context_window,
-                supports_images="vision" in capabilities,
-                supports_thinking="thinking" in capabilities,
+            discovered: dict[str, Any] = {}
+            if capabilities is not None:
+                discovered["supports_images"] = "vision" in capabilities
+                discovered["supports_thinking"] = "thinking" in capabilities
+            if context_window:
+                discovered["context_window"] = context_window
+            results.append(build_model_info(
+                name,
+                "ollama",
+                discovered,
                 parameter_size=getattr(details, "parameter_size", None) if details else None,
                 quantization_level=getattr(details, "quantization_level", None) if details else None,
                 family=getattr(details, "family", None) if details else None,
-                capabilities=capabilities,
+                capabilities=capabilities or [],
                 is_cloud=name.endswith(":cloud"),
             ))
 

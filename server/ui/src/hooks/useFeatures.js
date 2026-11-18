@@ -6,6 +6,7 @@ const DEFAULTS = {
     desktop: false,
     custom_tools: false,
     custom_apps: false,
+    aperture: false,
 };
 
 /**

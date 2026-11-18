@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ProfileBuilder from '../ProfileBuilder.jsx';
+import { invalidateModelCache } from '../ModelPicker.jsx';
 import { BrowserProfilesCatalogProvider } from '../../features/browser/BrowserProfilesContext.jsx';
 import useBrowserProfiles from '../../features/browser/useBrowserProfiles.js';
 
@@ -47,6 +48,8 @@ describe('ProfileBuilder skill picker + autonomy', () => {
     let _originalFetch;
 
     beforeEach(() => {
+        // Model lists are cached per provider across renders; start each test clean.
+        invalidateModelCache();
         _originalFetch = global.fetch;
         global.fetch = vi.fn(() => Promise.resolve({
             ok: true,
@@ -375,5 +378,148 @@ describe('ProfileBuilder skill picker + autonomy', () => {
         expect(onDelete).not.toHaveBeenCalled();
         await user.click(screen.getByRole('menuitem', { name: 'Confirm delete?' }));
         expect(onDelete).toHaveBeenCalledWith('p1');
+    });
+
+    it('auto-detects GPT Responses controls for an existing Aperture profile', async () => {
+        global.fetch = vi.fn(() => Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => ({
+                models: [{
+                    name: 'gpt-5.6-luna',
+                    wire_api: 'Responses',
+                    inference_api: 'openai_responses',
+                    inference_controls: [
+                        'num_predict', 'max_iterations', 'compaction_threshold', 'think',
+                        'reasoning_effort', 'reasoning_summary',
+                    ],
+                    thinking_control: 'reasoning_effort',
+                    thinking_levels: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+                    supports_thinking: true,
+                    context_window: 1_050_000,
+                    max_output_tokens: 128_000,
+                }],
+            }),
+        }));
+        const user = userEvent.setup();
+
+        renderBuilder({
+            profile: _profile({
+                provider: 'aperture',
+                model: 'gpt-5.6-luna',
+            }),
+            providers: [{ name: 'aperture', label: 'Tailscale Aperture' }],
+        });
+
+        expect(await screen.findByTestId('inference-detection')).toHaveTextContent(
+            'Responses · 1.1M context',
+        );
+        const thinkingLevel = screen.getByTestId('field-thinking-level');
+        expect(within(thinkingLevel).getByText('Thinking Level')).toBeInTheDocument();
+        expect(screen.queryByTestId('field-reasoning_summary')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('field-thinking_budget')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('field-context_window')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('field-temperature')).not.toBeInTheDocument();
+        expect(screen.queryByText('Balanced')).not.toBeInTheDocument();
+        expect(screen.queryByText('Creative')).not.toBeInTheDocument();
+        expect(screen.queryByText('Precise')).not.toBeInTheDocument();
+        expect(screen.getByText('Code')).toBeInTheDocument();
+        expect(screen.getByTestId('field-compaction_threshold')).toBeInTheDocument();
+        expect(screen.getByTestId('field-num_predict')).toHaveAttribute('min', '1');
+        expect(screen.getByTestId('field-num_predict')).toHaveAttribute('max', '128000');
+
+        await user.click(screen.getByTestId('thinking-level-select'));
+        expect(screen.getByRole('option', { name: 'Automatic' })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'None' })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'Extra high' })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'Maximum' })).toBeInTheDocument();
+        await user.click(screen.getByRole('option', { name: 'High' }));
+        expect(screen.getByTestId('field-reasoning_summary')).toBeInTheDocument();
+    });
+
+    it('clears refused sampling pairs and hides fields thinking turns off', async () => {
+        global.fetch = vi.fn(() => Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => ({
+                models: [{
+                    name: 'claude-sonnet-4-5',
+                    inference_api: 'anthropic_messages',
+                    inference_controls: [
+                        'temperature', 'top_p', 'top_k', 'num_predict',
+                        'max_iterations', 'compaction_threshold', 'think', 'thinking_budget',
+                    ],
+                    supports_thinking: true,
+                    thinking_control: 'thinking_budget',
+                    thinking_levels: ['minimal', 'standard', 'extended'],
+                    thinking_excluded_controls: ['temperature', 'top_k'],
+                    exclusive_controls: [['temperature', 'top_p']],
+                }],
+            }),
+        }));
+        const user = userEvent.setup();
+
+        renderBuilder({
+            profile: _profile({
+                provider: 'anthropic',
+                model: 'claude-sonnet-4-5',
+                temperature: 0.4,
+            }),
+            providers: [{ name: 'anthropic', label: 'Anthropic' }],
+        });
+
+        await screen.findByTestId('inference-detection');
+        expect(screen.getByTestId('field-temperature')).toHaveValue(0.4);
+        await user.type(screen.getByTestId('field-top_p'), '1');
+        expect(screen.getByTestId('field-temperature')).toHaveValue(null);
+        expect(screen.getByTestId('field-top_p')).toHaveValue(1);
+
+        await user.click(screen.getByTestId('thinking-level-select'));
+        await user.click(screen.getByRole('option', { name: 'standard' }));
+        expect(screen.queryByTestId('field-temperature')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('field-top_k')).not.toBeInTheDocument();
+        expect(screen.getByTestId('field-top_p')).toBeInTheDocument();
+    });
+
+    it('keeps runtime context configurable for local Ollama models', async () => {
+        global.fetch = vi.fn(() => Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => ({
+                models: [{
+                    name: 'test-model:7b',
+                    inference_api: 'ollama',
+                    inference_controls: [
+                        'temperature', 'top_p', 'num_predict', 'max_iterations',
+                        'compaction_threshold', 'top_k', 'repeat_penalty', 'context_window',
+                    ],
+                    context_window: 128_000,
+                }],
+            }),
+        }));
+        renderBuilder({
+            profile: _profile({ context_window: 32_000 }),
+            providers: [{ name: 'ollama', label: 'Ollama' }],
+        });
+
+        expect(await screen.findByTestId('field-context_window')).toHaveValue(32_000);
+        expect(screen.getByText('Runtime Context Window')).toBeInTheDocument();
+        expect(screen.getByTestId('field-compaction_threshold')).toBeInTheDocument();
+        expect(screen.getByTestId('field-num_predict')).toHaveAttribute('min', '-1');
+        expect(screen.getByTestId('field-num_predict')).not.toHaveAttribute('max');
+    });
+
+    it('offers no model settings until the model details arrive', () => {
+        global.fetch = vi.fn(() => new Promise(() => {}));
+        renderBuilder({
+            profile: _profile({ temperature: 0.4 }),
+            providers: [{ name: 'ollama', label: 'Ollama' }],
+        });
+
+        expect(screen.getByTestId('inference-detection')).toHaveTextContent(
+            "Model settings show once this model's details are available.",
+        );
+        expect(screen.queryByTestId('field-temperature')).not.toBeInTheDocument();
+        expect(screen.getByTestId('field-compaction_threshold')).toBeInTheDocument();
     });
 });

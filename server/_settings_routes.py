@@ -8,15 +8,20 @@ import logging
 from aiohttp import web
 from pydantic import ValidationError
 
-from providers import reset_provider
+from providers import ROLE_OUTPUT_CAPS, reset_provider
 from settings import SettingsUpdate, load_settings, save_settings
 
 logger = logging.getLogger(__name__)
 
 
+def _settings_view(settings: dict) -> dict:
+    """Settings plus read-only values the settings screen displays."""
+    return {**settings, "role_output_caps": ROLE_OUTPUT_CAPS}
+
+
 async def handle_get_settings(_request: web.Request) -> web.Response:
     """Return all application settings."""
-    return web.json_response(load_settings())
+    return web.json_response(_settings_view(load_settings()))
 
 
 async def handle_update_settings(request: web.Request) -> web.Response:
@@ -47,7 +52,7 @@ async def handle_update_settings(request: web.Request) -> web.Response:
         from setup import mark_ready
         mark_ready(request.app)
 
-    return web.json_response(saved)
+    return web.json_response(_settings_view(saved))
 
 
 def register_settings_routes(app: web.Application) -> None:

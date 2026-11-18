@@ -4,7 +4,7 @@ Three handlers:
 
 - ``GET /api/providers`` — list configured providers (direct + brokered).
 - ``POST /api/providers`` — add/configure a provider. For direct kinds
-  (Ollama, no-auth OpenAI-compatible) writes to ``settings.direct_providers``;
+  (Ollama, Aperture, no-auth OpenAI-compatible) writes to ``settings.direct_providers``;
   for brokered kinds creates an ``llm_<name>`` model-provider connection via the
   supervisor. Probes the new provider and returns its model list (503 on
   unreachable).
@@ -23,21 +23,21 @@ from aiohttp import web
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from brokering.supervisor_client import SupervisorError
-from providers import get_provider, reset_provider
+from providers import get_provider, normalize_base_url, reset_provider
 from agent_core.providers import ProviderError
 from server._brokering import supervisor_call as _supervisor_call
-from settings import _validate_base_url, load_settings, save_settings
+from settings import _validate_base_url, aperture_enabled, load_settings, save_settings
 
 logger = logging.getLogger(__name__)
 
-# Provider catalog. The five names the rest of the app recognizes; anything
-# else gets rejected at add time.
+# Provider catalog. Anything else gets rejected at add time.
 _KNOWN_PROVIDERS: set[str] = {
     "ollama",
     "openai",
     "anthropic",
     "openrouter",
     "openai_compat",
+    "aperture",
 }
 
 # Provider name → display label. Used for the integration's ``label`` field
@@ -48,6 +48,7 @@ _PROVIDER_LABELS: dict[str, str] = {
     "anthropic": "Anthropic API",
     "openrouter": "OpenRouter",
     "openai_compat": "OpenAI-compatible",
+    "aperture": "Tailscale Aperture",
 }
 
 # Patterns that could contain credentials — scrubbed before the message
@@ -85,13 +86,31 @@ async def _brokered_provider_connections() -> list[dict[str, object]]:
     return list(result["connections"])
 
 
+_APERTURE_DISABLED = "Tailscale Aperture is experimental. Turn it on in Settings under Experimental first."
+
+# Direct providers that authenticate by network identity and take no API key.
+_KEYLESS_PROVIDERS: set[str] = {"aperture"}
+
+
+def _keyless_error(name: str) -> web.Response:
+    return web.json_response(
+        {"error": f"{_label(name)} does not use an API key"},
+        status=400,
+    )
+
+
+def _provider_available(name: str) -> bool:
+    """Experimental providers cannot be listed, added, or edited until switched on."""
+    return name != "aperture" or aperture_enabled()
+
+
 # ── GET ──────────────────────────────────────────────────────────────────
 
 
 async def handle_list_providers(_request: web.Request) -> web.Response:
     """Return configured LLM providers.
 
-    Direct-connect providers (Ollama, no-auth OpenAI-compatible) come from
+    Direct-connect providers (Ollama, Aperture, no-auth OpenAI-compatible) come from
     ``settings.direct_providers``; brokered providers come from singleton
     ``llm_<name>`` model-provider connections in the supervisor.
     """
@@ -100,6 +119,8 @@ async def handle_list_providers(_request: web.Request) -> web.Response:
     providers: list[dict[str, object]] = []
 
     for name, entry in (settings.get("direct_providers") or {}).items():
+        if not _provider_available(name):
+            continue
         providers.append({
             "name": name,
             "label": _label(name),
@@ -178,13 +199,25 @@ async def handle_add_provider(request: web.Request) -> web.Response:
             status=400,
         )
 
+    if not _provider_available(name):
+        return web.json_response({"error": _APERTURE_DISABLED}, status=403)
+
+    if name in _KEYLESS_PROVIDERS and spec.api_key:
+        return _keyless_error(name)
+    base_url = spec.base_url
+    if base_url:
+        try:
+            base_url = normalize_base_url(name, base_url)
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
     if spec.api_key:
         # Brokered: create the llm_<name> integration in the vault.
         auth_blob: dict[str, str] = {"api_key": spec.api_key}
-        if spec.base_url:
+        if base_url:
             # OpenAI-compat with a key needs the upstream URL stored alongside
             # the key so the broker knows where to forward.
-            auth_blob["base_url"] = spec.base_url
+            auth_blob["base_url"] = base_url
         try:
             await _supervisor_call("add", {
                 "slug": f"llm_{name}",
@@ -202,18 +235,18 @@ async def handle_add_provider(request: web.Request) -> web.Response:
             return web.json_response({"error": _sanitize(exc.message)}, status=400)
     else:
         # Direct: write the settings.direct_providers entry.
-        if not spec.base_url:
+        if not base_url:
             return web.json_response(
                 {"error": "base_url is required when no api_key is provided"},
                 status=400,
             )
         try:
-            _validate_base_url(spec.base_url)
+            _validate_base_url(base_url)
         except ValueError as exc:
             return web.json_response({"error": str(exc)}, status=400)
         settings = load_settings()
         direct = dict(settings.get("direct_providers") or {})
-        direct[name] = {"base_url": spec.base_url}
+        direct[name] = {"base_url": base_url}
         save_settings({"direct_providers": direct})
 
     # Force the next get_provider(name) to re-build, then probe.
@@ -245,7 +278,7 @@ async def handle_add_provider(request: web.Request) -> web.Response:
                 "name": name,
                 "label": _label(name),
                 "kind": "brokered" if spec.api_key else "direct",
-                "base_url": spec.base_url if not spec.api_key else None,
+                "base_url": base_url if not spec.api_key else None,
                 "status": "connected",
             },
             "models": [m.model_dump() for m in models],
@@ -328,6 +361,8 @@ async def handle_update_provider(request: web.Request) -> web.Response:
     name = request.match_info["name"]
     if name not in _KNOWN_PROVIDERS:
         return web.json_response({"error": f"Unknown provider: {name!r}"}, status=400)
+    if not _provider_available(name):
+        return web.json_response({"error": _APERTURE_DISABLED}, status=403)
     try:
         body = await request.json()
     except (json.JSONDecodeError, UnicodeDecodeError):
@@ -345,19 +380,22 @@ async def handle_update_provider(request: web.Request) -> web.Response:
 
     if name in direct:
         # Direct kind — update the base_url.
+        if name in _KEYLESS_PROVIDERS and spec.api_key:
+            return _keyless_error(name)
         if not spec.base_url:
             return web.json_response(
                 {"error": "base_url is required to update a direct provider"},
                 status=400,
             )
         try:
-            _validate_base_url(spec.base_url)
+            base_url = normalize_base_url(name, spec.base_url)
+            _validate_base_url(base_url)
         except ValueError as exc:
             return web.json_response({"error": str(exc)}, status=400)
-        direct[name] = {"base_url": spec.base_url}
+        direct[name] = {"base_url": base_url}
         save_settings({"direct_providers": direct})
         kind = "direct"
-        stored_base_url: str | None = spec.base_url
+        stored_base_url: str | None = base_url
     else:
         # Brokered kind — must currently exist as an llm_<name> integration.
         try:

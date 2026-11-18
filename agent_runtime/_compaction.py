@@ -1,13 +1,14 @@
 """Application-configured LLM compaction and model resource management."""
 
 import asyncio
+import copy
 import logging
 from datetime import datetime
 
 from rich.console import Console
 
-from agent_core.providers import ProviderError
-from providers import get_provider
+from agent_core.providers import ProviderError, accepted_options, find_model
+from providers import get_provider, resolve_role_options
 from rich.panel import Panel
 from rich.text import Text
 
@@ -479,10 +480,12 @@ class LLMCompactionStrategy:
         merges the chunk summaries. The chunk threshold scales with the
         summarizer's configured context window.
         """
-        import copy
-
-        _, _, options = self._resolve_model() or (None, None, {})
-        num_ctx = options.get("num_ctx", 8192) if isinstance(options, dict) else 8192
+        provider_name, model, options = self._resolve_model() or (None, None, {})
+        model_info = None
+        if provider_name and model:
+            model_info = await find_model(get_provider(provider_name), model)
+        configured_ctx = options.get("num_ctx") if isinstance(options, dict) else None
+        num_ctx = configured_ctx or (model_info.context_window if model_info else None) or 8192
         chunk_threshold = int(num_ctx * _CHARS_PER_TOKEN * _CTX_INPUT_FRACTION)
         chunk_target = chunk_threshold // 2
 
@@ -532,6 +535,7 @@ class LLMCompactionStrategy:
         assert resolved is not None
         provider_name, model, options = resolved
         provider = get_provider(provider_name)
+        request = await resolve_role_options(provider, model, "compaction", options)
 
         user_content = ""
         if prior_summary:
@@ -551,8 +555,8 @@ class LLMCompactionStrategy:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_content},
                 ],
-                think=False,
-                options=options,
+                think=request.think,
+                options=request.options,
             ),
             timeout=_CALL_TIMEOUT,
         )
@@ -569,6 +573,13 @@ class LLMCompactionStrategy:
         assert resolved is not None
         provider_name, model, options = resolved
         provider = get_provider(provider_name)
+        request = await resolve_role_options(provider, model, "compaction", options)
+        options = request.options
+        # Ask for deterministic output only from a model known to accept it.
+        # Reasoning models such as GPT Sol reject the request rather than
+        # ignoring an unsupported temperature.
+        if request.model is not None:
+            options = accepted_options(request.model, {**options, "temperature": 0}, think=request.think)
 
         # Build the user content with numbered messages.
         # Truncate individual messages to keep the input focused.
@@ -584,11 +595,8 @@ class LLMCompactionStrategy:
                     {"role": "system", "content": _INTENT_EXTRACTION_PROMPT},
                     {"role": "user", "content": user_content},
                 ],
-                think=False,
-                options={
-                    **(options if isinstance(options, dict) else {}),
-                    "temperature": 0,
-                },
+                think=request.think,
+                options=options,
             ),
             timeout=60,
         )
