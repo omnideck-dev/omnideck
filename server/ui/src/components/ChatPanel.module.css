@@ -1,4 +1,5 @@
 .panel {
+    --titlebar-height: 44px;
     display: flex;
     flex-direction: column;
     height: 100%;
@@ -7,6 +8,6 @@
     container: conversation / inline-size;
 }
 
-.header { display: flex; align-items: center; gap: var(--sp-2); flex-shrink: 0; height: 44px; padding: 0 var(--sp-3); border-bottom: 1px solid var(--border); }
+.header { display: flex; align-items: center; gap: var(--sp-2); flex-shrink: 0; height: var(--titlebar-height); padding: 0 var(--sp-3); border-bottom: 1px solid var(--border); }
 .heading { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--sp-1); }
 .title { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-size-ui); color: var(--text-primary); }
