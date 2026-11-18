@@ -1,5 +1,9 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createElement } from 'react';
+
+import ActivityStreamProvider from '../../../app/ActivityStreamProvider.jsx';
+import { AppEffectsProvider } from '../../../app/AppEffects.jsx';
 import useConversationActivity from '../useConversationActivity.js';
 
 let source;
@@ -11,11 +15,13 @@ function renderActivity() {
             source = this;
         }
     });
-    return renderHook(() => useConversationActivity());
+    return renderHook(() => useConversationActivity(), {
+        wrapper: ({ children }) => createElement(AppEffectsProvider, null, createElement(ActivityStreamProvider, null, children)),
+    });
 }
 const run = (conversation_id, run_id = conversation_id) => ({ conversation_id, run_id });
 function emit(type, runs) {
-    act(() => source.onmessage({ data: JSON.stringify({ type, runs }) }));
+    act(() => source.onmessage({ data: JSON.stringify({ type: `run_${type}`, runs }) }));
 }
 afterEach(() => vi.unstubAllGlobals());
 

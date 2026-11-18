@@ -455,52 +455,36 @@ it('keeps model-only goal refresh notices out of the transcript', () => {
     expect(screen.queryByText(/state_changed|private-goal|read_goal/)).not.toBeInTheDocument();
 });
 
-it('renders goal transitions in chronological order outside messages, including before the first turn', () => {
+it('renders goal dividers in order outside messages', () => {
     const milestone = (id, transition, extra = {}) => ({
         type: 'goal', id, goal_id: 'g1', timestamp: '2026-10-23T14:00:00Z',
-        data: { kind: transition, objective: 'Keep our community calendar current', resume_at: null, question_count: 0, ...extra },
+        data: { kind: transition, resume_at: null, question_count: 0, ...extra },
     });
     const started = (n) => ({ type: 'agent_started', id: `start${n}`, agent_id: `root.test.${n}`, depth: 0 });
     const finished = (n) => ({ type: 'agent_completed', id: `done${n}`, agent_id: `root.test.${n}`, depth: 0, status: 'success' });
     const events = [
-        milestone('created', 'started'),
+        milestone('before', 'paused'),
         started(1),
         { type: 'iteration', id: 'work', agent_id: 'root.test.1', depth: 0, content: 'Calendar checked.' },
         milestone('scheduled', 'scheduled', { resume_at: '2026-10-24T14:00:00Z' }),
         finished(1),
-        milestone('paused', 'paused'),
-        milestone('resumed', 'resumed'),
         started(2),
         { type: 'goal', id: 'returned', goal_id: 'g1', timestamp: '2026-10-23T14:00:00Z',
             data: { kind: 'wakeup', wake_id: 'w1', reason: 'planned', step: 'Check the parks calendar' } },
         milestone('input', 'waiting', { question_count: 3 }),
         finished(2),
-        milestone('failed', 'error'),
         started(3),
+        milestone('failed', 'error'),
         milestone('completed', 'completed'),
         finished(3),
-        milestone('reopened', 'reopened'),
-        milestone('cancelled', 'cancelled'),
     ];
     render(<>{projectTurns(events).map(turn => <Turn key={turn.id} turn={turn} />)}</>);
     const dividers = screen.getAllByTestId('goal-transition');
-    expect(dividers.map((divider) => divider.dataset.transition)).toEqual([
-        'started', 'scheduled', 'paused', 'resumed', 'run', 'waiting', 'error', 'completed', 'reopened', 'cancelled',
-    ]);
-    expect(dividers[0]).toHaveTextContent('Goal started· Keep our community calendar current');
-    expect(dividers[1]).toHaveTextContent(`Resumes ${formatRunTime('2026-10-24T14:00:00Z')}`);
-    expect(dividers[2]).toHaveTextContent('Paused');
-    expect(dividers[3]).toHaveTextContent('Resumed');
-    expect(dividers[4]).toHaveTextContent('Goal run· Check the parks calendar');
-    expect(dividers[5]).toHaveTextContent('Waiting for you· 3 questions');
-    expect(dividers[6]).toHaveTextContent('Stopped by an error');
-    expect(dividers[6]).not.toHaveTextContent('Waiting');
-    expect(dividers[7]).toHaveTextContent('Goal done');
-    expect(dividers[8]).toHaveTextContent('Goal reopened');
-    expect(dividers[9]).toHaveTextContent('Goal cancelled');
-    expect(screen.getAllByTestId('day-header')).toHaveLength(1);
-    expect(screen.getAllByTestId('message-assistant')).toHaveLength(1);
-    expect(screen.queryByTestId('message-user')).not.toBeInTheDocument();
-    expect(dividers[0].compareDocumentPosition(screen.getByText('Calendar checked.')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.getByText('Calendar checked.').compareDocumentPosition(dividers[1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(dividers.map((divider) => divider.dataset.transition)).toEqual(['scheduled', 'run', 'waiting', 'error', 'completed']);
+    expect(dividers[0]).toHaveTextContent(`Resumes ${formatRunTime('2026-10-24T14:00:00Z')}`);
+    expect(dividers[1]).toHaveTextContent('Goal run· Check the parks calendar');
+    expect(dividers[2]).toHaveTextContent('Waiting for you· 3 questions');
+    expect(dividers[3]).toHaveTextContent('Stopped by an error');
+    expect(dividers[4]).toHaveTextContent('Goal done');
 });
+

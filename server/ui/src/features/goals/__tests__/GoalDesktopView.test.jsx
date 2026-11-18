@@ -4,7 +4,7 @@ import useDesktopLayout from '../../desktop/useDesktopLayout.jsx';
 import { DesktopViewRuntimeProvider } from '../../desktop/DesktopViewRuntime.jsx';
 import { CONVERSATION_VIEW_ID } from '../../navigation/desktopNavigationViews.js';
 import GoalDesktopView, { GOAL_VIEW_ID, goalTabLabel, useGoalDesktopActions } from '../GoalDesktopView.jsx';
-import { GoalsProvider } from '../GoalsState.jsx';
+import { GoalsTestProvider } from './goalTestProviders.jsx';
 
 const state = vi.hoisted(() => ({
     session: { activeConversationId: 'chat-a', isOffline: false },
@@ -47,7 +47,7 @@ function Shell() {
     const layout = useDesktopLayout({ initialView: CHAT });
     layoutRef = layout;
     return <DesktopViewRuntimeProvider desktopLayout={layout}>
-        <GoalsProvider enabled><Content /></GoalsProvider>
+        <GoalsTestProvider goals={Object.values(GOALS)}><Content /></GoalsTestProvider>
     </DesktopViewRuntimeProvider>;
 }
 
@@ -65,11 +65,10 @@ function goalViews() {
 beforeEach(() => {
     state.session = { activeConversationId: 'chat-a', isOffline: false };
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
-        if (url === '/api/goals') return response({ goals: Object.values(GOALS) });
         const match = url.match(/sessions\/([^/]+)\/goal$/);
         if (match) {
             const current = GOALS[decodeURIComponent(match[1])] || null;
-            return response({ goal: current, running: false, history: current ? [current] : [] });
+            return response({ goal: current, earlier_goals: [] });
         }
         return response({ entries: [], next_before: null });
     });

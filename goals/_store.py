@@ -182,11 +182,11 @@ class GoalStore:
     def latest(self, conversation_id: str) -> Goal | None:
         return next(iter(self.history(conversation_id)), None)
 
-    def create(self, conversation_id: str, objective: str, profile_id: str) -> Goal:
+    def create(self, conversation_id: str, objective: str) -> Goal:
         with self._lock:
             if self.current(conversation_id.strip()) is not None:
                 raise GoalConflictError("This conversation already has an unfinished goal")
-            goal = Goal(conversation_id=conversation_id, objective=objective, profile_id=profile_id)
+            goal = Goal(conversation_id=conversation_id, objective=objective)
             return self._write(goal, actor="user")
 
     def _require(self, goal_id: str) -> Goal:

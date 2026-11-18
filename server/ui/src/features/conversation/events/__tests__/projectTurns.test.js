@@ -389,7 +389,6 @@ describe('projectTurns — goal chats', () => {
 
     it('adds a day header before the first message or divider of each new day', () => {
         const turns = projectTurns([
-            transition('started', 'started', at(23, 9)),
             root(1, at(23, 9)),
             { ..._userMsg('Find a Saturday', { id: 'ask' }), agent_id: 'root.test.1', depth: 0, timestamp: at(23, 9) },
             transition('scheduled', 'scheduled', at(23, 10), { resume_at: at(24, 9) }),
@@ -400,32 +399,34 @@ describe('projectTurns — goal chats', () => {
         ]);
         const children = turns.flatMap((turn) => turn.children);
         expect(children.map((child) => child.kind === 'day_header' ? `day:${new Date(child.timestamp).getDate()}` : child.id)).toEqual([
-            'day:23', 'started', 'ask', 'scheduled', 'day:24', 'next-day', 'done',
+            'day:23', 'ask', 'scheduled', 'day:24', 'next-day', 'done',
         ]);
     });
 
-    it('marks a turn finished when its root agent completes, not when a sub-agent does', () => {
-        const turns = projectTurns([
-            root(1, at(23, 9)),
-            _subAgentStarted(1, 'root.test.1'),
-            { id: 'sub_done', type: 'agent_completed', agent_id: 'root.test.1.sub.1', parent_agent_id: 'root.test.1', depth: 1, status: 'success' },
-        ]);
-        expect(turns[0].finished).toBe(false);
-        expect(projectTurns([root(1, at(23, 9)), completed(1)])[0].finished).toBe(true);
-    });
-
-    it('shows a new goal as start, the agent\'s reply, then done', () => {
+    it('shows a new goal as the run divider, the agent\'s reply, then done', () => {
         const events = [
-            transition('started', 'started', at(23, 9)),
             root(1, at(23, 9)),
             wakeup('run', 'planned', '', at(23, 9)),
             reply('tools', 1),
-            transition('done', 'completed', at(23, 9)),
             reply('reply', 1),
+            transition('done', 'completed', at(23, 9)),
+            completed(1),
         ];
         const visible = (turns) => turns.flatMap((turn) => turn.children).filter((child) => child.kind !== 'day_header').map((child) => child.id);
-        expect(visible(projectTurns(events))).toEqual(['started', 'tools', 'reply']);
-        expect(visible(projectTurns([...events, completed(1)]))).toEqual(['started', 'tools', 'reply', 'done']);
+        expect(visible(projectTurns(events))).toEqual(['run', 'tools', 'reply', 'done']);
+    });
+
+    it('renders nothing for edited, state_notice, an unknown kind and an old paused divider', () => {
+        const turns = projectTurns([
+            transition('before', 'paused', at(23, 8)),
+            root(1, at(23, 9)),
+            transition('edited', 'edited', at(23, 9)),
+            transition('notice', 'state_notice', at(23, 9)),
+            transition('mystery', 'mystery', at(23, 9)),
+            transition('paused', 'paused', at(23, 9)),
+            reply('reply', 1),
+        ]);
+        expect(turns.flatMap((turn) => turn.children).filter((child) => child.kind !== 'day_header').map((child) => child.id)).toEqual(['reply']);
     });
 
     it('adds no day headers to a chat without a goal', () => {

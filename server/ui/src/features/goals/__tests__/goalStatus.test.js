@@ -137,13 +137,14 @@ describe('reasonLine', () => {
 
 describe('nextUpStep', () => {
     it('shows the next step only when a run is coming', () => {
-        const fields = { next_step: 'Book the pavilion' };
+        const fields = { plan: [{ id: 'list', title: 'Collect the guest list', status: 'done' }, { id: 'book', title: 'Book the pavilion', status: 'pending', depends_on: ['list'] }] };
         expect(nextUpStep(goal({ ...fields, next: wake(FUTURE) }))).toBe('Book the pavilion');
         expect(nextUpStep(goal({ ...fields, paused: true, next: wake(FUTURE) }))).toBe('Book the pavilion');
         expect(nextUpStep(goal({ ...fields, next: { kind: 'wait', question_ids: [] } }))).toBe('');
         expect(nextUpStep(goal({ ...fields, next: { kind: 'error', message: 'Failed' } }))).toBe('');
         expect(nextUpStep(goal({ ...fields, next: { kind: 'done', outcome: 'Booked' } }))).toBe('');
         expect(nextUpStep(goal({ ...fields, next: { kind: 'cancelled' } }))).toBe('');
-        expect(nextUpStep(goal({ next: wake(FUTURE), next_step: '' }))).toBe('');
+        expect(nextUpStep(goal({ next: wake(FUTURE), plan: [{ id: 'list', title: 'Collect the guest list', status: 'done' }] }))).toBe('');
+        expect(nextUpStep(goal({ next: wake(FUTURE), plan: [{ id: 'book', title: 'Book the pavilion', status: 'pending', depends_on: ['list'] }, { id: 'list', title: 'Collect the guest list', status: 'blocked' }] }))).toBe('');
     });
 });

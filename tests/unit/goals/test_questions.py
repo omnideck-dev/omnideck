@@ -11,7 +11,7 @@ from tests.unit.goals.support import ask, choose, claim_wake
 @pytest.fixture
 def owner(tmp_path):
     store = GoalStore(tmp_path)
-    goal = store.create("chat", "Find a dentist", "assistant")
+    goal = store.create("chat", "Find a dentist")
     claim_wake(store, goal)
     return store, goal
 

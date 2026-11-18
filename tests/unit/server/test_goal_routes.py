@@ -70,22 +70,10 @@ async def test_assign_to_empty_chat_persists_chat_and_initial_wake(goal_client):
     assert "kind" not in goal and "status" not in goal
     assert goal["next"]["kind"] == "wake" and goal["next"]["reason"] == "planned"
     assert goal["paused"] is False and goal["claim"] is None
-    assert goal["next_step"] is None
-    assert not goal["running"]
+    assert "running" not in goal and "profile_id" not in goal
     assert store.due()[0].id == goal["id"]
     assert conversation_exists("chat-1")
     assert list_conversations()[0].title == "Find a dentist and book an appointment"
-    assert (await (await client.get("/api/goals")).json())["goals"][0]["id"] == goal["id"]
-
-
-async def test_goal_view_names_the_step_the_next_run_works_on(goal_client):
-    client, store, _, _ = goal_client
-    await assign(client)
-    with_plan(store, store.current("chat-1"),
-              GoalStep(id="find", title="Find three dentists", status="done"),
-              GoalStep(id="call", title="Call the first dentist", depends_on=["find"]))
-    goal = (await (await client.get(BASE)).json())["goal"]
-    assert goal["next_step"] == "Call the first dentist"
 
 
 async def test_only_one_unfinished_goal_and_ended_history_survives(goal_client):
@@ -96,8 +84,9 @@ async def test_only_one_unfinished_goal_and_ended_history_survives(goal_client):
     assert (await assign(client, objective="Plan household meals")).status == 201
     body = await (await client.get(BASE)).json()
     assert body["goal"]["objective"] == "Plan household meals"
-    assert len(body["history"]) == 1
-    assert body["history"][0]["next"] == {"kind": "done", "outcome": "Appointment confirmed for Tuesday"}
+    assert "running" not in body
+    assert len(body["earlier_goals"]) == 1
+    assert body["earlier_goals"][0]["next"] == {"kind": "done", "outcome": "Appointment confirmed for Tuesday"}
 
 
 async def test_user_plan_edit_conflicts_instead_of_losing_agent_progress(goal_client):
@@ -225,10 +214,12 @@ async def test_delete_removes_goal_and_wake(goal_client):
 async def test_goals_api_is_unavailable_when_experiment_disabled(goal_client):
     client, store, _, enabled = goal_client
     enabled["value"] = False
-    for method, path in [("get", BASE), ("get", "/api/goals"), ("post", BASE), ("patch", BASE),
-                         ("post", BASE + "/run"), ("post", BASE + "/reopen"), ("get", BASE + "/history")]:
+    for method, path in [("get", BASE), ("post", BASE), ("patch", BASE), ("post", BASE + "/run"),
+                         ("post", BASE + "/pause"), ("post", BASE + "/reopen"), ("post", BASE + "/answers"),
+                         ("get", BASE + "/history")]:
         response = await getattr(client, method)(path, json={"objective": "A goal"})
-        assert response.status == 404
+        assert response.status == 403
+        assert await response.json() == {"error": "Goals are turned off."}
     assert store.list() == []
 
 
@@ -240,27 +231,34 @@ async def test_invalid_assignment_does_not_create_conversation_or_wake(goal_clie
     assert store.list() == []
 
 
-async def test_unrelated_chat_run_does_not_mark_paused_goal_running(goal_client):
-    client, store, runtime, _ = goal_client
-    await assign(client)
-    store.pause(store.current("chat-1").id)
-    running(runtime, "unrelated-turn")
-    body = await (await client.get(BASE)).json()
-    assert body["goal"]["paused"] is True
-    assert body["goal"]["running"] is False
-    assert body["goal"]["run_id"] is None
+async def test_edit_and_pause_on_a_goal_whose_file_is_gone_return_404(goal_client):
+    import shutil
 
-
-async def test_goal_run_is_shown_as_running(goal_client):
-    client, store, runtime, _ = goal_client
+    client, store, _, _ = goal_client
     await assign(client)
     goal = store.current("chat-1")
-    store.claim_for_turn(goal.id, "turn")
-    store.bind_run(goal.id, "turn", "run-7")
-    running(runtime, "run-7")
-    body = await (await client.get(BASE)).json()
-    assert body["running"] is True
-    assert body["goal"]["run_id"] == "run-7"
+    shutil.rmtree(store._base / "chat-1" / "goals" / goal.id)
+    response = await client.patch(BASE, json={"expected_revision": goal.revision, "objective": "Changed"})
+    assert response.status == 404
+    assert (await client.post(BASE + "/pause", json={})).status == 404
+
+
+async def test_a_body_with_a_bad_field_returns_400_with_one_sentence(goal_client):
+    client, _store, _, _ = goal_client
+    response = await client.post(BASE, json={"objective": "Find a dentist", "deadline": "Friday"})
+    assert response.status == 400
+    assert (await response.json()) == {"error": "Extra inputs are not permitted"}
+
+
+async def test_edit_while_a_run_holds_the_goal_returns_409_with_the_sentence(goal_client):
+    client, store, _, _ = goal_client
+    await assign(client)
+    goal = store.claim_for_turn(store.current("chat-1").id, "turn")
+    response = await client.patch(BASE, json={"expected_revision": goal.revision, "objective": "Changed"})
+    assert response.status == 409
+    assert (await response.json())["error"] == (
+        "The agent is working on this goal. Pause it to edit now, or wait for it to finish."
+    )
 
 
 async def test_archive_pauses_the_goal_before_the_folder_moves(goal_client, monkeypatch):
@@ -393,7 +391,7 @@ async def test_reopen_starts_a_run_with_the_text_and_keeps_plan_and_history(goal
     request = runtime.start.await_args.args[0]
     assert request.message == "Also book a cleaning."
     assert request.conversation_id == "chat-1"
-    assert request.profile_id == goal.profile_id
+    assert request.profile_id == "test"
     assert request.trigger is None
     assert store.due() == []
 
@@ -472,7 +470,7 @@ async def test_disable_wins_over_goal_mutation_waiting_for_body(goal_client, mon
         assert disabled.status == 200
         release.set()
         response = await asyncio.wait_for(pending, timeout=1)
-        assert response.status == 404
+        assert response.status == 403
         assert store.due() == []
         if operation == "assign":
             assert store.list() == []
@@ -494,7 +492,7 @@ async def test_history_is_lazy_searchable_paged_and_scoped_to_its_conversation(g
         goal = store.update(goal.id, goal.revision, summary=f'Progress {index}')
     snapshot = await (await client.get(BASE)).json()
     assert snapshot['goal']['summary'] == 'Progress 59'
-    assert snapshot['history'] == []
+    assert snapshot['earlier_goals'] == []
     url = BASE + '/history'
     first = await (await client.get(url, params={'goal_id': goal.id, 'q': 'Progress'})).json()
     second = await (await client.get(url, params={'goal_id': goal.id, 'q': 'Progress', 'before': first['next_before']})).json()
@@ -503,11 +501,11 @@ async def test_history_is_lazy_searchable_paged_and_scoped_to_its_conversation(g
     assert {e['actor'] for e in first['entries']} == {'user'}
     match = await (await client.get(url, params={'goal_id': goal.id, 'q': 'Progress 0'})).json()
     assert match['entries'][0]['data']['summary'] == 'Progress 0'
-    other = store.create('other-chat', 'Private goal', 'assistant')
+    other = store.create('other-chat', 'Private goal')
     assert (await client.get(url, params={'goal_id': other.id})).status == 404
     assert (await client.get(url, params={'goal_id': goal.id, 'before': '-1'})).status == 400
     enabled['value'] = False
-    assert (await client.get(url, params={'goal_id': goal.id})).status == 404
+    assert (await client.get(url, params={'goal_id': goal.id})).status == 403
 
 
 @pytest.mark.parametrize("field,value", [
@@ -523,3 +521,47 @@ async def test_removed_or_agent_only_fields_are_rejected_by_assignment_and_edit(
     response = await client.patch(BASE, json={"expected_revision": goal["revision"], field: value})
     assert response.status == 400
     assert store.current("chat-1").revision == goal["revision"]
+
+
+async def test_answers_with_no_profile_use_the_chat_saved_profile(goal_client):
+    from unittest.mock import AsyncMock
+
+    from agent_runtime import QueuedMessage
+    from tests.unit.goals.support import ask, choose
+
+    client, store, runtime, _ = goal_client
+    await assign(client)
+    goal = store.claim_for_turn(store.current("chat-1").id, "turn")
+    goal = ask(store, goal, "turn", "day", "Which day works?")
+    choose(store, goal, "turn", action="wait_for_input", question_ids=["day"])
+    store.finish_run(goal.id, "turn", "run-0", "success")
+    runtime.send = AsyncMock(return_value=QueuedMessage("nudge", "run-1"))
+    response = await client.post(BASE + "/answers", json={"goal_id": goal.id, "answers": [
+        {"question_id": "day", "question_revision": 1, "answer": "Saturday"},
+    ]})
+    assert response.status == 202
+    request = runtime.send.await_args.args[0]
+    assert request.profile_id == "test"
+    assert request.message == "Saturday"
+    assert request.model_text.startswith("[Answers to your goal questions]")
+
+
+async def test_answers_refused_when_goals_turn_off_during_the_body_read(goal_client, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    client, store, runtime, enabled = goal_client
+    await assign(client)
+    runtime.send = AsyncMock()
+    original_text = web.Request.text
+
+    async def turn_off_while_reading(request):
+        text = await original_text(request)
+        enabled["value"] = False
+        return text
+
+    monkeypatch.setattr(web.Request, "text", turn_off_while_reading)
+    response = await client.post(BASE + "/answers", json={"goal_id": store.current("chat-1").id, "answers": [
+        {"question_id": "day", "question_revision": 1, "answer": "Saturday"},
+    ]})
+    assert response.status == 403
+    runtime.send.assert_not_awaited()

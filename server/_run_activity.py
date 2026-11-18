@@ -1,13 +1,15 @@
-"""Lightweight activity projection over accepted runs and their existing results."""
+"""App-wide activity stream: run starts and finishes, plus feature feeds such as goals."""
 
 import asyncio
-import json
-from collections.abc import AsyncGenerator
-from typing import Literal, TypedDict
+from collections.abc import AsyncGenerator, Callable, Sequence
+from typing import Protocol
 
 from aiohttp import web
 
 from agent_runtime import AgentRuntime, RunHandle
+from server._activity_messages import (
+    ActivityMessage, RunFinishedMessage, RunIdentity, RunSnapshotMessage, RunStartedMessage,
+)
 from server._agent_runtime import AGENT_RUNTIME_KEY
 
 
@@ -15,36 +17,40 @@ _ACTIVITY_QUEUE_LIMIT = 128
 _ACTIVITY_WRITE_TIMEOUT_SECONDS = 30
 
 
+class ActivityFeed(Protocol):
+    """A feature's messages on the activity stream."""
+
+    def subscribe(self, send: Callable[[ActivityMessage], bool]) -> Callable[[], None]: ...
+
+    def snapshot(self) -> ActivityMessage | None: ...
+
+
+ACTIVITY_FEEDS_KEY: web.AppKey[list[ActivityFeed]] = web.AppKey("activity_feeds", list)
+
+
 class _ActivityBacklogExceeded(Exception):
     """The subscriber fell behind and must reconnect for a fresh snapshot."""
 
 
-class RunIdentity(TypedDict):
-    conversation_id: str
-    run_id: str
-
-
-class RunActivity(TypedDict):
-    type: Literal["snapshot", "started", "finished"]
-    runs: list[RunIdentity]
-
-
 def _identity(handle: RunHandle) -> RunIdentity:
-    return {"conversation_id": handle.conversation_id, "run_id": handle.run_id}
+    return RunIdentity(conversation_id=handle.conversation_id, run_id=handle.run_id)
 
 
-async def activity_events(runtime: AgentRuntime) -> AsyncGenerator[RunActivity | None, None]:
-    """Project active handles and completion into identities without retaining history."""
-    queue: asyncio.Queue[RunActivity] = asyncio.Queue(maxsize=_ACTIVITY_QUEUE_LIMIT)
+async def activity_events(
+    runtime: AgentRuntime, feeds: Sequence[ActivityFeed] = (),
+) -> AsyncGenerator[ActivityMessage | None, None]:
+    """Project active runs and feature feeds into messages without retaining history."""
+    queue: asyncio.Queue[ActivityMessage] = asyncio.Queue(maxsize=_ACTIVITY_QUEUE_LIMIT)
     overflowed = False
     watchers: set[asyncio.Task[None]] = set()
+    unsubscribes: list[Callable[[], None]] = []
 
-    def enqueue(event: RunActivity) -> bool:
+    def enqueue(message: ActivityMessage) -> bool:
         nonlocal overflowed
         if overflowed:
             return False
         try:
-            queue.put_nowait(event)
+            queue.put_nowait(message)
         except asyncio.QueueFull:
             overflowed = True
             return False
@@ -52,7 +58,7 @@ async def activity_events(runtime: AgentRuntime) -> AsyncGenerator[RunActivity |
 
     async def follow(handle: RunHandle) -> None:
         await handle.wait()
-        enqueue({"type": "finished", "runs": [_identity(handle)]})
+        enqueue(RunFinishedMessage(type="run_finished", runs=[_identity(handle)]))
 
     def watch(handle: RunHandle) -> None:
         task = asyncio.create_task(follow(handle))
@@ -60,14 +66,19 @@ async def activity_events(runtime: AgentRuntime) -> AsyncGenerator[RunActivity |
         task.add_done_callback(watchers.discard)
 
     def started(handle: RunHandle) -> None:
-        if enqueue({"type": "started", "runs": [_identity(handle)]}):
+        if enqueue(RunStartedMessage(type="run_started", runs=[_identity(handle)])):
             watch(handle)
 
     with runtime.observe_runs(started) as active:
         try:
+            unsubscribes.extend(feed.subscribe(enqueue) for feed in feeds)
+            snapshots = [feed.snapshot() for feed in feeds]
             for handle in active:
                 watch(handle)
-            yield {"type": "snapshot", "runs": [_identity(handle) for handle in active]}
+            yield RunSnapshotMessage(type="run_snapshot", runs=[_identity(handle) for handle in active])
+            for snapshot in snapshots:
+                if snapshot is not None:
+                    yield snapshot
             while True:
                 if overflowed:
                     # Do not deliver an incomplete history. Reconnection reconciles
@@ -79,6 +90,8 @@ async def activity_events(runtime: AgentRuntime) -> AsyncGenerator[RunActivity |
                     # Keep idle connections alive and detect disconnected observers.
                     yield None
         finally:
+            for unsubscribe in unsubscribes:
+                unsubscribe()
             pending = tuple(watchers)
             for task in pending:
                 task.cancel()
@@ -86,17 +99,17 @@ async def activity_events(runtime: AgentRuntime) -> AsyncGenerator[RunActivity |
 
 
 async def run_activity_handler(request: web.Request) -> web.StreamResponse:
-    """Send the current active runs, then start and finish updates over SSE."""
+    """Send the current state, then run and feature updates over SSE."""
     response = web.StreamResponse(headers={
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
         "X-Accel-Buffering": "no",
     })
     await response.prepare(request)
-    events = activity_events(request.app[AGENT_RUNTIME_KEY])
+    events = activity_events(request.app[AGENT_RUNTIME_KEY], request.app.get(ACTIVITY_FEEDS_KEY, []))
     try:
-        async for event in events:
-            frame = f"data: {json.dumps(event)}\n\n" if event is not None else ": keepalive\n\n"
+        async for message in events:
+            frame = f"data: {message.model_dump_json()}\n\n" if message is not None else ": keepalive\n\n"
             async with asyncio.timeout(_ACTIVITY_WRITE_TIMEOUT_SECONDS):
                 await response.write(frame.encode())
     except (ConnectionResetError, TimeoutError, _ActivityBacklogExceeded):

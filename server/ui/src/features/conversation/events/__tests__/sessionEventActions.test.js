@@ -33,12 +33,8 @@ describe('getSessionEventActions', () => {
         ]);
     });
 
-    it('retains root agent completion so the transcript knows a turn finished', () => {
-        const root = event('agent_completed', { status: 'success' });
-        const child = event('agent_completed', { depth: 1, status: 'success' });
-
-        expect(getSessionEventActions(root)).toEqual([{ type: 'RETAIN_EVENT', event: root }]);
-        expect(getSessionEventActions(child)).toEqual([]);
+    it('does not retain agent completion', () => {
+        expect(getSessionEventActions(event('agent_completed', { status: 'success' }))).toEqual([]);
     });
 
     it('sets only root agents on the open session', () => {

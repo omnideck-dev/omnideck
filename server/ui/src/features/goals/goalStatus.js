@@ -80,10 +80,19 @@ export function goalNeedsAnswer(goal) {
     return ['questions', 'waiting', 'error'].includes(goalStatus(goal)?.key);
 }
 
+/** The step the next run works on: the one in progress, else the first ready pending step. */
+export function nextStep(plan = []) {
+    const inProgress = plan.find((step) => step.status === 'in_progress');
+    if (inProgress) return inProgress;
+    const finished = new Set(plan.filter((step) => step.status === 'done' || step.status === 'skipped').map((step) => step.id));
+    return plan.find((step) => (step.status || 'pending') === 'pending'
+        && (step.depends_on || []).every((id) => finished.has(id))) || null;
+}
+
 /** The title of the step the next run works on, shown only when a run is coming. */
 export function nextUpStep(goal) {
     if (!isGoalOpen(goal) || goal.next?.kind !== 'wake') return '';
-    return goal.next_step || '';
+    return nextStep(goal.plan)?.title || '';
 }
 
 /** The paused reason line: what Resume will do. */

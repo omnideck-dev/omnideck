@@ -6,6 +6,7 @@ import Modal from '../../components/primitives/Modal.jsx';
 import styles from './GoalPanel.module.css';
 
 const STEP_STATES = { in_progress: 'Now', done: 'Done', blocked: 'Blocked', skipped: 'Skipped' };
+const WORKING_NOTE = 'The agent started working. Your changes are kept. Save when it finishes, or pause it.';
 
 function draftFromGoal(goal, objective = '') {
     return {
@@ -34,9 +35,8 @@ function PlanStepEditor({ item, index, titles, saving, invalid, onChange, onRemo
     </details>;
 }
 
-export default function GoalEditor({ goal, latestGoal, initialObjective = '', onSave, onReload, onClose }) {
+export default function GoalEditor({ goal, latestGoal, initialObjective = '', onSave, onClose }) {
     const headingId = useId();
-    // Text typed after /goal replaces the objective of an open goal instead of being lost.
     const replacing = Boolean(goal && initialObjective.trim() && initialObjective.trim() !== goal.objective);
     const [draft, setDraft] = useState(() => draftFromGoal(goal, initialObjective.trim()));
     const [saving, setSaving] = useState(false);
@@ -47,23 +47,16 @@ export default function GoalEditor({ goal, latestGoal, initialObjective = '', on
     const change = (key, value) => setDraft((current) => ({ ...current, [key]: value }));
     const titles = Object.fromEntries(draft.plan.map((item) => [item.id, item.title]));
     const changeItem = (id, changes) => setDraft((current) => ({ ...current, plan: current.plan.map((item) => item.id === id ? { ...item, ...changes } : item) }));
+    const working = Boolean(goal && (latestGoal || goal).running);
 
-    const reload = async () => {
-        setSaving(true);
-        try {
-            setDraft(draftFromGoal(onReload ? await onReload() : latestGoal || goal));
-            setConflict(false);
-            setError('');
-        } catch (failure) {
-            setError(failure.message);
-        } finally {
-            setSaving(false);
-        }
+    const reload = () => {
+        setDraft(draftFromGoal(latestGoal || goal));
+        setConflict(false);
+        setError('');
     };
 
     const submit = async (event) => {
         event.preventDefault();
-        if (!draft.objective.trim()) { setError('Describe what you want to achieve.'); return; }
         if (draft.plan.some((item) => !item.title.trim())) { setPlanOpen(true); setValidatePlan(true); setError('Give each plan step a title.'); return; }
         setSaving(true);
         setError('');
@@ -74,8 +67,9 @@ export default function GoalEditor({ goal, latestGoal, initialObjective = '', on
             });
             onClose();
         } catch (failure) {
-            setConflict(failure.status === 409);
-            setError(failure.status === 409
+            const workingRefusal = failure.status === 409 && /agent is working/i.test(failure.message);
+            setConflict(failure.status === 409 && !workingRefusal);
+            setError(workingRefusal ? '' : failure.status === 409
                 ? 'This chat’s goal changed while you were editing. Your changes are still here. Load the latest version before saving.'
                 : failure.message);
         } finally {
@@ -96,7 +90,7 @@ export default function GoalEditor({ goal, latestGoal, initialObjective = '', on
                     {replacing && <p className={styles.editorNote}>This replaces the current objective.</p>}
                     <label className={styles.field}>
                         <span>What would you like done?</span>
-                        <textarea className={styles.textarea} value={draft.objective} onChange={(event) => change('objective', event.target.value)} placeholder="Say what done looks like and any limits, such as a budget or people to avoid contacting." required disabled={saving} />
+                        <textarea className={styles.textarea} value={draft.objective} onChange={(event) => change('objective', event.target.value)} placeholder="Describe the goal…" disabled={saving} />
                     </label>
                     {goal && <details className={styles.planDisclosure} open={planOpen} onToggle={(event) => setPlanOpen(event.currentTarget.open)}>
                         <summary className={styles.disclosure}>Plan <span>{draft.plan.length} {draft.plan.length === 1 ? 'step' : 'steps'}</span></summary>
@@ -110,9 +104,9 @@ export default function GoalEditor({ goal, latestGoal, initialObjective = '', on
                     <div className={styles.editorFooterRow}>
                         <div className={styles.actions}>
                             <Button variant="ghost" onClick={onClose} disabled={saving}>Cancel</Button>
-                            <Button variant="filled" type="submit" loading={saving} loadingLabel="Saving…" disabled={conflict}>{goal ? 'Save changes' : 'Start goal'}</Button>
+                            <Button variant="filled" type="submit" loading={saving} loadingLabel="Saving…" disabled={conflict || working || !draft.objective.trim()}>{goal ? 'Save changes' : 'Start goal'}</Button>
                         </div>
-                        {goal && (latestGoal || goal).running && <p className={styles.editorNote}>The agent sees your changes on its next step.</p>}
+                        {working && <p className={styles.editorNote}>{WORKING_NOTE}</p>}
                     </div>
                 </div>
             </form>

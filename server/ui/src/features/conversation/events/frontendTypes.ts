@@ -170,8 +170,7 @@ export type TranscriptItem =
     | {
         kind: 'goal_transition';
         id: string;
-        transition: 'started' | 'paused' | 'resumed' | 'run' | 'scheduled' | 'waiting' | 'error' | 'completed' | 'cancelled' | 'reopened';
-        objective: string;
+        transition: 'run' | 'scheduled' | 'waiting' | 'error' | 'completed';
         step: string;
         questionCount: number;
         timestamp: string;
@@ -230,8 +229,6 @@ export type TranscriptItem =
 export type ConversationTurn = {
     id: string;
     agentId: string | null;
-    /** The turn's agent has completed, or the turn never had one. */
-    finished: boolean;
     children: Array<TranscriptItem>;
 };
 

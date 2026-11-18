@@ -220,7 +220,7 @@ class Episode:
             **options,
         ))
         ensure_conversation('benchmark', title=self.scenario.objective, profile_id='benchmark')
-        goal = self.store.create('benchmark', self.scenario.objective, 'benchmark')
+        goal = self.store.create('benchmark', self.scenario.objective)
         self.goal_id = goal.id
         if self.scenario.id == 'revise_approach':
             self.store.update(goal.id, goal.revision, plan=[

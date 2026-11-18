@@ -89,7 +89,7 @@ function MoreActions({ ended, disabled, onOpenHistory, onCancel }) {
 }
 
 export default function GoalPanel({ conversationId, isOffline = false, onEdit, onStartGoal, onOpenChat }) {
-    const { goalsByConversation, detailsByConversation, loadGoal, mutateGoal, error: refreshError } = useGoals();
+    const { goalsByConversation, detailsByConversation, loadGoal, mutateGoal } = useGoals();
     const goal = goalsByConversation[conversationId];
     const detail = detailsByConversation[conversationId];
     const [loaded, setLoaded] = useState(false);
@@ -103,12 +103,7 @@ export default function GoalPanel({ conversationId, isOffline = false, onEdit, o
         let active = true;
         void loadGoal(conversationId).catch((failure) => { if (active) setError(failure.message); }).finally(() => { if (active) setLoaded(true); });
         return () => { active = false; };
-    }, [conversationId, loadGoal]);
-    useEffect(() => {
-        if (loaded && goal && detail?.goal?.revision !== goal.revision) {
-            void loadGoal(conversationId).catch((failure) => setError(failure.message));
-        }
-    }, [loaded, goal?.revision, conversationId, loadGoal]);
+    }, [conversationId, goal?.id, loadGoal]);
     useEffect(() => {
         if (historyOpen) historyRef.current?.scrollIntoView?.({ block: 'nearest' });
     }, [historyOpen]);
@@ -148,7 +143,7 @@ export default function GoalPanel({ conversationId, isOffline = false, onEdit, o
     const showRunNow = open && !goal.paused && !goal.running && futureWake;
     const showRetry = open && !goal.paused && !goal.running && goal.next?.kind === 'error';
     const nextUp = !goal.running ? nextUpStep(goal) : '';
-    const history = (detail?.history || []).filter((item) => item.id !== goal.id);
+    const history = (detail?.earlier_goals || []).filter((item) => item.id !== goal.id);
 
     return (
         <section className={styles.goalView} aria-label="Goal details" data-testid="goal-details">
@@ -159,7 +154,7 @@ export default function GoalPanel({ conversationId, isOffline = false, onEdit, o
                     <p className={styles.objective}>{goal.objective}</p>
                     {reason && <p className={styles.statusReason} data-testid="goal-reason">{reason}</p>}
                 </div>
-                {(error || refreshError) && <Callout tone="warning" title={error || refreshError} onDismiss={error ? () => setError('') : undefined} />}
+                {error && <Callout tone="warning" title={error} onDismiss={() => setError('')} />}
                 <div className={styles.actions}>
                     {open ? <>
                         {goal.paused
@@ -172,7 +167,7 @@ export default function GoalPanel({ conversationId, isOffline = false, onEdit, o
                         {showRunNow && <Button variant="ghost" disabled={disabled} loading={busy === 'run'} loadingLabel="Starting…" onClick={() => run('run')}>
                             <i className="bi bi-play-circle" aria-hidden="true" /> Run now
                         </Button>}
-                        <Button variant="ghost" onClick={onEdit} disabled={disabled}><i className="bi bi-pencil" aria-hidden="true" /> Edit</Button>
+                        <Button variant="ghost" onClick={onEdit} disabled={disabled || goal.running}><i className="bi bi-pencil" aria-hidden="true" /> Edit</Button>
                     </> : <>
                         <Button variant="filled" onClick={() => setReopening(true)} disabled={disabled}><i className="bi bi-arrow-counterclockwise" aria-hidden="true" /> Reopen…</Button>
                         <Button variant="ghost" onClick={onStartGoal} disabled={disabled}><i className="bi bi-bullseye" aria-hidden="true" /> Start a new goal…</Button>
@@ -180,6 +175,7 @@ export default function GoalPanel({ conversationId, isOffline = false, onEdit, o
                     <span className={styles.spacer} />
                     <MoreActions ended={!open} disabled={isOffline} onOpenHistory={() => setHistoryOpen(true)} onCancel={() => act('cancel')} />
                 </div>
+                {open && goal.running && <p className={styles.description}>The agent is working. Pause it to edit now.</p>}
 
                 {showRetry && <div data-testid="goal-error"><Callout tone="danger" title={goal.next.message}
                     description={<Button variant="filled" className={styles.calloutButton} disabled={disabled} loading={busy === 'run'} loadingLabel="Retrying…" onClick={() => run('run')}>
@@ -208,7 +204,7 @@ export default function GoalPanel({ conversationId, isOffline = false, onEdit, o
                 </div>
             </div>
             {reopening && <GoalReopenDialog onClose={() => setReopening(false)}
-                onSubmit={(text) => act('reopen', { text, profile_id: goal.profile_id })} />}
+                onSubmit={(text) => act('reopen', { text })} />}
         </section>
     );
 }

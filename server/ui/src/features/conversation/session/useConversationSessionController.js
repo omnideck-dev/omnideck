@@ -11,7 +11,7 @@ import { normalizeLiveEvent } from '../events/normalizeEvent.js';
 import { projectTurns } from '../events/projectTurns.js';
 import { accumulateLiveIteration } from '../events/liveIteration.js';
 import { mapConversationEventToActions } from '../events/mapConversationEventToActions.js';
-import { closeInterruptedTurns, getConversationRestorePlan } from '../events/conversationRestore.js';
+import { getConversationRestorePlan } from '../events/conversationRestore.js';
 import {
     ChatStreamHttpError,
     openChatTurn,
@@ -143,15 +143,8 @@ const INITIAL_CONVERSATION_STATE = {
 
 function conversationReducer(state, action) {
     switch (action.type) {
-        case 'RETAIN_EVENT': {
-            const events = [...state.events];
-            // A background refresh can discover an earlier logged goal event.
-            const index = action.event.type === 'goal'
-                ? events.findIndex(event => Date.parse(event.timestamp) > Date.parse(action.event.timestamp))
-                : -1;
-            events.splice(index < 0 ? events.length : index, 0, action.event);
-            return { ...state, events };
-        }
+        case 'RETAIN_EVENT':
+            return { ...state, events: [...state.events, action.event] };
         case 'CONFIRM_USER_MESSAGE':
             return { ...state, pendingUserPrompt: null };
         case 'FINALIZE_ITERATION':
@@ -830,7 +823,7 @@ export default function useConversationSessionController({
             if (loadControllerRef.current !== controller) return null;
             const data = normalizeConversationLoadData(conversationId, rawData);
             /** @type {Array<import('../events/conversationEvents.generated').ConversationEvent>} */
-            let retainedEvents = [];
+            const retainedEvents = [];
             let rootAgentId = null;
             for (const event of data.events) {
                 const actions = mapConversationEventToActions(event);
@@ -839,7 +832,6 @@ export default function useConversationSessionController({
                     if (action.type === 'SET_ROOT_AGENT') rootAgentId = action.agentId;
                 }
             }
-            if (!data.activeRun) retainedEvents = closeInterruptedTurns(retainedEvents);
 
             // Commit the switch only after the destination is ready. A failed
             // load must leave the current stream, controls, and draft intact.
@@ -962,7 +954,6 @@ export default function useConversationSessionController({
             return [...baseTurns, {
                 id: `_pending_${pendingUserPrompt.id || 'turn'}`,
                 agentId: '_pending',
-                finished: false,
                 children: [{
                     kind: 'user_prompt',
                     id: pendingUserPrompt.id || '_pending_user',

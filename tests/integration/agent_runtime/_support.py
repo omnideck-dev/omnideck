@@ -94,7 +94,7 @@ class Harness:
     def goal(self, conversation_id: str, objective: str, profile_id: str = "leaf"):
         """Start a goal in a new chat the way the goal dialog does."""
         ensure_conversation(conversation_id, title=objective, profile_id=profile_id)
-        return self.goals.create(conversation_id, objective, profile_id)
+        return self.goals.create(conversation_id, objective)
 
     def profile(self, identifier="leaf", **options):
         values = dict(

@@ -41,7 +41,7 @@ class AnswerRunner:
 
 def setup_goal(tmp_path):
     store = GoalStore(tmp_path / "goals")
-    goal = waiting(store, store.create("chat", "Find a dentist", "assistant"), "insurance",
+    goal = waiting(store, store.create("chat", "Find a dentist"), "insurance",
                    "Which insurance plan?")
     answers = GoalAnswerSubmission(goal_id=goal.id, answers=[
         {"question_id": "insurance", "question_revision": 1, "answer": "Aetna Dental PPO"},

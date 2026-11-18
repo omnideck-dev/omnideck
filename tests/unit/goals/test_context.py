@@ -11,7 +11,7 @@ from goals._models import (
 
 
 def goal(**fields) -> Goal:
-    return Goal(conversation_id="chat", profile_id="assistant", objective="Book the park pavilion for the reunion",
+    return Goal(conversation_id="chat", objective="Book the park pavilion for the reunion",
                 **fields)
 
 

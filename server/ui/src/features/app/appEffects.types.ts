@@ -1,4 +1,7 @@
 import { APP_EFFECT_TYPES } from './appEffectTypes.js';
+import type { Goal } from './activityMessages.generated';
+
+export type RunIdentity = { conversationId: string; runId: string };
 
 /**
  * Payload registry for application-wide, one-time effects.
@@ -51,6 +54,11 @@ export type AppEffectPayloads = {
             type: string;
         };
     };
+    [APP_EFFECT_TYPES.RUNS_SNAPSHOT]: { runs: RunIdentity[] };
+    [APP_EFFECT_TYPES.RUNS_STARTED]: { runs: RunIdentity[] };
+    [APP_EFFECT_TYPES.RUNS_FINISHED]: { runs: RunIdentity[] };
+    [APP_EFFECT_TYPES.GOALS_SNAPSHOT]: { goals: Goal[] };
+    [APP_EFFECT_TYPES.GOALS_CHANGED]: { conversationId: string; goal: Goal };
 };
 
 export type AppEffectType = keyof AppEffectPayloads;

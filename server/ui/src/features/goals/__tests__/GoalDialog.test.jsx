@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConversationCatalogProvider } from '../../conversation/catalog/ConversationCatalog.jsx';
 import GoalDialog from '../GoalDialog.jsx';
-import { GoalsProvider } from '../GoalsState.jsx';
+import { GoalsTestProvider, emitGoal } from './goalTestProviders.jsx';
 
 const goalPath = '/api/conversations/sessions/chat-1/goal';
 const baseGoal = {
@@ -22,12 +22,15 @@ let saveGate;
 
 function DialogHarness({ onClose, shown = true, ...props }) {
     const [open, setOpen] = useState(true);
-    return <ConversationCatalogProvider><GoalsProvider enabled>
+    return <GoalsTestProvider goals={initialGoals}><ConversationCatalogProvider>
         {open && shown && <GoalDialog {...props} onClose={() => { onClose(); setOpen(false); }} />}
-    </GoalsProvider></ConversationCatalogProvider>;
+    </ConversationCatalogProvider></GoalsTestProvider>;
 }
 
+let initialGoals = [];
+
 function setup(props = {}) {
+    initialGoals = currentGoal ? [currentGoal] : [];
     const onStarted = vi.fn();
     const onClose = vi.fn();
     const dialogProps = { conversationId: 'chat-1', profileId: 'household-planner', onStarted, onClose, ...props };
@@ -46,7 +49,6 @@ beforeEach(() => {
     failLoad = false;
     saveGate = undefined;
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, options = {}) => {
-        if (url === '/api/goals') return response({ goals: currentGoal ? [currentGoal] : [] });
         if (url === '/api/conversations/sessions' || url.endsWith('/folders')) return response([]);
         if (url !== goalPath) throw new Error(`Unexpected goal request: ${url}`);
         if (!options.method && failLoad) return response({ error: 'Goal could not be loaded' }, 503);
@@ -66,7 +68,7 @@ beforeEach(() => {
             if (rejectCreate) return response({ error: 'Could not start the goal' }, rejectCreate);
             currentGoal = { ...baseGoal, ...JSON.parse(options.body), revision: 1, next: { kind: 'wake', id: 'w2', at: '2020-01-01T00:00:00Z', reason: 'planned' } };
         }
-        return response({ goal: currentGoal, running: currentGoal?.running || false, history: currentGoal ? [currentGoal] : [] });
+        return response({ goal: currentGoal, earlier_goals: [] });
     });
 });
 afterEach(() => vi.restoreAllMocks());
@@ -157,16 +159,6 @@ describe('goal assignment dialog', () => {
         expect(screen.queryByLabelText(/status/i)).not.toBeInTheDocument();
     });
 
-    it('says the agent sees edits on its next step only while a run is going', async () => {
-        const first = setup();
-        await screen.findByLabelText('What would you like done?');
-        expect(screen.queryByText('The agent sees your changes on its next step.')).not.toBeInTheDocument();
-        first.hideDialog();
-        currentGoal.running = true;
-        setup();
-        expect(await screen.findByText('The agent sees your changes on its next step.')).toBeVisible();
-    });
-
     it('preserves local objective and checklist edits after an agent revision conflict', async () => {
         const callbacks = setup();
         fireEvent.change(await screen.findByLabelText('What would you like done?'), { target: { value: 'My revised objective' } });
@@ -181,6 +173,8 @@ describe('goal assignment dialog', () => {
         expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
         expect(callbacks.onStarted).not.toHaveBeenCalled();
         expect(callbacks.onClose).not.toHaveBeenCalled();
+        emitGoal(currentGoal);
+        expect(screen.getByLabelText('What would you like done?')).toHaveValue('My revised objective');
         fireEvent.click(screen.getByRole('button', { name: 'Load latest version' }));
         await waitFor(() => expect(screen.getByLabelText('What would you like done?')).toHaveValue(`Agent revised objective`));
         rejectEdit = false;
@@ -215,21 +209,6 @@ describe('goal assignment dialog', () => {
         expect(currentGoal.plan[1]).toEqual({ ...baseGoal.plan[1], notes });
     });
 
-    it('retries a failed load without offering accidental goal creation', async () => {
-        failLoad = true;
-        const callbacks = setup();
-        await screen.findByText('Goal could not be loaded');
-        expect(screen.queryByLabelText('What would you like done?')).not.toBeInTheDocument();
-        expect(screen.queryByRole('button', { name: 'Start goal' })).not.toBeInTheDocument();
-        expect(mutations()).toHaveLength(0);
-        expect(callbacks.onStarted).not.toHaveBeenCalled();
-        failLoad = false;
-        fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
-        expect(await screen.findByLabelText('What would you like done?')).toHaveValue(`${baseGoal.objective}`);
-        expect(screen.getByRole('button', { name: 'Save changes' })).toBeInTheDocument();
-        expect(mutations()).toHaveLength(0);
-    });
-
     it('reports start success only after a failed creation has been retried successfully', async () => {
         currentGoal = null;
         rejectCreate = 503;
@@ -255,7 +234,7 @@ describe('goal assignment dialog', () => {
         await screen.findByText(/goal changed while you were editing/);
         expect(screen.getByLabelText('What would you like done?')).toHaveValue('My proposed goal');
         expect(callbacks.onStarted).not.toHaveBeenCalled();
-        fireEvent.click(screen.getByRole('button', { name: 'Load latest version' }));
+        emitGoal(currentGoal);
         await screen.findByRole('button', { name: 'Save changes' });
         expect(screen.getByRole('heading', { name: 'Edit' })).toBeInTheDocument();
         expect(screen.getByLabelText('What would you like done?')).toHaveValue('My proposed goal');
@@ -290,5 +269,37 @@ describe('goal assignment dialog', () => {
         expect(callbacks.onClose).toHaveBeenCalledTimes(1);
         expect(callbacks.onStarted).not.toHaveBeenCalled();
         expect(mutations()).toHaveLength(0);
+    });
+
+    it('opens straight into Edit with the goal from the goals state', async () => {
+        setup();
+        expect(screen.getByRole('heading', { name: 'Edit' })).toBeInTheDocument();
+        expect(screen.getByLabelText('What would you like done?')).toHaveValue(baseGoal.objective);
+        expect(globalThis.fetch.mock.calls.filter(([url, options]) => url === goalPath && !options?.method)).toHaveLength(0);
+    });
+
+    it('keeps Start goal off until the goal text has more than spaces and shows the placeholder', async () => {
+        currentGoal = null;
+        setup();
+        const text = await screen.findByLabelText('What would you like done?');
+        expect(text).toHaveAttribute('placeholder', 'Describe the goal…');
+        const start = screen.getByRole('button', { name: 'Start goal' });
+        expect(start).toBeDisabled();
+        fireEvent.change(text, { target: { value: '   ' } });
+        expect(start).toBeDisabled();
+        fireEvent.change(text, { target: { value: 'Plan household meals' } });
+        expect(start).toBeEnabled();
+    });
+
+    it('keeps the draft and turns Save off while Working', async () => {
+        setup();
+        fireEvent.change(await screen.findByLabelText('What would you like done?'), { target: { value: 'My change' } });
+        emitGoal({ ...currentGoal, running: true });
+        expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
+        expect(screen.getByText('The agent started working. Your changes are kept. Save when it finishes, or pause it.')).toBeVisible();
+        expect(screen.getByLabelText('What would you like done?')).toHaveValue('My change');
+        emitGoal({ ...currentGoal, running: false, last_run_id: 'run-test' });
+        expect(screen.getByRole('button', { name: 'Save changes' })).toBeEnabled();
+        expect(screen.getByLabelText('What would you like done?')).toHaveValue('My change');
     });
 });

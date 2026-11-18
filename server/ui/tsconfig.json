@@ -16,10 +16,9 @@
   "include": [
     "src/features/conversation/events/*.js",
     "src/features/conversation/events/*.ts",
-    "src/features/conversation/catalog/activityTypes.ts",
     "src/features/conversation/catalog/activityReducer.js",
-    "src/features/conversation/catalog/useConversationActivity.js",
-    "src/features/conversation/transport/conversationActivityClient.js"
+    "src/features/app/activityMessages.generated.ts",
+    "src/features/app/activityStream.js"
   ],
   "exclude": [
     "src/features/conversation/events/__tests__"

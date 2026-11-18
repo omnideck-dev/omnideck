@@ -1,3 +1,4 @@
+import { AppEffectsProvider } from '../../../app/AppEffects.jsx';
 import { render, screen, waitFor, act } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -47,14 +48,14 @@ afterEach(() => {
 
 describe('ConversationCatalogProvider', () => {
     it('loads the list once on mount and never refetches it', async () => {
-        render(<ConversationCatalogProvider><Probe /></ConversationCatalogProvider>);
+        render(<AppEffectsProvider><ConversationCatalogProvider><Probe /></ConversationCatalogProvider></AppEffectsProvider>);
         await waitFor(() => expect(screen.getByText('c1:one')).toBeInTheDocument());
         const listCalls = global.fetch.mock.calls.filter(([u]) => u === '/api/conversations/sessions');
         expect(listCalls).toHaveLength(1);
     });
 
     it('addStartedConversation shows the row immediately, then fills in the generated title', async () => {
-        render(<ConversationCatalogProvider><Probe /></ConversationCatalogProvider>);
+        render(<AppEffectsProvider><ConversationCatalogProvider><Probe /></ConversationCatalogProvider></AppEffectsProvider>);
         await waitFor(() => expect(screen.getByText('c1:one')).toBeInTheDocument());
 
         act(() => api.addStartedConversation({ conversationId: 'c2', firstMessage: 'hi there' }));
@@ -67,7 +68,7 @@ describe('ConversationCatalogProvider', () => {
     });
 
     it('addStartedConversation is deduped by id', async () => {
-        render(<ConversationCatalogProvider><Probe /></ConversationCatalogProvider>);
+        render(<AppEffectsProvider><ConversationCatalogProvider><Probe /></ConversationCatalogProvider></AppEffectsProvider>);
         await waitFor(() => expect(screen.getByText('c1:one')).toBeInTheDocument());
 
         act(() => api.addStartedConversation({ conversationId: 'c2', firstMessage: 'hi' }));

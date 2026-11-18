@@ -2,14 +2,13 @@ import {
     CONVERSATION_EVENT_TYPES as EVENT,
     isRootAgentEvent,
 } from './eventTypes.js';
+import { isShownGoalEvent } from './goalTranscript.js';
 
 // Records retained by the open frontend session so it can build Turns. This
 // is a UI policy, not the backend's separate durability policy.
 /** @type {Set<import('./conversationEvents.generated').ConversationEvent['type']>} */
 const RETAINED_SESSION_EVENT_TYPES = new Set([
     EVENT.AGENT_STARTED,
-    // Marks the turn finished, so goal run outcomes can show.
-    EVENT.AGENT_COMPLETED,
     EVENT.USER_MESSAGE,
     EVENT.ITERATION,
     EVENT.TOOL_RESULT,
@@ -32,7 +31,7 @@ export function getSessionEventActions(event) {
     const isRootEvent = isRootAgentEvent(event);
 
     if (isRootEvent && (RETAINED_SESSION_EVENT_TYPES.has(event.type)
-        || (event.type === EVENT.GOAL && event.data.kind !== 'state_notice'))) {
+        || (event.type === EVENT.GOAL && isShownGoalEvent(event)))) {
         actions.push({ type: 'RETAIN_EVENT', event });
     }
 

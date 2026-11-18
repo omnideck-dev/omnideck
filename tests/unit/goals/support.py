@@ -13,7 +13,7 @@ from goals._models import Goal, GoalChoice
 
 
 def create(store: GoalStore, conversation: str = "chat", objective: str = "Plan the family reunion") -> Goal:
-    return store.create(conversation, objective, "assistant")
+    return store.create(conversation, objective)
 
 
 def future(days: int = 1) -> str:

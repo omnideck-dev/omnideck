@@ -4,10 +4,10 @@ import {
     isRootAgentEvent,
     isSubAgentEvent,
 } from './eventTypes.js';
-import { addDayHeaders, hideRunAfterStart, placeRunOutcomes } from './goalTranscript.js';
+import { addDayHeaders, goalDividerItem } from './goalTranscript.js';
 
 /** Display rules applied after the events become items, in this order. */
-const TRANSCRIPT_PASSES = [placeCompactions, hideRunAfterStart, placeRunOutcomes, addDayHeaders];
+const TRANSCRIPT_PASSES = [placeCompactions, addDayHeaders];
 
 /**
  * Build the chat transcript from the persisted conversation event log.
@@ -53,7 +53,6 @@ export function projectTurns(events) {
                 currentTurn = {
                     id: `turn_${turns.length}`,
                     agentId: ev.agent_id,
-                    finished: false,
                     children: [],
                 };
                 turns.push(currentTurn);
@@ -64,32 +63,12 @@ export function projectTurns(events) {
             continue;
         }
         // Completion and context metadata affect the agent graph/status, not
-        // the transcript's visible children. Completion of the root agent marks
-        // the turn as finished.
-        if (t === EVENT.AGENT_COMPLETED) {
-            if (currentTurn && ev.agent_id === currentTurn.agentId) currentTurn.finished = true;
-            continue;
-        }
+        // the transcript's visible children.
+        if (t === EVENT.AGENT_COMPLETED) continue;
         if (t === EVENT.CONTEXT_USAGE) continue;
-        // Every goal run that no user message started gets a divider, whatever
-        // started it. Internal notes to the agent stay hidden.
         if (t === EVENT.GOAL) {
-            const data = ev.data;
-            if (data.kind === 'state_notice') continue;
-            if (!currentTurn) {
-                // No agent runs in this turn, so it has nothing left to finish.
-                currentTurn = { id: `turn_${turns.length}`, agentId: null, finished: true, children: [] };
-                turns.push(currentTurn);
-            }
-            const wakeup = data.kind === 'wakeup';
-            currentTurn.children.push({
-                kind: ITEM.GOAL_TRANSITION, id: ev.id,
-                transition: wakeup ? 'run' : data.kind,
-                objective: wakeup ? '' : data.objective,
-                step: wakeup ? data.step : '',
-                questionCount: wakeup ? 0 : data.question_count || 0,
-                timestamp: ev.timestamp, resumeAt: wakeup ? null : data.resume_at,
-            });
+            const item = goalDividerItem(ev);
+            if (item && currentTurn) currentTurn.children.push(item);
             continue;
         }
 
@@ -102,7 +81,6 @@ export function projectTurns(events) {
                 currentTurn = {
                     id: `turn_${turns.length}`,
                     agentId: ev.agent_id || null,
-                    finished: true,
                     children: [],
                 };
                 turns.push(currentTurn);

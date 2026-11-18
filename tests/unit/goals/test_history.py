@@ -31,7 +31,7 @@ def change_question(store, goal_id, change):
 
 def test_long_history_stays_retrievable_without_growing_working_state(tmp_path):
     store = GoalStore(tmp_path)
-    goal = store.create('chat', 'Grow website traffic', 'assistant')
+    goal = store.create('chat', 'Grow website traffic')
     for index in range(1000):
         goal = save_summary(store, goal.id, f'Campaign {index}: result {index}')
     assert goal.summary == 'Campaign 999: result 999'
@@ -47,7 +47,7 @@ def test_long_history_stays_retrievable_without_growing_working_state(tmp_path):
 
 def test_history_cursor_is_stable_when_new_entries_arrive(tmp_path):
     store = GoalStore(tmp_path)
-    goal = store.create('chat', 'Goal', 'assistant')
+    goal = store.create('chat', 'Goal')
     for index in range(40):
         save_summary(store, goal.id, f'Entry {index}')
     first = store.read_history(goal.id, 'Entry')
@@ -60,7 +60,7 @@ def test_history_cursor_is_stable_when_new_entries_arrive(tmp_path):
 
 def test_plan_entry_stores_only_change_lines(tmp_path):
     store = GoalStore(tmp_path)
-    goal = store.create('chat', 'Goal', 'assistant')
+    goal = store.create('chat', 'Goal')
     goal = store.update(goal.id, goal.revision, plan=[GoalStep(id='ads', title='Try paid ads')])
     goal = store.update(goal.id, goal.revision, plan=[GoalStep(id='referrals', title='Ask for referrals')])
     on_disk = [entry for entry in store._files.entries(goal, 0) if entry['kind'] == 'plan']
@@ -70,7 +70,7 @@ def test_plan_entry_stores_only_change_lines(tmp_path):
 
 def test_summary_entry_stores_only_the_summary(tmp_path):
     store = GoalStore(tmp_path)
-    goal = store.create('chat', 'Goal', 'assistant')
+    goal = store.create('chat', 'Goal')
     goal = store.update(goal.id, goal.revision, summary='Paid ads failed. Try referrals next.')
     goal = store.update(goal.id, goal.revision, summary='Referrals are working. Expand the program.')
     checkpoints = store.read_history(goal.id, 'Paid ads failed')['entries']
@@ -80,7 +80,7 @@ def test_summary_entry_stores_only_the_summary(tmp_path):
 
 def test_history_search_finds_a_word_in_a_plan_change_line(tmp_path):
     store = GoalStore(tmp_path)
-    goal = store.create('chat', 'Goal', 'assistant')
+    goal = store.create('chat', 'Goal')
     goal = store.update(goal.id, goal.revision, plan=[GoalStep(id='call', title='Call the parks office')])
     store.update(goal.id, goal.revision, plan=[
         GoalStep(id='call', title='Call the parks office', status='done', notes='Pavilion reserved'),
@@ -91,7 +91,7 @@ def test_history_search_finds_a_word_in_a_plan_change_line(tmp_path):
 
 def test_plan_change_lines_describe_each_step_change(tmp_path):
     store = GoalStore(tmp_path)
-    goal = store.create('chat', 'Goal', 'assistant')
+    goal = store.create('chat', 'Goal')
     goal = store.update(goal.id, goal.revision, plan=[
         GoalStep(id='call', title='Call the parks office'), GoalStep(id='pay', title='Pay the deposit'),
     ])
@@ -110,7 +110,7 @@ def test_plan_change_lines_describe_each_step_change(tmp_path):
 
 def test_question_keeps_every_answer(tmp_path):
     store = GoalStore(tmp_path)
-    goal = store.create('chat', 'Goal', 'assistant')
+    goal = store.create('chat', 'Goal')
     claim_wake(store, goal)
     question = GoalQuestionChange(id='q', question='Which plan?')
     goal = change_question(store, goal.id, question)
@@ -128,7 +128,7 @@ def test_question_keeps_every_answer(tmp_path):
 
 def test_resolved_question_stays_in_goal_json_and_can_be_reopened(tmp_path):
     store = GoalStore(tmp_path)
-    goal = store.create('chat', 'Goal', 'assistant')
+    goal = store.create('chat', 'Goal')
     claim_wake(store, goal)
     goal = change_question(store, goal.id, GoalQuestionChange(id='q', question='Which plan?'))
     goal = change_question(store, goal.id, GoalQuestionChange(id='q', status='resolved'))
@@ -141,7 +141,7 @@ def test_resolved_question_stays_in_goal_json_and_can_be_reopened(tmp_path):
 
 def test_new_question_id_reads_no_history_files(tmp_path, monkeypatch):
     store = GoalStore(tmp_path)
-    goal = store.create('chat', 'Goal', 'assistant')
+    goal = store.create('chat', 'Goal')
     claim_wake(store, goal)
 
     def reject_history(*args):
@@ -155,7 +155,7 @@ def test_new_question_id_reads_no_history_files(tmp_path, monkeypatch):
 @pytest.mark.parametrize('failed_file', ['history', 'goal.json'])
 def test_failed_save_keeps_previous_state_and_history_visible(tmp_path, monkeypatch, failed_file):
     store = GoalStore(tmp_path)
-    goal = store.create('chat', 'Goal', 'assistant')
+    goal = store.create('chat', 'Goal')
     before = store.read_history(goal.id)
     original = store._files._write_json
 
@@ -177,7 +177,7 @@ def test_failed_save_keeps_previous_state_and_history_visible(tmp_path, monkeypa
 
 def test_goal_files_are_readable_and_current_reads_do_not_load_history(tmp_path, monkeypatch):
     store = GoalStore(tmp_path)
-    goal = store.create('chat', 'Grow the neighborhood newsletter', 'assistant')
+    goal = store.create('chat', 'Grow the neighborhood newsletter')
     save_summary(store, goal.id, 'Library confirmed our announcement')
     directory = tmp_path / 'chat' / 'goals' / goal.id
     state = json.loads((directory / 'goal.json').read_text())
@@ -196,7 +196,7 @@ def test_goal_files_are_readable_and_current_reads_do_not_load_history(tmp_path,
 
 def test_unpublished_question_update_is_invisible_after_restart(tmp_path, monkeypatch):
     store = GoalStore(tmp_path)
-    goal = store.create('chat', 'Plan an event', 'assistant')
+    goal = store.create('chat', 'Plan an event')
     claim_wake(store, goal)
     ask(store, goal, question_id='time', text='Which afternoon?')
     original = store._files._write_json

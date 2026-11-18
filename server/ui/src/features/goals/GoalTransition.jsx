@@ -2,33 +2,15 @@ import { formatRunTime, plural, statusTone } from './goalStatus.js';
 import styles from './GoalTransition.module.css';
 
 const DIVIDERS = {
-    started: { icon: 'bi-bullseye', tone: 'accent' },
-    run: { icon: 'bi-play-circle', tone: 'accent' },
-    resumed: { icon: 'bi-play-circle', tone: 'accent' },
-    reopened: { icon: 'bi-arrow-repeat', tone: 'accent' },
-    paused: statusTone('paused'),
-    scheduled: statusTone('scheduled'),
-    waiting: statusTone('waiting'),
-    error: statusTone('error'),
-    completed: statusTone('done'),
-    cancelled: statusTone('cancelled'),
+    run: { icon: 'bi-play-circle', tone: 'accent', label: () => 'Goal run', detail: (event) => event.step },
+    scheduled: { ...statusTone('scheduled'), label: (event) => `Resumes ${formatRunTime(event.resumeAt)}` },
+    waiting: {
+        ...statusTone('waiting'), label: () => 'Waiting for you',
+        detail: (event) => (event.questionCount ? plural(event.questionCount, 'question') : ''),
+    },
+    error: { ...statusTone('error'), label: () => 'Stopped by an error' },
+    completed: { ...statusTone('done'), label: () => 'Goal done' },
 };
-
-function dividerText(event) {
-    switch (event.transition) {
-    case 'started': return { label: 'Goal started', detail: event.objective };
-    case 'run': return { label: 'Goal run', detail: event.step };
-    case 'scheduled': return { label: `Resumes ${formatRunTime(event.resumeAt)}` };
-    case 'waiting': return { label: 'Waiting for you', detail: event.questionCount ? plural(event.questionCount, 'question') : '' };
-    case 'error': return { label: 'Stopped by an error' };
-    case 'completed': return { label: 'Goal done' };
-    case 'cancelled': return { label: 'Goal cancelled' };
-    case 'reopened': return { label: 'Goal reopened' };
-    case 'paused': return { label: 'Paused' };
-    case 'resumed': return { label: 'Resumed' };
-    default: return { label: 'Goal updated' };
-    }
-}
 
 function formatTime(value) {
     return new Date(value).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
@@ -36,8 +18,11 @@ function formatTime(value) {
 
 /** A one-line goal divider. Its time shows on hover; day headers carry the date. */
 export default function GoalTransition({ event }) {
-    const { icon, tone } = DIVIDERS[event.transition] || statusTone('waiting');
-    const { label, detail } = dividerText(event);
+    const divider = DIVIDERS[event.transition];
+    if (!divider) return null;
+    const { icon, tone } = divider;
+    const label = divider.label(event);
+    const detail = divider.detail?.(event) || '';
     const time = formatTime(event.timestamp);
     return <div className={styles.row} data-testid="goal-transition" data-transition={event.transition}>
         <span className={styles.content} data-time={`· ${time}`}>

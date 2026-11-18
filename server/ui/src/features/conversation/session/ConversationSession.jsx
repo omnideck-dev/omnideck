@@ -12,7 +12,7 @@ import { useAgentDispatch } from '../../agent/AgentState.jsx';
 import useConversationSessionController from './useConversationSessionController.js';
 import { useWorkspaceDispatch } from '../../workspace/WorkspaceState.jsx';
 import { getConversationRestorePlan } from '../events/conversationRestore.js';
-import { useAppEffectDispatch } from '../../app/AppEffects.jsx';
+import { useAppEffectDispatch, useAppEffectSubscription } from '../../app/AppEffects.jsx';
 import { APP_EFFECT_TYPES } from '../../app/appEffectTypes.js';
 
 const ConversationSessionStateContext = createContext(null);
@@ -195,6 +195,16 @@ export function ConversationSessionProvider({ children }) {
         }
         return loaded;
     }, [session.refreshActiveConversation]);
+
+    const activeConversationIdRef = useRef(session.activeConversationId);
+    activeConversationIdRef.current = session.activeConversationId;
+    const followRuns = useCallback((effect) => {
+        if (effect.payload.runs.some((run) => run.conversationId === activeConversationIdRef.current)) {
+            void refreshActiveConversation();
+        }
+    }, [refreshActiveConversation]);
+    useAppEffectSubscription(APP_EFFECT_TYPES.RUNS_STARTED, followRuns);
+    useAppEffectSubscription(APP_EFFECT_TYPES.RUNS_SNAPSHOT, followRuns);
 
     const commands = useMemo(() => ({
         sendMessage,

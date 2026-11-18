@@ -16,4 +16,9 @@ export const APP_EFFECT_TYPES = Object.freeze(/** @type {const} */ ({
     OPEN_BROWSER_PROFILE_REQUESTED: 'browser/open-profile-requested',
     DESKTOP_VIEWS_CLOSING: 'desktop/views-closing',
     DESKTOP_VIEW_ACTION_REQUESTED: 'desktop/view-action-requested',
+    RUNS_SNAPSHOT: 'runs/snapshot',
+    RUNS_STARTED: 'runs/started',
+    RUNS_FINISHED: 'runs/finished',
+    GOALS_SNAPSHOT: 'goals/snapshot',
+    GOALS_CHANGED: 'goals/changed',
 }));

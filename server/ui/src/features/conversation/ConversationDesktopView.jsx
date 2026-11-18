@@ -51,7 +51,7 @@ export default function ConversationDesktopView({ view, tabGroupId }) {
         setConversationProfileId,
     } = useConversationSessionCommands();
     const { profilesHook, features } = useAppData();
-    const { goalsByConversation, loadGoal } = useGoals();
+    const { goalsByConversation } = useGoals();
     const { openGoal } = useGoalDesktopActions();
     const { defaultProfileId } = useAppSettings();
     const navigation = useDesktopNavigationCommands();
@@ -86,13 +86,10 @@ export default function ConversationDesktopView({ view, tabGroupId }) {
     ), [selectedProfileId, sendMessage]);
 
     const handleSendAnswers = useCallback(async (goalId, answers) => {
-        const conversationId = activeConversationId;
         const result = await sendAnswers(goalId, answers, selectedProfileId);
         if (result && !result.ok) throw new Error(result.error || 'Your answers were not sent.');
-        // Read the goal now so the composer sees the saved answers without waiting for the next poll.
-        const snapshot = await loadGoal(conversationId);
-        return { goal: snapshot?.goal, queued: Boolean(result?.queued) };
-    }, [activeConversationId, loadGoal, selectedProfileId, sendAnswers]);
+        return { queued: Boolean(result?.queued) };
+    }, [selectedProfileId, sendAnswers]);
 
     if (mode === 'network') {
         return (

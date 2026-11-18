@@ -48,19 +48,19 @@ describe('autonomous goal conversation updates', () => {
     });
 });
 
-it('places a late logged goal event at its original time and deduplicates subsequent refreshes', async () => {
+it('appends a goal event that arrives after a later event', async () => {
     const root = { ...start, timestamp: '2026-10-23T14:01:00Z' };
     const output = { ...iteration, timestamp: '2026-10-23T14:02:00Z' };
-    const divider = { type: 'goal', id: 'goal_g1_history_1', goal_id: 'g1',
-        data: { kind: 'started', objective: 'Keep the calendar current', resume_at: null, question_count: 0 },
-        timestamp: '2026-10-23T14:00:00Z' };
+    const divider = { type: 'goal', id: 'goal_divider', goal_id: 'g1', depth: 0, agent_id: root.agent_id,
+        data: { kind: 'completed', resume_at: null, question_count: 0 }, timestamp: '2026-10-23T14:00:00Z' };
     const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(response([root, output]));
     const { result } = renderHook(() => useConversationSessionController());
     await act(async () => { await result.current.loadConversation('chat-1'); result.current.setDraft('My draft'); });
-    fetch.mockResolvedValue(response([divider, root, output]));
+    fetch.mockResolvedValue(response([root, output, divider]));
     await act(async () => { await result.current.refreshActiveConversation(); });
     await act(async () => { await result.current.refreshActiveConversation(); });
-    // A goal chat gets a day header before its first dated item.
-    expect(result.current.turns.flatMap(turn => turn.children).map(item => item.id)).toEqual([`day_${divider.id}`, divider.id, output.id]);
+    expect(result.current.turns.flatMap(turn => turn.children).filter(item => item.kind !== 'day_header').map(item => item.id))
+        .toEqual([output.id, divider.id]);
     expect(result.current.draft).toBe('My draft');
 });
+

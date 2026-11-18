@@ -14,7 +14,8 @@ from goals import GoalRunExtension, GoalStore
 from server._agent_run_routes import register_agent_run_routes
 from server._agent_runtime import AGENT_RUNTIME_KEY
 from server._goal_routes import register_goal_routes
-from server._goals import GOAL_STORE_KEY, save_goal_answers_when_read
+from goals import GoalAnswerRecorder
+from server._goals import GOAL_STORE_KEY
 from server.aiohttp_app import cors_and_error_middleware
 
 from tests.unit.goals.support import waiting
@@ -51,7 +52,7 @@ async def queue_client(tmp_path, monkeypatch, aiohttp_client):
     app = web.Application(middlewares=[cors_and_error_middleware])
     app[GOAL_STORE_KEY] = store
     app[AGENT_RUNTIME_KEY] = runtime
-    save_goal_answers_when_read(app)
+    runtime.observe_events(GoalAnswerRecorder(store, lambda: enabled["value"]).handle_event)
     register_agent_run_routes(app)
     register_goal_routes(app)
     client = await aiohttp_client(app, headers=HEADERS)
@@ -112,7 +113,7 @@ async def test_delete_nudge_removes_it_once_then_reports_it_was_read(queue_clien
 
 async def test_goal_answers_route_starts_a_run_and_saves_when_it_opens(queue_client):
     client, runner, _, store, _ = queue_client
-    goal = waiting(store, store.create("chat-1", "Find a dentist", "assistant"), "insurance", "Which insurance plan?")
+    goal = waiting(store, store.create("chat-1", "Find a dentist"), "insurance", "Which insurance plan?")
     body = {"goal_id": goal.id, "answers": [{"question_id": "insurance", "question_revision": 1, "answer": "Aetna"}]}
     response = await client.post(ANSWERS, json=body)
     assert response.status == 200
@@ -128,7 +129,7 @@ async def test_goal_answers_route_starts_a_run_and_saves_when_it_opens(queue_cli
 
 async def test_goal_answers_route_queues_while_the_agent_works(queue_client):
     client, runner, _, store, _ = queue_client
-    goal = waiting(store, store.create("chat-1", "Find a dentist", "assistant"), "insurance", "Which insurance plan?")
+    goal = waiting(store, store.create("chat-1", "Find a dentist"), "insurance", "Which insurance plan?")
     stream = await start_run(client, runner)
     response = await client.post(ANSWERS, json={
         "goal_id": goal.id, "answers": [{"question_id": "insurance", "question_revision": 1, "answer": "Aetna"}],
@@ -141,9 +142,9 @@ async def test_goal_answers_route_queues_while_the_agent_works(queue_client):
 
 async def test_goal_answers_route_refuses_stale_versions_and_disabled_goals(queue_client):
     client, _, _, store, enabled = queue_client
-    goal = waiting(store, store.create("chat-1", "Find a dentist", "assistant"), "insurance", "Which insurance plan?")
+    goal = waiting(store, store.create("chat-1", "Find a dentist"), "insurance", "Which insurance plan?")
     body = {"goal_id": goal.id, "answers": [{"question_id": "insurance", "question_revision": 2, "answer": "Aetna"}]}
     stale = await client.post(ANSWERS, json=body)
     assert stale.status == 409
     enabled["value"] = False
-    assert (await client.post(ANSWERS, json=body)).status == 404
+    assert (await client.post(ANSWERS, json=body)).status == 403

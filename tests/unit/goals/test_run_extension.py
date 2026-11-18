@@ -116,7 +116,7 @@ async def tools_for_chat_turn(monkeypatch, store, conversation_id, enabled=lambd
 
 
 async def test_goal_tools_and_fresh_state_belong_only_to_owning_root(monkeypatch, store):
-    goal = store.create("runner-goal-tools", "Organize household appointments", "profile-1")
+    goal = store.create("runner-goal-tools", "Organize household appointments")
     seen = []
 
     async def execute(self, **kwargs):
@@ -153,7 +153,7 @@ async def test_goal_tools_and_fresh_state_belong_only_to_owning_root(monkeypatch
 
 
 async def test_chat_turn_on_paused_goal_gets_all_goal_tools(monkeypatch, store):
-    goal = store.create("runner-paused-goal", "Arrange appointments", "profile-1")
+    goal = store.create("runner-paused-goal", "Arrange appointments")
     store.pause(goal.id)
     assert GOAL_TOOLS <= await tools_for_chat_turn(monkeypatch, store, goal.conversation_id)
     saved = store.get(goal.id)
@@ -161,27 +161,27 @@ async def test_chat_turn_on_paused_goal_gets_all_goal_tools(monkeypatch, store):
 
 
 async def test_chat_turn_on_error_goal_gets_all_goal_tools(monkeypatch, store):
-    goal = failed(store, store.create("runner-error-goal", "Arrange appointments", "profile-1"))
+    goal = failed(store, store.create("runner-error-goal", "Arrange appointments"))
     assert GOAL_TOOLS <= await tools_for_chat_turn(monkeypatch, store, goal.conversation_id)
     assert store.get(goal.id).next == goal.next
 
 
 async def test_chat_turn_on_done_goal_gets_only_read_tools(monkeypatch, store):
-    done = completed(store, store.create("runner-done-goal", "Arrange appointments", "profile-1"))
+    done = completed(store, store.create("runner-done-goal", "Arrange appointments"))
     tools = await tools_for_chat_turn(monkeypatch, store, done.conversation_id)
     assert tools & GOAL_TOOLS == {"read_goal", "read_goal_history"}
     assert store.get(done.id).next == done.next
 
 
 async def test_chat_turn_gets_no_goal_tools_while_goals_are_off(monkeypatch, store):
-    goal = store.create("runner-goals-off", "Arrange appointments", "profile-1")
+    goal = store.create("runner-goals-off", "Arrange appointments")
     tools = await tools_for_chat_turn(monkeypatch, store, goal.conversation_id, enabled=lambda: False)
     assert not tools & GOAL_TOOLS
     assert store.get(goal.id) == goal
 
 
 async def test_wake_run_is_stopped_while_goals_are_off(monkeypatch, store):
-    goal = store.create("runner-wake-off", "Arrange appointments", "profile-1")
+    goal = store.create("runner-wake-off", "Arrange appointments")
     execute = AsyncMock(return_value=ExecutionResult("success"))
     monkeypatch.setattr(runner_module.AgentExecutor, "execute", execute)
     runtime = runtime_for(store, enabled=lambda: False)
@@ -204,7 +204,7 @@ def test_wakeup_text_follows_the_wake_reason(reason, text):
 
 
 async def test_wakeup_event_carries_model_text(monkeypatch, store):
-    goal = store.create("runner-wakeup", "Plan a household move", "profile-1")
+    goal = store.create("runner-wakeup", "Plan a household move")
     store.update(goal.id, goal.revision, plan=[GoalStep(id="list", title="Make the moving list", status="in_progress")])
     script = Script(monkeypatch, "Created a moving checklist")
     runtime = runtime_for(store)
@@ -225,7 +225,7 @@ async def test_wakeup_event_carries_model_text(monkeypatch, store):
 
 
 async def test_edit_with_no_run_going_opens_the_next_run_before_the_typed_message(monkeypatch, store):
-    goal = store.create("edit-chat", "Plan the reunion", "profile-1")
+    goal = store.create("edit-chat", "Plan the reunion")
     script = Script(monkeypatch, "Started.", "Here is what is left.")
     runtime = runtime_for(store)
     try:
@@ -244,7 +244,7 @@ async def test_edit_with_no_run_going_opens_the_next_run_before_the_typed_messag
 
 
 async def test_two_edits_give_one_event_and_it_is_not_repeated(monkeypatch, store):
-    goal = store.create("edit-twice", "Plan the reunion", "profile-1")
+    goal = store.create("edit-twice", "Plan the reunion")
     Script(monkeypatch, "Started.", "Noted.", "Still noted.")
     runtime = runtime_for(store)
     try:
@@ -259,7 +259,7 @@ async def test_two_edits_give_one_event_and_it_is_not_repeated(monkeypatch, stor
 
 
 async def test_run_with_no_user_edits_has_no_edited_event(monkeypatch, store):
-    goal = store.create("edit-none", "Plan the reunion", "profile-1")
+    goal = store.create("edit-none", "Plan the reunion")
     Script(monkeypatch, "Started.", "Nothing changed.")
     runtime = runtime_for(store)
     try:
@@ -271,12 +271,12 @@ async def test_run_with_no_user_edits_has_no_edited_event(monkeypatch, store):
 
 
 async def test_new_goal_is_not_an_edit_but_a_later_user_edit_is(monkeypatch, store):
-    first = completed(store, store.create("second-goal", "Plan the reunion", "profile-1"))
+    first = completed(store, store.create("second-goal", "Plan the reunion"))
     Script(monkeypatch, "Planned.", "Second goal underway.", "Read the change.")
     runtime = runtime_for(store)
     try:
         await chat(runtime, first.conversation_id, "Thanks")
-        second = store.create("second-goal", "Plan the holiday party", "profile-1")
+        second = store.create("second-goal", "Plan the holiday party")
         await wake(runtime, store, second)
         assert [event["data"]["kind"] for event in goal_events("second-goal")] == ["wakeup", "waiting"]
         store.pause(second.id)
@@ -288,7 +288,7 @@ async def test_new_goal_is_not_an_edit_but_a_later_user_edit_is(monkeypatch, sto
 
 
 async def test_running_agent_write_after_a_user_edit_is_refused(monkeypatch, store):
-    goal = store.create("edit-mid-run", "Plan the reunion", "profile-1")
+    goal = store.create("edit-mid-run", "Plan the reunion")
     refused = []
 
     async def execute(self, **kwargs):
@@ -338,7 +338,7 @@ def test_outcome_divider_for_each_change():
 
 
 async def test_schedule_then_reply_gives_one_divider_after_the_reply(monkeypatch, store):
-    goal = store.create("divider-schedule", "Plan the reunion", "profile-1")
+    goal = store.create("divider-schedule", "Plan the reunion")
     store.update(goal.id, goal.revision, plan=[GoalStep(id="call", title="Call the parks office", status="in_progress")])
     later = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
     Script(monkeypatch, ("read_goal", {}),
@@ -358,7 +358,7 @@ async def test_schedule_then_reply_gives_one_divider_after_the_reply(monkeypatch
 
 
 async def test_chat_turn_that_changes_nothing_gets_no_divider(monkeypatch, store):
-    goal = store.create("divider-none", "Plan the reunion", "profile-1")
+    goal = store.create("divider-none", "Plan the reunion")
     store.update(goal.id, goal.revision, plan=[GoalStep(id="call", title="Call", status="in_progress")])
     later = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
     claim_wake(store, goal)
@@ -374,7 +374,7 @@ async def test_chat_turn_that_changes_nothing_gets_no_divider(monkeypatch, store
 
 
 async def test_failed_run_gets_an_error_divider_and_goal_tools_publish_none(monkeypatch, store):
-    goal = store.create("divider-error", "Plan the reunion", "profile-1")
+    goal = store.create("divider-error", "Plan the reunion")
     store.update(goal.id, goal.revision, plan=[GoalStep(id="call", title="Call", status="in_progress")])
 
     async def execute(self, **kwargs):

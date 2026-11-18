@@ -319,7 +319,6 @@ class Goal(BaseModel):
     id: str = Field(default_factory=lambda: uuid4().hex)
     conversation_id: str = Field(min_length=1)
     objective: str = Field(min_length=1)
-    profile_id: str = Field(min_length=1)
     next: GoalNext = Field(default_factory=lambda: GoalWake(at=utc_now()))
     paused: bool = False
     note: str = Field(default="", max_length=NOTE_MAX_LENGTH)
@@ -337,7 +336,7 @@ class Goal(BaseModel):
     def ended(self) -> bool:
         return self.next.kind in ENDED_KINDS
 
-    @field_validator("conversation_id", "objective", "profile_id")
+    @field_validator("conversation_id", "objective")
     @classmethod
     def required_text(cls, value: str) -> str:
         if not value.strip():

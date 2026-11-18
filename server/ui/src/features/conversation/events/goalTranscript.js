@@ -5,70 +5,39 @@ import { TRANSCRIPT_ITEM_KINDS as ITEM } from './eventTypes.js';
  * returns new turns; none changes the events they came from.
  */
 
-/** Dividers that say how a run left the goal. Only the agent or the end of a run makes them. */
-const RUN_OUTCOMES = new Set(['completed', 'scheduled', 'waiting']);
-
 /** @typedef {import('./frontendTypes').ConversationTurn} ConversationTurn */
 /** @typedef {import('./frontendTypes').TranscriptItem} TranscriptItem */
 
-/** @param {TranscriptItem|null} item @param {string} transition */
-function isTransition(item, transition) {
-    return item?.kind === ITEM.GOAL_TRANSITION && item.transition === transition;
-}
+const SHOWN_GOAL_KINDS = new Set(['wakeup', 'scheduled', 'waiting', 'error', 'completed']);
 
-/** @param {TranscriptItem} item */
-function isRunOutcome(item) {
-    return item.kind === ITEM.GOAL_TRANSITION && RUN_OUTCOMES.has(item.transition);
+/**
+ * @param {{ data?: { kind?: string } } | null | undefined} event
+ * @returns {boolean}
+ */
+export function isShownGoalEvent(event) {
+    return SHOWN_GOAL_KINDS.has(event?.data?.kind || '');
 }
 
 /**
- * Starting a goal starts its first run at once, so a run divider right after
- * the start divider marks the same moment and is hidden.
+ * The transcript divider for a goal event, or null for one the transcript does not show.
  *
- * @param {Array<ConversationTurn>} turns
- * @returns {Array<ConversationTurn>}
+ * @param {Extract<import('./conversationEvents.generated').ConversationEvent, { type: 'goal' }>} event
+ * @returns {TranscriptItem | null}
  */
-export function hideRunAfterStart(turns) {
-    /** @type {TranscriptItem|null} */
-    let previous = null;
-    return turns.map((turn) => {
-        const children = turn.children.filter((child) => {
-            const hidden = isTransition(child, 'run') && isTransition(previous, 'started');
-            previous = child;
-            return !hidden;
-        });
-        return { ...turn, children };
-    });
-}
-
-/**
- * A run shows one outcome divider: its last one, after the run's own items,
- * once the run has finished. The agent often chooses what happens next and
- * then writes its reply, so the divider would otherwise sit above the reply.
- * Dividers from the user's own actions, such as a pause after the run ended,
- * keep their place.
- *
- * @param {Array<ConversationTurn>} turns
- * @returns {Array<ConversationTurn>}
- */
-export function placeRunOutcomes(turns) {
-    return turns.map((turn, index) => {
-        const outcomes = turn.children.filter(isRunOutcome);
-        if (outcomes.length === 0) return turn;
-        // A turn without its completion event is still finished once a later turn exists.
-        if (!turn.finished && index === turns.length - 1) {
-            return { ...turn, children: turn.children.filter((child) => !isRunOutcome(child)) };
-        }
-        const last = outcomes[outcomes.length - 1];
-        const lastRunItem = turn.children.reduce((found, child, i) => (child.kind === ITEM.GOAL_TRANSITION ? found : i), -1);
-        // After the run's last own item, or where it happened when nothing of the run came later.
-        const position = Math.max(turn.children.indexOf(last), lastRunItem);
-        const children = turn.children.flatMap((child, i) => {
-            const kept = isRunOutcome(child) ? [] : [child];
-            return i === position ? [...kept, last] : kept;
-        });
-        return { ...turn, children };
-    });
+export function goalDividerItem(event) {
+    if (!isShownGoalEvent(event)) return null;
+    const data = event.data;
+    if (data.kind === 'wakeup') {
+        return {
+            kind: ITEM.GOAL_TRANSITION, id: event.id, transition: 'run', step: data.step,
+            questionCount: 0, timestamp: event.timestamp, resumeAt: null,
+        };
+    }
+    return {
+        kind: ITEM.GOAL_TRANSITION, id: event.id,
+        transition: /** @type {'scheduled' | 'waiting' | 'error' | 'completed'} */ (data.kind),
+        step: '', questionCount: data.question_count || 0, timestamp: event.timestamp, resumeAt: data.resume_at,
+    };
 }
 
 /** @param {string} timestamp */

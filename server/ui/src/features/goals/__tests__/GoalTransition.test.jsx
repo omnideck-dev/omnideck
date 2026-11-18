@@ -9,7 +9,7 @@ import statusStyles from '../GoalStatus.module.css';
 
 const TIMESTAMP = '2026-10-23T14:00:00Z';
 const divider = (transition, fields = {}) => ({
-    id: transition, transition, objective: '', step: '', questionCount: 0, timestamp: TIMESTAMP, resumeAt: null, ...fields,
+    id: transition, transition, step: '', questionCount: 0, timestamp: TIMESTAMP, resumeAt: null, ...fields,
 });
 const goal = (fields = {}) => ({
     id: 'g1', objective: 'Book the pavilion', paused: false, running: false,
@@ -21,14 +21,11 @@ function iconOf(element) {
 }
 
 describe('goal transition dividers', () => {
-    // Each divider kind takes the icon and tone of its row in the status table.
     it.each([
-        ['paused', goal({ paused: true })],
         ['scheduled', goal({ next: { kind: 'wake', id: 'w', at: '2099-01-01T00:00:00Z', reason: 'planned' } })],
         ['waiting', goal()],
         ['error', goal({ next: { kind: 'error', message: 'Failed' } })],
         ['completed', goal({ next: { kind: 'done', outcome: 'Booked' } })],
-        ['cancelled', goal({ next: { kind: 'cancelled' } })],
     ])('draws the %s divider with the matching status icon and tone', (transition, matching) => {
         const status = goalStatus(matching);
         render(<GoalTransition event={divider(transition, { resumeAt: '2099-01-01T00:00:00Z' })} />);
@@ -36,22 +33,17 @@ describe('goal transition dividers', () => {
         expect(icon).toHaveClass(status.icon, styles[status.tone]);
     });
 
-    it.each(['started', 'run', 'resumed', 'reopened'])('draws the %s divider in the Working tone', (transition) => {
+    it.each(['run'])('draws the %s divider in the Working tone', (transition) => {
         render(<GoalTransition event={divider(transition)} />);
         expect(screen.getByTestId('goal-transition').querySelector('i')).toHaveClass(styles.accent);
     });
 
     it.each([
-        ['started', { objective: 'Book the pavilion for Saturday' }, 'Goal started· Book the pavilion for Saturday'],
         ['run', { step: 'Call the parks office' }, 'Goal run· Call the parks office'],
         ['waiting', { questionCount: 3 }, 'Waiting for you· 3 questions'],
         ['waiting', { questionCount: 1 }, 'Waiting for you· 1 question'],
         ['error', {}, 'Stopped by an error'],
         ['completed', {}, 'Goal done'],
-        ['cancelled', {}, 'Goal cancelled'],
-        ['reopened', {}, 'Goal reopened'],
-        ['paused', {}, 'Paused'],
-        ['resumed', {}, 'Resumed'],
     ])('describes the %s event in one line', (transition, fields, text) => {
         render(<GoalTransition event={divider(transition, fields)} />);
         expect(screen.getByTestId('goal-transition').querySelector(`.${styles.content}`)).toHaveTextContent(text);
@@ -64,23 +56,20 @@ describe('goal transition dividers', () => {
         expect(row.querySelector(`.${styles.detail}`)).toBeNull();
     });
 
-    it('puts the start divider objective in the one-line ellipsis slot', () => {
-        const objective = 'Book the pavilion '.repeat(20).trim();
-        render(<GoalTransition event={divider('started', { objective })} />);
-        const detail = screen.getByTestId('goal-transition').querySelector(`.${styles.detail}`);
-        expect(detail).toHaveTextContent(objective);
-        expect(detail.querySelectorAll('br, p, div')).toHaveLength(0);
+    it('draws nothing for a kind it does not show', () => {
+        const { container } = render(<GoalTransition event={divider('paused')} />);
+        expect(container).toBeEmptyDOMElement();
     });
 
     it('keeps the time in a class that stays hidden until hover', () => {
-        render(<GoalTransition event={divider('paused')} />);
+        render(<GoalTransition event={divider('completed')} />);
         const time = within(screen.getByTestId('goal-transition')).getByText((_, element) => element?.tagName === 'TIME');
         expect(time).toHaveClass(styles.time);
         expect(time).toHaveAttribute('dateTime', TIMESTAMP);
     });
 
     it('carries a copy of the time for the invisible spacer that keeps the label centered', () => {
-        render(<GoalTransition event={divider('paused')} />);
+        render(<GoalTransition event={divider('completed')} />);
         const time = within(screen.getByTestId('goal-transition')).getByText((_, element) => element?.tagName === 'TIME');
         expect(time.parentElement).toHaveClass(styles.content);
         expect(time.parentElement).toHaveAttribute('data-time', time.textContent);

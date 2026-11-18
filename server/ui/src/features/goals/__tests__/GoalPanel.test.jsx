@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConversationCatalogProvider } from '../../conversation/catalog/ConversationCatalog.jsx';
 import GoalPanel from '../GoalPanel.jsx';
-import { GoalsProvider } from '../GoalsState.jsx';
+import { GoalsTestProvider } from './goalTestProviders.jsx';
 import { formatRunTime } from '../goalStatus.js';
 
 const FUTURE = '2099-10-06T15:00:00Z';
@@ -26,7 +26,7 @@ let previousGoals;
 const response = (body, status = 200) => ({ ok: status < 400, status, json: async () => body });
 
 function setup(props = {}) {
-    return render(<ConversationCatalogProvider><GoalsProvider enabled><GoalPanel conversationId="chat-1" onOpenChat={vi.fn()} {...props} /></GoalsProvider></ConversationCatalogProvider>);
+    return render(<GoalsTestProvider goals={currentGoal ? [currentGoal] : []}><ConversationCatalogProvider><GoalPanel conversationId="chat-1" onOpenChat={vi.fn()} {...props} /></ConversationCatalogProvider></GoalsTestProvider>);
 }
 
 function posts() {
@@ -43,7 +43,6 @@ beforeEach(() => {
     previousGoals = [];
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, options = {}) => {
         if (url.includes('/goal/history?')) return response({ entries: [{ id: 1, actor: 'agent', claim_id: null, created_at: '2026-10-04T15:00:00Z', summary: 'Working summary updated', kind: 'summary', data: { summary: 'Collected the school schedule.' } }], next_before: null });
-        if (url === '/api/goals') return response({ goals: currentGoal ? [currentGoal] : [] });
         if (url === '/api/conversations/sessions' || url.endsWith('/folders')) return response([]);
         if (options.method === 'POST') {
             const revision = currentGoal.revision + 1;
@@ -53,7 +52,7 @@ beforeEach(() => {
             else if (url.endsWith('/cancel')) currentGoal = { ...currentGoal, revision, next: { kind: 'cancelled' } };
             else if (url.endsWith('/reopen')) currentGoal = { ...currentGoal, revision, paused: false, running: true, next: { kind: 'wait', question_ids: [] } };
         }
-        return response({ goal: currentGoal, running: currentGoal?.running || false, history: currentGoal ? [currentGoal, ...previousGoals] : previousGoals });
+        return response({ goal: currentGoal, earlier_goals: previousGoals });
     });
 });
 afterEach(() => vi.restoreAllMocks());
@@ -125,7 +124,7 @@ describe('goal detail view', () => {
     });
 
     it('shows no Next up when the wake has no step to work on', async () => {
-        currentGoal.next_step = '';
+        currentGoal.plan = currentGoal.plan.map((step) => ({ ...step, status: 'done' }));
         setup();
         await screen.findByText(baseGoal.objective);
         expect(screen.queryByRole('region', { name: 'Next up' })).not.toBeInTheDocument();
@@ -194,6 +193,7 @@ describe('goal detail view', () => {
 
     it('offers no Run now while a run is going', async () => {
         currentGoal.running = true;
+        currentGoal.last_run_id = 'run-test';
         currentGoal.next = wake();
         setup();
         await screen.findByLabelText('Goal: Working');
@@ -246,8 +246,7 @@ describe('goal detail view', () => {
         expect(submit).toBeEnabled();
         fireEvent.click(submit);
         await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-        expect(posts()).toEqual([{ action: 'reopen', body: { goal_id: 'g1', text: 'Add the swim lessons too.', profile_id: 'assistant' } }]);
-        await screen.findByLabelText('Goal: Working');
+        expect(posts()).toEqual([{ action: 'reopen', body: { goal_id: 'g1', text: 'Add the swim lessons too.' } }]);
     });
 
     it('leaves the goal ended when the Reopen dialog is cancelled', async () => {

@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from aiohttp import web
@@ -25,7 +24,6 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 from agent_runtime import AgentRuntime
 from config import load_config
-from goals import GoalRunExtension, GoalStore, GoalWorkSource
 from scheduling import Scheduler
 from server._scheduling import SCHEDULER_KEY
 from server._agent_run_routes import register_agent_run_routes
@@ -40,7 +38,8 @@ from server._custom_tool_routes import register_custom_tool_routes
 from server._desktop_routes import register_desktop_routes
 from server._feature_routes import register_feature_routes
 from server._goal_routes import register_goal_routes
-from server._goals import GOAL_STORE_KEY, save_goal_answers_when_read, start_goals
+from server._goals import create_goal_store, setup_goals, start_goals
+from server._run_activity import ACTIVITY_FEEDS_KEY
 from server.oauth_setup.routes import register_oauth_routes
 from server._integrations_routes import register_integrations_routes
 from server._memory_routes import register_memory_routes
@@ -54,7 +53,6 @@ from server._skill_routes import register_skill_routes
 from server._task_routes import ROUTINE_SERVICE_KEY, register_task_routes
 from server._tool_category_routes import register_tool_category_routes
 from server._ui_routes import register_ui_routes
-from settings import goals_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +114,7 @@ def create_app(
     """
     from browser.runtime import BrowserRuntime
     from server._browser_runtime import BROWSER_RUNTIME_KEY
-    from conversations import ConversationStore, conversations_dir
+    from conversations import ConversationStore
     from integrations.connection_cache import IntegrationConnectionCache
     from integrations.service import integration_service
     from server._integration_cache import INTEGRATION_CACHE_KEY
@@ -127,23 +125,20 @@ def create_app(
     app[BROWSER_RUNTIME_KEY] = browser_runtime
     integration_cache = IntegrationConnectionCache(integration_service)
     app[INTEGRATION_CACHE_KEY] = integration_cache
-    goal_store = GoalStore(conversations_dir())
-    app[GOAL_STORE_KEY] = goal_store
+    app[ACTIVITY_FEEDS_KEY] = []
+    goal_extension = create_goal_store(app)
     app[SELECTION_MUTATION_LOCK] = asyncio.Lock()
     app[AGENT_RUNTIME_KEY] = AgentRuntime(
         conversations=ConversationStore(), browser_runtime=browser_runtime,
         integration_cache=integration_cache,
-        extensions=[GoalRunExtension(goal_store, enabled=goals_enabled)],
+        extensions=[goal_extension],
     )
-    save_goal_answers_when_read(app)
     scheduling = load_config().scheduling
     app[SCHEDULER_KEY] = Scheduler(
         limits=scheduling.max_concurrent, poll_interval=scheduling.poll_interval,
         shutdown_timeout=scheduling.shutdown_timeout,
     )
-    app[SCHEDULER_KEY].register(GoalWorkSource(
-        goal_store, app[AGENT_RUNTIME_KEY], enabled=goals_enabled, on_change=app[SCHEDULER_KEY].wake,
-    ))
+    setup_goals(app, app[SCHEDULER_KEY])
 
     # Agent-run HTTP channel adapter
     register_agent_run_routes(app)
