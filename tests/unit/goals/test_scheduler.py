@@ -10,7 +10,7 @@ import pytest
 
 from agent_core.turn import ExecutionResult
 from agent_runtime import AgentRunRequest, AgentRuntime, RunSession
-from goals import GoalStep
+from goals import GoalRunExtension, GoalStep
 from goals._scheduling import GoalWorkSource
 from goals._store import GoalStore
 from scheduling import Scheduler
@@ -49,7 +49,7 @@ def make_scheduler(store: GoalStore, runtime: AgentRuntime, enabled=lambda: True
 async def test_final_text_never_completes_the_goal_and_the_goal_waits(store: GoalStore) -> None:
     goal = create(store, "goal-chat")
     runner = GoalRunner()
-    runtime = AgentRuntime(runner, goal_store=store)
+    runtime = AgentRuntime(runner, extensions=[GoalRunExtension(store, enabled=lambda: True)])
     scheduler = make_scheduler(store, runtime)
     try:
         await scheduler.tick()
@@ -62,7 +62,7 @@ async def test_final_text_never_completes_the_goal_and_the_goal_waits(store: Goa
         assert current.claim is None
         assert current.last_run_id == handle.run_id
         assert len(runner.requests) == 1
-        trigger = runner.requests[0].goal_trigger
+        trigger = runner.requests[0].trigger
         assert trigger is not None and trigger.goal_id == goal.id
         assert trigger.wake_id == goal.next.id and trigger.reason == "planned"
     finally:
@@ -74,11 +74,11 @@ async def test_wake_run_names_the_step_in_progress(store: GoalStore) -> None:
                      GoalStep(id="guests", title="Collect the guest list", status="done"),
                      GoalStep(id="book", title="Book the park pavilion", status="in_progress"))
     runner = GoalRunner()
-    runtime = AgentRuntime(runner, goal_store=store)
+    runtime = AgentRuntime(runner, extensions=[GoalRunExtension(store, enabled=lambda: True)])
     try:
         await make_scheduler(store, runtime).tick()
         await runtime.active_for_conversation(goal.conversation_id).wait()
-        trigger = runner.requests[0].goal_trigger
+        trigger = runner.requests[0].trigger
         assert trigger.step == "Book the park pavilion"
         assert runner.requests[0].message == "Book the park pavilion"
     finally:
@@ -89,7 +89,7 @@ async def test_busy_chat_keeps_the_wake_and_runs_once_when_free(store: GoalStore
     goal = create(store, "goal-chat")
     runner = GoalRunner()
     runner.release.clear()
-    runtime = AgentRuntime(runner, goal_store=store, goals_enabled=lambda: False)
+    runtime = AgentRuntime(runner, extensions=[GoalRunExtension(store, enabled=lambda: False)])
     scheduler = make_scheduler(store, runtime)
     try:
         user = await runtime.start(AgentRunRequest(goal.conversation_id, "hello", None, "profile"))
@@ -100,7 +100,7 @@ async def test_busy_chat_keeps_the_wake_and_runs_once_when_free(store: GoalStore
         runner.release.set()
         await user.wait()
         await runtime.close()
-        runtime = AgentRuntime(runner, goal_store=store)
+        runtime = AgentRuntime(runner, extensions=[GoalRunExtension(store, enabled=lambda: True)])
         scheduler = make_scheduler(store, runtime)
         await asyncio.gather(scheduler.tick(), scheduler.tick())
         handle = runtime.active_for_conversation(goal.conversation_id)
@@ -116,7 +116,7 @@ async def test_busy_chat_keeps_the_wake_and_runs_once_when_free(store: GoalStore
 async def test_pause_after_admission_stops_the_run_and_keeps_the_wake(store: GoalStore) -> None:
     goal = create(store, "goal-chat")
     runner = GoalRunner()
-    runtime = AgentRuntime(runner, goal_store=store)
+    runtime = AgentRuntime(runner, extensions=[GoalRunExtension(store, enabled=lambda: True)])
     try:
         await make_scheduler(store, runtime).tick()
         handle = runtime.active_for_conversation(goal.conversation_id)
@@ -136,7 +136,7 @@ async def test_future_wake_and_disabled_feature_do_not_dispatch(store: GoalStore
     due = datetime.now(timezone.utc) + timedelta(hours=1)
     goal = scheduled(store, create(store, "goal-chat"), at=due.isoformat())
     runner = GoalRunner()
-    runtime = AgentRuntime(runner, goal_store=store)
+    runtime = AgentRuntime(runner, extensions=[GoalRunExtension(store, enabled=lambda: True)])
     enabled = False
     scheduler = make_scheduler(store, runtime, enabled=lambda: enabled)
     try:
@@ -157,7 +157,7 @@ async def test_future_wake_and_disabled_feature_do_not_dispatch(store: GoalStore
 async def test_scheduler_does_not_claim_due_goals_while_goals_are_off(store: GoalStore) -> None:
     goal = create(store, "goal-chat")
     runner = GoalRunner()
-    runtime = AgentRuntime(runner, goal_store=store)
+    runtime = AgentRuntime(runner, extensions=[GoalRunExtension(store, enabled=lambda: True)])
     scheduler = make_scheduler(store, runtime, enabled=lambda: False)
     try:
         await scheduler.tick()
@@ -174,7 +174,7 @@ async def test_continue_chosen_during_a_run_runs_again_after_it(store: GoalStore
     goal = with_plan(store, create(store, "goal-chat"))
     runner = GoalRunner()
     runner.release.clear()
-    runtime = AgentRuntime(runner, goal_store=store)
+    runtime = AgentRuntime(runner, extensions=[GoalRunExtension(store, enabled=lambda: True)])
     scheduler = make_scheduler(store, runtime)
     try:
         await scheduler.tick()
@@ -192,7 +192,7 @@ async def test_continue_chosen_during_a_run_runs_again_after_it(store: GoalStore
         assert second is not None
         await second.wait()
         assert len(runner.requests) == 2
-        assert runner.requests[1].goal_trigger.wake_id != goal.next.id
+        assert runner.requests[1].trigger.wake_id != goal.next.id
     finally:
         runner.release.set()
         await runtime.close()
@@ -202,7 +202,7 @@ async def test_shutdown_leaves_claim_for_recovery_to_rerun_the_wake(store: GoalS
     goal = create(store, "goal-chat")
     runner = GoalRunner()
     runner.release.clear()
-    runtime = AgentRuntime(runner, goal_store=store, shutdown_timeout=0.01)
+    runtime = AgentRuntime(runner, extensions=[GoalRunExtension(store, enabled=lambda: True)], shutdown_timeout=0.01)
     await make_scheduler(store, runtime).tick()
     await runner.entered.wait()
     await runtime.close()
@@ -221,12 +221,12 @@ async def test_recover_then_run_tells_the_agent_it_was_interrupted(store: GoalSt
     claimed = store.claim(goal.id, goal.next.id, "lost")
     assert claimed is not None
     runner = GoalRunner()
-    runtime = AgentRuntime(runner, goal_store=store)
+    runtime = AgentRuntime(runner, extensions=[GoalRunExtension(store, enabled=lambda: True)])
     try:
         GoalWorkSource(store, runtime, enabled=lambda: True).recover()
         await make_scheduler(store, runtime).tick()
         await runtime.active_for_conversation(goal.conversation_id).wait()
-        assert runner.requests[0].goal_trigger.reason == "interrupted"
+        assert runner.requests[0].trigger.reason == "interrupted"
     finally:
         await runtime.close()
 
@@ -235,7 +235,7 @@ async def test_failed_run_sets_error_and_is_not_retried_by_itself(store: GoalSto
     goal = create(store, "goal-chat")
     runner = GoalRunner()
     runner.result = ExecutionResult("error", error="Provider unavailable")
-    runtime = AgentRuntime(runner, goal_store=store)
+    runtime = AgentRuntime(runner, extensions=[GoalRunExtension(store, enabled=lambda: True)])
     scheduler = make_scheduler(store, runtime)
     try:
         await scheduler.tick()
@@ -255,11 +255,11 @@ async def test_retry_runs_again_with_the_retry_reason(store: GoalStore) -> None:
     goal = failed(store, create(store, "goal-chat"))
     store.run(goal.id)
     runner = GoalRunner()
-    runtime = AgentRuntime(runner, goal_store=store)
+    runtime = AgentRuntime(runner, extensions=[GoalRunExtension(store, enabled=lambda: True)])
     try:
         await make_scheduler(store, runtime).tick()
         await runtime.active_for_conversation(goal.conversation_id).wait()
-        assert runner.requests[0].goal_trigger.reason == "retry"
+        assert runner.requests[0].trigger.reason == "retry"
     finally:
         await runtime.close()
 
@@ -268,7 +268,7 @@ async def test_admission_conflict_releases_the_same_wake(store, monkeypatch):
     from agent_runtime import RunConflictError
 
     goal = create(store, "goal-chat")
-    runtime = AgentRuntime(GoalRunner(), goal_store=store)
+    runtime = AgentRuntime(GoalRunner(), extensions=[GoalRunExtension(store, enabled=lambda: True)])
 
     async def conflict(_request):
         raise RunConflictError("The user started a turn")
@@ -286,7 +286,7 @@ async def test_admission_conflict_releases_the_same_wake(store, monkeypatch):
 
 async def test_admission_failure_sets_error(store, monkeypatch):
     goal = create(store, "goal-chat")
-    runtime = AgentRuntime(GoalRunner(), goal_store=store)
+    runtime = AgentRuntime(GoalRunner(), extensions=[GoalRunExtension(store, enabled=lambda: True)])
 
     async def broken(_request):
         raise RuntimeError("No model configured")

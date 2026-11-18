@@ -524,6 +524,24 @@ class GoalStore:
                 return self._mutate(goal_id, change, actor="user", claim_id=claim.id, reason="Stopped the run.")
             return self._mutate(goal_id, change, actor="system", claim_id=claim.id)
 
+    def edited_by_user_since(self, goal_id: str, since: str) -> bool:
+        """Whether the user changed the goal's objective, plan or summary after a time.
+
+        Creating the goal is not an edit. Reads only the newest history pages.
+        """
+        with self._lock:
+            goal = self._require(goal_id)
+            cutoff = datetime.fromisoformat(since)
+            for entry in self._files.entries(goal, 0):
+                if entry["kind"] not in {"goal", "plan", "summary"}:
+                    continue
+                if datetime.fromisoformat(entry["created_at"]) <= cutoff:
+                    return False
+                created = entry["kind"] == "goal" and "before" not in entry["data"]
+                if entry["actor"] == "user" and not created:
+                    return True
+            return False
+
     def delete_conversation(self, conversation_id: str, delete: Callable[[], bool]) -> bool:
         """Delete a chat folder, with its goals, while no goal save can run."""
         with self._lock:

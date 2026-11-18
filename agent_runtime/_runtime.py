@@ -4,21 +4,20 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncGenerator, Callable, Iterator
+from collections.abc import AsyncGenerator, Callable, Iterator, Sequence
 from contextlib import contextmanager
 from typing import Protocol
 from uuid import uuid4
 from integrations.connection_cache import IntegrationConnectionCache
 
-from goals._store import GoalStore
-from goals._models import Goal, GoalHistoryEntry
-from ._goal_events import goal_transition_event
-from conversations import ConversationStore, EventsLogWriter
+from conversations import ConversationStore
 from browser.runtime import BrowserRuntime
+from agent_core.agent_capabilities import AgentCapabilities
 from agent_core.control import StopRequestedError
-from agent_core.events import AgentEvent, ErrorPayload
+from agent_core.events import AgentEvent, ErrorPayload, publish_event
 from agent_core.turn import ExecutionResult
 
+from ._extensions import RunExtension
 from ._models import AgentRunRequest, QueuedMessage, RunResult, RunSnapshot, SequencedEvent
 from ._session import RunSession
 
@@ -99,8 +98,7 @@ class AgentRuntime:
         browser_runtime: BrowserRuntime | None = None,
         integration_cache: IntegrationConnectionCache | None = None,
         shutdown_timeout: float = 5.0,
-        goal_store: GoalStore | None = None,
-        goals_enabled: Callable[[], bool] | None = None,
+        extensions: Sequence[RunExtension] = (),
     ) -> None:
         from ._runner import AgentRunner
 
@@ -108,20 +106,10 @@ class AgentRuntime:
             if browser_runtime is not None and browser_runtime is not runner.browser_runtime:
                 raise ValueError("AgentRunner and AgentRuntime must share one browser runtime")
             browser_runtime = runner.browser_runtime
-            if goal_store is not None and runner.goal_store is not goal_store:
-                raise ValueError("AgentRunner and AgentRuntime must share one goal store")
-            goal_store = runner.goal_store
-            if goals_enabled is None:
-                goals_enabled = runner.goals_enabled
-            else:
-                runner.goals_enabled = goals_enabled
         self.conversations = conversations if conversations is not None else ConversationStore()
         self._browser = browser_runtime if browser_runtime is not None else BrowserRuntime()
-        self._goals_enabled = goals_enabled if goals_enabled is not None else lambda: True
-        self._runner = runner if runner is not None else AgentRunner(
-            browser_runtime=self._browser, goal_store=goal_store, goals_enabled=self._goals_enabled,
-        )
-        self._goal_store = goal_store
+        self._runner = runner if runner is not None else AgentRunner(browser_runtime=self._browser)
+        self._extensions = tuple(extensions)
         self._shutdown_timeout = shutdown_timeout
         self._integration_cache = integration_cache
         self._active_by_conversation: dict[str, RunSession] = {}
@@ -129,19 +117,6 @@ class AgentRuntime:
         self._closed = False
         self._run_observers: set[Callable[[RunHandle], None]] = set()
         self._event_observers: set[Callable[[str, AgentEvent], None]] = set()
-        self._unsubscribe_goals = (
-            self._goal_store.subscribe(self._record_goal_change) if self._goal_store is not None else None
-        )
-
-    def _record_goal_change(self, goal: Goal, entries: list[GoalHistoryEntry]) -> None:
-        session = self._active_by_conversation.get(goal.conversation_id)
-        writer = EventsLogWriter(goal.conversation_id)
-        for entry in entries:
-            event = goal_transition_event(goal.id, entry)
-            if event is not None:
-                writer.handle_event(event)
-                if session is not None:
-                    session.stream_persisted_event(event)
 
     async def start(self, request: AgentRunRequest) -> RunHandle:
         if self._closed:
@@ -187,7 +162,7 @@ class AgentRuntime:
             if session.accepts_root_messages():
                 if request.attachments:
                     raise AttachmentsWhileRunningError("Files can be sent after the agent finishes.")
-                nudge_id = session.queue_root_message(request.message, request.context)
+                nudge_id = session.queue_root_message(request.message, request.context, request.model_text)
                 return QueuedMessage(nudge_id, session.run_id)
             # The run is ending. Start a new one once it has finished.
             assert session.task is not None  # start() creates the task before returning.
@@ -228,44 +203,15 @@ class AgentRuntime:
             await self.conversations.close()
         finally:
             await self._browser.close()
-            if self._unsubscribe_goals is not None:
-                self._unsubscribe_goals()
 
     async def _drive(self, session: RunSession) -> RunResult:
         session.started = True
         root = ExecutionResult("stopped")
-        goal_id = None
-        trigger = session.request.goal_trigger
-        claim_id = trigger.claim_id if trigger is not None else session.run_id
+        ran: list[RunExtension] = []
         try:
-            if trigger is not None and not self._goals_enabled():
-                raise StopRequestedError()
-            if self._goal_store is not None and self._goals_enabled():
-                if trigger is not None:
-                    goal = self._goal_store.get(trigger.goal_id)
-                    if (
-                        goal is None or goal.conversation_id != session.conversation_id
-                        or goal.claim is None or goal.claim.id != claim_id
-                    ):
-                        raise StopRequestedError()
-                else:
-                    # A chat turn owns the goal without taking its wake, paused or not.
-                    goal = self._goal_store.current(session.conversation_id)
-                    if goal is not None:
-                        goal = self._goal_store.claim_for_turn(goal.id, claim_id)
-                if goal is not None:
-                    goal_id = goal.id
-                    self._goal_store.bind_run(goal_id, claim_id, session.run_id)
-            elif trigger is not None:
-                raise RuntimeError("Goal wakeup requires a configured goal store")
             async with session:
-                session.root_context.control.check_stop()
-                try:
-                    root = await self._runner.run(session.request, session)
-                except (asyncio.CancelledError, StopRequestedError):
-                    root = ExecutionResult("stopped")
-                except Exception as exc:
-                    root = self._failure(session, exc)
+                root = await self._run_root(session, ran)
+                self._end_extensions(session, ran, root, publish=True)
         except (asyncio.CancelledError, StopRequestedError):
             root = ExecutionResult("stopped")
         except Exception as exc:
@@ -273,19 +219,41 @@ class AgentRuntime:
         finally:
             session.return_unread()
             try:
-                # Preserve interrupted ownership on shutdown so restart recovery
-                # can ask the agent to reconcile its last actions exactly once.
-                if (
-                    self._goal_store is not None and goal_id is not None
-                    and not (self._closed and root.status == "stopped")
-                ):
-                    self._goal_store.finish_run(
-                        goal_id, claim_id, session.run_id, root.status, error=root.error,
-                    )
+                self._end_extensions(session, ran, root, publish=False)
             finally:
                 self._active_by_conversation.pop(session.conversation_id, None)
                 self._runs_by_id.pop(session.run_id, None)
         return session.finish(root)
+
+    async def _run_root(self, session: RunSession, ran: list[RunExtension]) -> ExecutionResult:
+        try:
+            for extension in self._extensions:
+                additions = await extension.before_run(session.request, session)
+                ran.append(extension)
+                if additions is not None:
+                    session.additions.append(additions)
+            session.root_context.control.check_stop()
+            return await self._runner.run(session.request, session)
+        except (asyncio.CancelledError, StopRequestedError):
+            return ExecutionResult("stopped")
+        except Exception as exc:
+            return self._failure(session, exc)
+
+    def _end_extensions(
+        self, session: RunSession, ran: list[RunExtension], root: ExecutionResult, *, publish: bool,
+    ) -> None:
+        shutting_down = self._closed and root.status == "stopped"
+        while ran:
+            extension = ran.pop(0)
+            try:
+                events = extension.after_run(session.request, session, root, shutting_down=shutting_down)
+            except Exception:
+                logger.exception("Run extension failed at the end of run %s", session.run_id)
+                continue
+            if publish:
+                with session.root_context.bind(session.root_agent_name, AgentCapabilities([])):
+                    for event in events:
+                        publish_event(event)
 
     @staticmethod
     def _failure(session: RunSession, exc: Exception) -> ExecutionResult:

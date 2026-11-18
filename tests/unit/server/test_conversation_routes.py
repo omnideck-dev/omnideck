@@ -577,25 +577,3 @@ class TestGenerateTitle:
         assert load_conversation_metadata("c1") == {}
 
 
-async def test_resume_uses_logged_goal_events_without_reading_goal_history():
-    from agent_runtime import AgentRuntime
-
-    _seed('goal-journal')
-    request = _make_request('goal-journal', None)
-    store = request.app[GOAL_STORE_KEY]
-    runtime = AgentRuntime(goal_store=store)
-    request.app[AGENT_RUNTIME_KEY] = runtime
-    try:
-        goal = store.create('goal-journal', 'Keep the calendar current', 'general')
-        store.pause(goal.id)
-        logged = load_events_jsonl('goal-journal')
-        store.delete_for_conversation('goal-journal')
-        del request.app[GOAL_STORE_KEY]
-        first = json.loads((await resume_conversation_handler(request)).body)
-        second = json.loads((await resume_conversation_handler(request)).body)
-        assert first['events'] == second['events'] == logged
-        transitions = [event for event in first['events'] if event['type'] == 'goal']
-        assert [event['data']['kind'] for event in transitions] == ['started', 'paused']
-        assert len({event['id'] for event in first['events']}) == len(first['events'])
-    finally:
-        await runtime.close()

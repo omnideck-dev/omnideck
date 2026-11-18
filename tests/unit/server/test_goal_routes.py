@@ -394,7 +394,7 @@ async def test_reopen_starts_a_run_with_the_text_and_keeps_plan_and_history(goal
     assert request.message == "Also book a cleaning."
     assert request.conversation_id == "chat-1"
     assert request.profile_id == goal.profile_id
-    assert request.goal_trigger is None
+    assert request.trigger is None
     assert store.due() == []
 
 

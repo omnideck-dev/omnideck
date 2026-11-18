@@ -8,9 +8,11 @@ from datetime import datetime
 from functools import partial
 from uuid import uuid4
 
-from agent_runtime import AgentRunRequest, AgentRuntime, AgentRuntimeClosedError, GoalRunTrigger, RunConflictError
+from agent_runtime import AgentRunRequest, AgentRuntime, AgentRuntimeClosedError, RunConflictError
+from conversations import load_conversation_profile
 from scheduling import ScheduledWork
 from ._models import next_step
+from ._run import GoalRunTrigger
 from ._store import GoalStore
 
 logger = logging.getLogger(__name__)
@@ -27,7 +29,6 @@ class GoalWorkSource:
         self._runtime = runtime
         self._enabled = enabled
         if on_change is not None:
-            # Any saved change can make a wake due, so check again without waiting for the next poll.
             store.subscribe(lambda _goal, _entries: on_change())
 
     @property
@@ -62,7 +63,7 @@ class GoalWorkSource:
         try:
             handle = await self._runtime.start(AgentRunRequest(
                 conversation_id=claimed.conversation_id, message=trigger.step or "Continue the goal.",
-                attachments=None, profile_id=claimed.profile_id, goal_trigger=trigger,
+                attachments=None, profile_id=load_conversation_profile(claimed.conversation_id), trigger=trigger,
             ))
         except (RunConflictError, AgentRuntimeClosedError):
             self._store.release(goal.id, claim_id)
@@ -71,6 +72,4 @@ class GoalWorkSource:
             logger.exception("Could not admit goal wake %s", wake_id)
             self._store.finish_run(goal.id, claim_id, claim_id, "error", error=str(exc))
             return None
-        # RunHandle.wait is shielded: scheduler shutdown stops this observer,
-        # then AgentRuntime.close preserves interrupted claims for recovery.
         return asyncio.create_task(handle.wait(), name=f"scheduled-goal-{goal.id}")

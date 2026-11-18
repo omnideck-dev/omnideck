@@ -303,10 +303,11 @@ async def answer_goal_handler(request: web.Request) -> web.StreamResponse:
         return web.json_response({"error": str(exc)}, status=404)
     except (ValueError, ValidationError) as exc:
         return web.json_response({"error": str(exc)}, status=400)
-    message, context = answer_message(payload.goal_id, accepted)
+    message, context, model_text = answer_message(payload.goal_id, accepted)
     return await send_and_reply(request, AgentRunRequest(
         conversation_id=conversation_id, message=message, attachments=None,
         profile_id=payload.profile_id or (goal.profile_id if goal is not None else None), context=context,
+        model_text=model_text,
     ))
 
 

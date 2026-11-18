@@ -8,7 +8,10 @@ import pytest
 from agent_core.events import AgentEvent, UserMessagePayload
 from agent_core.turn import ExecutionResult
 from agent_runtime import AgentRunRequest, AgentRuntime, QueuedMessage
-from goals import GoalAnswerRecorder, GoalAnswerSubmission, GoalConflictError, GoalQuestionChange, GoalStore, answer_message
+from goals import (
+    GoalAnswerRecorder, GoalAnswerSubmission, GoalConflictError, GoalQuestionChange, GoalRunExtension, GoalStore,
+    answer_message,
+)
 
 from tests.unit.goals.support import waiting
 
@@ -29,8 +32,9 @@ class AnswerRunner:
         )))
         self.started.set()
         await self.read.wait()
-        for message in session.root_context.control.drain_nudges():
-            session.add_event(AgentEvent(payload=message))
+        control = session.root_context.control
+        for message in control.drain_nudges():
+            session.add_event(AgentEvent(payload=message, model_text=control.model_texts.pop(message.nudge_id, None)))
         await self.release.wait()
         return ExecutionResult("success")
 
@@ -46,12 +50,12 @@ def setup_goal(tmp_path):
 
 
 def answer_request(store, answers):
-    message, context = answer_message(answers.goal_id, store.check_answers("chat", answers))
-    return AgentRunRequest("chat", message, None, "assistant", context=context)
+    message, context, model_text = answer_message(answers.goal_id, store.check_answers("chat", answers))
+    return AgentRunRequest("chat", message, None, "assistant", context=context, model_text=model_text)
 
 
 def runtime_for(store, runner):
-    runtime = AgentRuntime(runner, goal_store=store)
+    runtime = AgentRuntime(runner, extensions=[GoalRunExtension(store, enabled=lambda: True)])
     runtime.observe_events(GoalAnswerRecorder(store).handle_event)
     return runtime
 
@@ -131,7 +135,6 @@ async def test_refused_answer_save_is_logged_and_the_run_continues(tmp_path, cap
         handle = await runtime.send(AgentRunRequest("chat", "Continue", None, "assistant"))
         await runner.started.wait()
         await runtime.send(answer_request(store, answers))
-        # The agent withdraws the question while the answer waits.
         current = store.get(goal.id)
         store.update_questions(goal.id, [GoalQuestionChange(id="insurance", status="withdrawn")],
                                current.revision, claim_id=current.claim.id)
@@ -161,3 +164,24 @@ def test_save_answers_skips_answers_already_saved(tmp_path):
     assert len(store.save_answers("chat", answers)) == 1
     assert store.save_answers("chat", answers) == []
     assert len(store.get(goal.id).questions[0].answers) == 1
+
+
+def test_answer_message_keeps_typed_text_and_gives_the_model_each_question():
+    from goals._models import AcceptedGoalAnswer
+
+    accepted = [
+        AcceptedGoalAnswer(question_id="stubhub", question_revision=3, answer="Yes", question="Unsubscribe from StubHub?"),
+        AcceptedGoalAnswer(question_id="wells_fargo", question_revision=1, answer="Only fraud alerts",
+                           question="Keep Wells Fargo alerts?"),
+    ]
+    content, context, model_text = answer_message("g", accepted)
+    assert content == "Yes\n\nOnly fraud alerts"
+    assert [item.question_id for item in context] == ["stubhub", "wells_fargo"]
+    assert model_text == (
+        "[Answers to your goal questions]\n"
+        'Question stubhub: "Unsubscribe from StubHub?"\n'
+        "Answer: Yes\n"
+        "\n"
+        'Question wells_fargo: "Keep Wells Fargo alerts?"\n'
+        "Answer: Only fraud alerts"
+    )

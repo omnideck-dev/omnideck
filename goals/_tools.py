@@ -19,9 +19,10 @@ SAVED = "Saved."
 
 @dataclass
 class GoalRevisionTracker:
-    """The last goal revision the agent saw in this run. Never saved to disk."""
+    """The goal revision and chat compaction the agent last read in this run. Never saved to disk."""
 
     seen: int | None = None
+    compaction_id: str | None = None
 
 
 class _GoalToolError(Exception):
@@ -38,12 +39,14 @@ def _error_text(exc: Exception) -> str:
 
 def make_goal_tools(
     store: GoalStore, goal_id: str, execution_id: str, claim_id: str | None = None,
-    enabled: Callable[[], bool] | None = None, *, tracker: GoalRevisionTracker, read_only: bool = False,
+    enabled: Callable[[], bool] | None = None, *, tracker: GoalRevisionTracker,
+    latest_compaction: Callable[[], str | None] = lambda: None, read_only: bool = False,
 ) -> list[GoalTool]:
     """Build the goal tools for one root execution.
 
     Reads need the root execution of the same chat while Goals are on. Writes
-    also need the run's claim and a read of the goal since its last change.
+    also need the run's claim and a read of the goal since its last change and
+    since the chat's latest compaction.
     """
 
     def read_check() -> Goal:
@@ -64,8 +67,8 @@ def make_goal_tools(
         owner = claim_id or (context.run_id if context is not None else "")
         if goal.claim is None or goal.claim.id != owner:
             raise _GoalToolError("This run no longer owns the goal. Stop working on the goal")
-        if tracker.seen is None:
-            raise _GoalToolError("Read the goal with read_goal before changing it")
+        if tracker.seen is None or tracker.compaction_id != latest_compaction():
+            raise _GoalToolError("Read the goal with read_goal, then try again")
         return goal, owner, tracker.seen
 
     def guarded(body: Callable[[], str]) -> str:
@@ -77,14 +80,14 @@ def make_goal_tools(
             return _error_text(exc)
 
     async def read_goal() -> str:
-        """Read the whole goal: objective, plan, questions, summary, your latest note, and what happens next.
+        """Read the whole goal: objective, plan, open questions, summary, your latest note, and what happens next.
 
-        Read it at the start of each run and after compaction. Changes are refused until you
-        have read the goal since it last changed.
+        Changes are refused until you have read the latest version of the goal.
         """
         def body() -> str:
             goal = read_check()
             tracker.seen = goal.revision
+            tracker.compaction_id = latest_compaction()
             held = goal.claim.wake_id if goal.claim is not None and goal.claim.id == claim_id else None
             return json.dumps(goal_context(goal, held_wake_id=held), ensure_ascii=False)
         return guarded(body)

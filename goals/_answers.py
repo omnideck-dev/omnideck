@@ -13,13 +13,17 @@ from ._store import GoalStore
 logger = logging.getLogger(__name__)
 
 
-def answer_message(goal_id: str, accepted: Sequence[AcceptedGoalAnswer]) -> tuple[str, tuple[GoalQuestionContext, ...]]:
-    """Build the chat text and question context for checked answers."""
+def answer_message(
+    goal_id: str, accepted: Sequence[AcceptedGoalAnswer],
+) -> tuple[str, tuple[GoalQuestionContext, ...], str]:
+    """Build the chat text, question context and model text for checked answers."""
     context = tuple(GoalQuestionContext(
         type="goal_question", goal_id=goal_id, question_id=answer.question_id,
         question_revision=answer.question_revision, question=answer.question, answer=answer.answer,
     ) for answer in accepted)
-    return "\n\n".join(answer.answer for answer in accepted), context
+    blocks = [f'Question {answer.question_id}: "{answer.question}"\nAnswer: {answer.answer}' for answer in accepted]
+    model_text = "[Answers to your goal questions]\n" + "\n\n".join(blocks)
+    return "\n\n".join(answer.answer for answer in accepted), context, model_text
 
 
 class GoalAnswerRecorder:

@@ -17,6 +17,8 @@ from skills._store import SkillRecord, save_skill_record
 from skills._tool_categories import ToolCategory
 from agent_core.turn import get_conversation_id
 from agent_core.turn._models import _current_execution
+from conversations import ensure_conversation
+from goals import GoalStore
 from tasks._file_store import FileTaskStore
 
 
@@ -83,10 +85,16 @@ class Harness:
     home: Path
     store: FileTaskStore
     config: object
+    goals: GoalStore
     categories: dict = field(default_factory=dict)
     browser_calls: list = field(default_factory=list)
     exited_agents: list = field(default_factory=list)
     exited_conversations: list = field(default_factory=list)
+
+    def goal(self, conversation_id: str, objective: str, profile_id: str = "leaf"):
+        """Start a goal in a new chat the way the goal dialog does."""
+        ensure_conversation(conversation_id, title=objective, profile_id=profile_id)
+        return self.goals.create(conversation_id, objective, profile_id)
 
     def profile(self, identifier="leaf", **options):
         values = dict(

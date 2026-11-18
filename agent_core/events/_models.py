@@ -339,27 +339,16 @@ class GoalWakeupData(BaseModel):
 
 
 class GoalTransitionData(BaseModel):
-    """A committed lifecycle change for the conversation timeline.
+    """A goal change shown in the conversation timeline.
 
     Attributes:
         resume_at: The planned run time for a scheduled transition.
         question_count: Open questions the goal waits on, for a waiting transition.
     """
 
-    kind: Literal[
-        "started", "paused", "resumed", "scheduled", "waiting", "error", "completed", "cancelled", "reopened",
-    ]
-    objective: str
-    resume_at: str | None
+    kind: Literal["scheduled", "waiting", "error", "completed", "edited"]
+    resume_at: str | None = None
     question_count: int = 0
-
-
-class GoalStateNoticeData(BaseModel):
-    """A model-only reminder to query saved goal state."""
-
-    kind: Literal["state_notice"]
-    revision: int
-    reason: Literal["run_started", "state_changed", "compacted"]
 
 
 class GoalEventPayload(BaseModel):
@@ -367,7 +356,7 @@ class GoalEventPayload(BaseModel):
 
     type: Literal["goal"]
     goal_id: str
-    data: Annotated[GoalWakeupData | GoalTransitionData | GoalStateNoticeData, Field(discriminator="kind")]
+    data: Annotated[GoalWakeupData | GoalTransitionData, Field(discriminator="kind")]
 
 
 class GoalQuestionContext(BaseModel):
@@ -623,6 +612,9 @@ class AgentEvent(BaseModel):
         agent_name: Human-readable agent name for attribution.
         agent_id: Hierarchical context id of the emitting agent.
         depth: Nesting depth (0 = root agent, 1+ = sub-agents).
+        model_text: Text the model reads for this event. On a user message
+            it replaces the content; on any other event it is shown as a
+            notice the user did not write.
     """
 
     payload: AgentEventPayload
@@ -631,6 +623,7 @@ class AgentEvent(BaseModel):
     agent_name: str | None = None
     agent_id: str | None = None
     depth: int | None = None
+    model_text: str | None = None
 
     def to_flat_dict(self, conversation_id: str) -> dict:
         """Render the event as the flat dict shape persisted to events.jsonl.
@@ -648,6 +641,8 @@ class AgentEvent(BaseModel):
             "agent_name": self.agent_name,
             "depth": self.depth,
         }
+        if self.model_text:
+            flat["model_text"] = self.model_text
         flat.update(self.payload.model_dump(exclude={"type"}))
         return flat
 
@@ -670,7 +665,6 @@ __all__ = [
     "GenerationPreviewPayload",
     "GoalEventPayload",
     "GoalWakeupData",
-    "GoalStateNoticeData",
     "GoalTransitionData",
     "IterationPayload",
     "IterationToolCall",

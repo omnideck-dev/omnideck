@@ -54,9 +54,9 @@ async def test_write_before_read_is_refused(owned):
     store, goal, context, tools = owned
     with bind(context):
         result = await tools["update_goal"](summary="Skipped reading")
-        assert result == "Error: Read the goal with read_goal before changing it."
+        assert result == "Error: Read the goal with read_goal, then try again."
         result = await tools["choose_next_action"](action="continue", note="Kept going.")
-        assert result == "Error: Read the goal with read_goal before changing it."
+        assert result == "Error: Read the goal with read_goal, then try again."
     assert store.get(goal.id).revision == goal.revision
 
 
@@ -248,3 +248,26 @@ def test_plan_argument_is_validated_as_step_changes_before_invocation(owned):
         _prepare_tool_arguments(tools["update_goal"], {"plan": [{"title": "No stable ID"}]})
     with pytest.raises(ValueError, match="Invalid value for parameter 'plan'"):
         _prepare_tool_arguments(tools["update_goal"], {"plan": [{"id": "book", "known_facts": "x"}]})
+
+
+async def test_write_after_a_compaction_since_the_read_is_refused_until_read_again(tmp_path):
+    store = GoalStore(tmp_path / "goals")
+    goal = claim_wake(store, create(store))
+    compaction = {"id": None}
+    tools = goal_tools(store, goal, latest_compaction=lambda: compaction["id"])
+    with bind(root_context()):
+        await tools["read_goal"]()
+        compaction["id"] = "evt_compaction"
+        assert await tools["update_goal"](summary="From memory") == "Error: Read the goal with read_goal, then try again."
+        await tools["read_goal"]()
+        assert await tools["update_goal"](summary="Bob is vegetarian.") == "Saved."
+
+
+async def test_two_writes_in_one_step_with_no_compaction_both_pass(tmp_path):
+    store = GoalStore(tmp_path / "goals")
+    goal = claim_wake(store, create(store))
+    tools = goal_tools(store, goal, latest_compaction=lambda: "evt_compaction")
+    with bind(root_context()):
+        await tools["read_goal"]()
+        assert await tools["update_goal"](summary="Found two parks.") == "Saved."
+        assert await tools["update_goal"](summary="Found three parks.") == "Saved."

@@ -20,7 +20,7 @@ from agent_core.events import (
 )
 from settings import load_settings
 
-from agent_core.context import SYSTEM_ACTIVITY_PREFIX, ContextStats, ConversationHistory, TriggerPoint
+from agent_core.context import ContextStats, ConversationHistory, TriggerPoint, pinned_message
 
 logger = logging.getLogger(__name__)
 _console = Console(stderr=True)
@@ -248,7 +248,7 @@ class LLMCompactionStrategy:
         from the new event in the log.
         """
         non_system = history.non_system_messages
-        first_user_idx, has_first_user = _find_first_user(non_system)
+        has_first_user = pinned_message(history.scoped_events) is not None
         pin_offset = 1 if has_first_user else 0
 
         body = non_system[pin_offset:]
@@ -271,13 +271,7 @@ class LLMCompactionStrategy:
         if kept_from_id is None or kept_to_id is None:
             return
 
-        all_user_contents = []
-        for m in non_system:
-            if m.get("role") == "user":
-                content = m.get("content") or ""
-                # App notes, such as goal wakeups, are not something the user asked for.
-                if content and not content.startswith((_SUMMARY_PREFIX, SYSTEM_ACTIVITY_PREFIX)):
-                    all_user_contents.append(content)
+        all_user_contents = _user_contents(history.scoped_events)
 
         prior_summary = _extract_prior_summary(compactable)
 
@@ -758,17 +752,19 @@ def _is_trivial_tool_result(content: str) -> bool:
     return False
 
 
-def _find_first_user(non_system: list[dict]) -> tuple[int, bool]:
-    """Return the index of the first user message and whether one was found."""
-    for i, msg in enumerate(non_system):
-        if msg.get("role") == "user":
-            content = msg.get("content") or ""
-            # New summaries use "assistant" role and are skipped naturally.
-            # The prefix check is legacy safety for old conversations where
-            # summaries had "user" role.
-            if not content.startswith(_SUMMARY_PREFIX):
-                return i, True
-    return 0, False
+def _user_contents(events: list[dict]) -> list[str]:
+    """What the user said in the current view: the pinned message, then the kept user messages."""
+    pinned = pinned_message(events)
+    latest = max((e for e in events if e["type"] == "compaction"), key=lambda c: c["timestamp"], default=None)
+    contents = []
+    if pinned is not None:
+        intent = latest.get("user_intent_summary") if latest is not None else None
+        contents.append(_INTENT_PREFIX + intent if intent else pinned.get("model_text") or pinned["content"])
+    start = next((i for i, e in enumerate(events) if latest is not None and e["id"] == latest["kept_from_id"]), 0)
+    for event in events[start:]:
+        if event["type"] == "user_message" and event is not pinned:
+            contents.append(event.get("model_text") or event["content"])
+    return [content for content in contents if content]
 
 
 def _extract_prior_summary(messages: list[dict]) -> str | None:

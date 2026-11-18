@@ -19,6 +19,7 @@ from agent_core.events import (
 from agent_core.providers import TokenUsage
 from agent_core.turn import ExecutionContext, ExecutionResult, get_execution_context
 
+from ._extensions import RunAdditions
 from ._models import AgentRunRequest, RunResult, RunSnapshot, SequencedEvent
 
 logger = logging.getLogger(__name__)
@@ -57,6 +58,8 @@ class RunSession:
         self._resources = AsyncExitStack()
         self._artifacts: list[FileOutputPayload] = []
         self._results: dict[str, ExecutionResult] = {}
+        self.additions: list[RunAdditions] = []
+        self.root_agent_name = ""
         # Preserve the dotted identity contract used by persisted conversation readers.
         self.root_context = ExecutionContext(
             execution_id=f"root.agent.{uuid4().hex}",
@@ -106,10 +109,6 @@ class RunSession:
             self.history.add_event(event)
         else:
             self._record(event)
-
-    def stream_persisted_event(self, event: AgentEvent) -> None:
-        """Deliver an already-persisted event without writing another copy."""
-        self._record(event)
 
     def subscribe(self, handler: Callable[[AgentEvent], object]) -> None:
         if self.history is None:
@@ -188,9 +187,11 @@ class RunSession:
             and self.root_context.control.accepting_nudges
         )
 
-    def queue_root_message(self, message: str, context: tuple[GoalQuestionContext, ...] = ()) -> str:
+    def queue_root_message(
+        self, message: str, context: tuple[GoalQuestionContext, ...] = (), model_text: str | None = None,
+    ) -> str:
         """Queue a user message for the root agent and announce it to watchers."""
-        nudge_id = self.root_context.control.nudge(message, context=context)
+        nudge_id = self.root_context.control.nudge(message, context=context, model_text=model_text)
         self.add_event(AgentEvent(payload=NudgeQueuedPayload(
             type="nudge_queued", nudge_id=nudge_id, content=message, context=list(context),
         )))

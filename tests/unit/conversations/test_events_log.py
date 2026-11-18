@@ -163,3 +163,14 @@ def test_queue_events_are_not_written_to_the_chat_file(_conv_dir: Path):
 
     rows = [json.loads(l) for l in (_conv_dir / "events.jsonl").read_text().splitlines()]
     assert [(r["type"], r["nudge_id"]) for r in rows] == [("user_message", "n2")]
+
+
+def test_only_a_run_session_writes_the_conversation_log():
+    import subprocess
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[3]
+    files = subprocess.run(["git", "ls-files", "*.py"], cwd=root, capture_output=True, text=True, check=True)
+    writers = [name for name in files.stdout.split()
+               if not name.startswith("tests/") and "EventsLogWriter(" in (root / name).read_text()]
+    assert writers == ["agent_runtime/_session.py"]

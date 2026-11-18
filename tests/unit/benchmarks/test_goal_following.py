@@ -152,8 +152,7 @@ async def test_scheduled_goal_comes_back_to_the_step_in_progress_and_its_notes(t
 
     async def resume_from_step(request):
         wakeup = last_user(request)
-        assert wakeup.startswith('[System activity: goal wakeup]')
-        assert f'Plan step: {step}' in wakeup
+        assert wakeup == '[System notice]\nA goal run started. Read the goal.'
         yield reply(calls=[call('read_goal')])
 
     async def use_saved_notes(request):

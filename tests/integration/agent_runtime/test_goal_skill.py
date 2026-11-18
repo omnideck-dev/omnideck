@@ -18,10 +18,8 @@ async def test_goal_skill_lifetime_follows_goal_ownership(harness, tmp_path, dis
     h = harness
     h.profile(allow_load_skills=True)
     h.skill("notes")
-    store = GoalStore(tmp_path / "goals")
-    h.manager._goal_store = store
-    h.manager._runner.goal_store = store
-    goal = store.create("goal-skill", "Arrange a neighborhood cleanup", "leaf")
+    store = h.goals
+    goal = h.goal("goal-skill", "Arrange a neighborhood cleanup", 'leaf')
     store.update(goal.id, goal.revision, plan=[GoalStep(id="reply", title="Check the park office reply",
                                                         status="in_progress")])
 
@@ -75,7 +73,7 @@ async def test_goal_skill_lifetime_follows_goal_ownership(harness, tmp_path, dis
     if disposition == "paused":
         store.resume(goal.id)
     else:
-        store.create("goal-skill", "Arrange the next cleanup", "leaf")
+        h.goal("goal-skill", "Arrange the next cleanup", 'leaf')
     h.provider.plan("leaf", inspect_owned, reply("Continuing"))
     await h.run(conversation="goal-skill", message="Continue the goal")
     assert load_loaded_skills("goal-skill") == {"notes"}

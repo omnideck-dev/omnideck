@@ -16,8 +16,10 @@ from agent_runtime import AgentRuntime, AgentRunRequest
 from agents import AgentProfile
 from agents._agent_profiles import save_agent_profile
 from config import load_config
-from conversations import load_events_jsonl
-from goals import GoalAnswerRecorder, GoalStore, GoalStep, GoalQuestionChange, GoalAnswerSubmission, answer_message
+from conversations import ensure_conversation, load_events_jsonl
+from goals import (
+    GoalAnswerRecorder, GoalAnswerSubmission, GoalQuestionChange, GoalRunExtension, GoalStep, GoalStore, answer_message,
+)
 from goals._scheduling import GoalWorkSource
 from scheduling import Scheduler
 from providers import _provider_class, get_provider
@@ -101,8 +103,9 @@ class Episode:
         (self.output / 'requests').mkdir()
         self.clock = Clock()
         self.world = World(scenario, self.clock, self.output / 'world.json', settings['split'])
-        self.store = GoalStore(self.output / 'state' / 'session-goals')
+        self.store = GoalStore(self.output / 'conversations')
         self.goal_id = None
+        self.edit_pending = False
         self.runtime = None
         self.crash_pending = False
         self.restarted = False
@@ -194,8 +197,9 @@ class Episode:
                     'question_id': question.id, 'question_revision': question.revision,
                     'answer': f'My insurance is {episode.world.insurance}.',
                 }])
-                message, context = answer_message(goal.id, episode.store.check_answers('benchmark', submission))
-                await episode.runtime.send(AgentRunRequest('benchmark', message, None, 'benchmark', context=context))
+                message, context, model_text = answer_message(goal.id, episode.store.check_answers('benchmark', submission))
+                await episode.runtime.send(AgentRunRequest('benchmark', message, None, 'benchmark', context=context,
+                                                           model_text=model_text))
                 episode.world.answers_delivered += 1
                 episode.note('answer_during_run')
 
@@ -215,6 +219,7 @@ class Episode:
             max_iterations=self.settings['max_iterations'],
             **options,
         ))
+        ensure_conversation('benchmark', title=self.scenario.objective, profile_id='benchmark')
         goal = self.store.create('benchmark', self.scenario.objective, 'benchmark')
         self.goal_id = goal.id
         if self.scenario.id == 'revise_approach':
@@ -250,7 +255,8 @@ class Episode:
         self.new_runtime()
 
     def new_runtime(self):
-        self.runtime = AgentRuntime(goal_store=self.store, browser_runtime=NoBrowser(), shutdown_timeout=0.1)
+        self.runtime = AgentRuntime(browser_runtime=NoBrowser(), shutdown_timeout=0.1,
+                                    extensions=[GoalRunExtension(self.store, enabled=lambda: True)])
         self.runtime.observe_events(GoalAnswerRecorder(self.store).handle_event)
         self.scheduler = Scheduler(max_concurrent=2, poll_interval=0.01, shutdown_timeout=0)
         self.scheduler.register(GoalWorkSource(self.store, self.runtime, enabled=lambda: True))
@@ -265,13 +271,20 @@ class Episode:
 
         self.stack.enter_context(patch.object(self.store, 'finish_run', finish))
 
+    def edit_between_runs(self):
+        self.edit_pending = False
+        goal = self.store.get(self.goal_id)
+        if not goal.paused:
+            goal = self.store.pause(goal.id)
+        self.store.update(goal.id, goal.revision, objective='Do not contact anyone. Analyze existing newsletter readership only, then report the finding and complete this goal.')
+        self.store.resume(goal.id)
+        self.world.changed_direction = True
+        self.note('external_edit')
+
     def on_world_event(self, kind):
         case = self.scenario.id
         if case == 'external_edit' and kind == 'inspect' and not self.world.changed_direction:
-            goal = self.store.get(self.goal_id)
-            self.store.update(goal.id, goal.revision, objective='Do not contact anyone. Analyze existing newsletter readership only, then report the finding and complete this goal.')
-            self.world.changed_direction = True
-            self.note('external_edit')
+            self.edit_pending = True
         elif case == 'interrupted_action' and kind == 'action' and self.world.effects and not self.restarted:
             self.crash_pending = True
             self.note('crash_injected')
@@ -294,9 +307,10 @@ class Episode:
             if self.budget_exhausted:
                 break
             if pending_answer:
-                message, context = answer_message(
+                message, context, model_text = answer_message(
                     pending_answer.goal_id, self.store.check_answers('benchmark', pending_answer))
-                handle = await self.runtime.start(AgentRunRequest('benchmark', message, None, 'benchmark', context=context))
+                handle = await self.runtime.start(AgentRunRequest('benchmark', message, None, 'benchmark', context=context,
+                                                                  model_text=model_text))
                 pending_answer = None
             else:
                 await self.scheduler.tick(self.clock.now)
@@ -319,11 +333,14 @@ class Episode:
                 break
             goal = self.store.get(self.goal_id)
             self.note('run_ended', next=goal.next.kind, paused=goal.paused, revision=goal.revision)
+            if self.edit_pending:
+                self.edit_between_runs()
+                goal = self.store.get(self.goal_id)
             if self.crash_pending:
                 await self.runtime.close()
                 self.crash_pending = False
                 self.restarted = True
-                self.store = GoalStore(self.output / 'state' / 'session-goals')
+                self.store = GoalStore(self.output / 'conversations')
                 self.store.recover_claims()
                 self.new_runtime()
                 self.note('restarted')

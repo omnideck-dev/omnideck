@@ -27,7 +27,8 @@ class NudgeHook:
         nudges = control.drain_nudges() if control is not None else []
         for message in nudges:
             try:
-                publish_event(AgentEvent(payload=message))
+                model_text = control.model_texts.pop(message.nudge_id, None) if control and message.nudge_id else None
+                publish_event(AgentEvent(payload=message, model_text=model_text))
             except Exception:  # pragma: no cover - defensive
                 logger.exception("Failed to publish nudge user_message event")
         if nudges:

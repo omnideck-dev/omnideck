@@ -105,9 +105,10 @@ def root_context(conversation: str = "chat", run_id: str = "run") -> ExecutionCo
 
 
 def goal_tools(store: GoalStore, goal: Goal, claim_id: str | None = "claim", *, read_only: bool = False,
-               enabled=None, tracker: GoalRevisionTracker | None = None) -> dict:
+               enabled=None, tracker: GoalRevisionTracker | None = None, latest_compaction=lambda: None) -> dict:
     tools = make_goal_tools(store, goal.id, "root.agent", claim_id=claim_id, enabled=enabled,
-                            tracker=tracker or GoalRevisionTracker(), read_only=read_only)
+                            tracker=tracker or GoalRevisionTracker(), latest_compaction=latest_compaction,
+                            read_only=read_only)
     return {tool.__name__: tool for tool in tools}
 
 

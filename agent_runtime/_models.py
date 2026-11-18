@@ -33,22 +33,16 @@ class RunPolicy:
 
 
 @dataclass(frozen=True, slots=True)
-class GoalRunTrigger:
-    """An explicitly requested, durable goal wakeup."""
-
-    goal_id: str
-    wake_id: str
-    claim_id: str
-    reason: Literal["planned", "run_now", "retry", "interrupted"]
-    step: str
-
-
-@dataclass(frozen=True, slots=True)
 class AgentRunRequest:
     """Channel-neutral application input for work that currently becomes a turn.
 
     Channel adapters translate their native request into this type; the runner
     translates it into the agent core's conversation and turn primitives.
+
+    Attributes:
+        trigger: Why a channel started this run without a typed message. The
+            runtime passes it through unread; run extensions recognise their own.
+        model_text: What the model reads in place of the message, when set.
     """
 
     conversation_id: str
@@ -56,8 +50,9 @@ class AgentRunRequest:
     attachments: Sequence[RunAttachment] | None
     profile_id: str | None
     policy: RunPolicy = RunPolicy()
-    goal_trigger: GoalRunTrigger | None = None
+    trigger: object | None = None
     context: tuple[GoalQuestionContext, ...] = ()
+    model_text: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,4 +105,4 @@ class RunResult:
         self.root.raise_for_status()
 
 
-__all__ = ["GoalRunTrigger", "AgentRunRequest", "QueuedMessage", "RunAttachment", "RunPolicy", "RunResult", "RunSnapshot", "SequencedEvent"]
+__all__ = ["AgentRunRequest", "QueuedMessage", "RunAttachment", "RunPolicy", "RunResult", "RunSnapshot", "SequencedEvent"]

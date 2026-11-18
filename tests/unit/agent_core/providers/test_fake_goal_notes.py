@@ -1,59 +1,68 @@
-"""The fake provider skips goal state notices but treats a goal wakeup as the newest task."""
+"""The fake provider reads the goal after an app notice and follows the working step's directives."""
 
-from agent_core.context._view import build_llm_view
+import json
+
+from agent_core.context import APP_TEXT_PREFIX
 from agent_core.providers._models import ChatResponse
 from providers._fake import FakeProvider
 from tests.e2e._protocol import bash, say
-from tests.unit.agent_core.context._event_builders import CONV, ROOT, _iter, _started, _user
 
 
-def goal_event(data: dict, evt_id: str) -> dict:
-    return {
-        "id": evt_id, "type": "goal", "timestamp": "2026-01-01T00:00:30", "conversation_id": CONV,
-        "agent_id": ROOT, "depth": 0, "goal_id": "goal_1", "data": data,
-    }
+def notice(text: str = "A goal run started. Read the goal.") -> dict:
+    return {"role": "user", "content": f"{APP_TEXT_PREFIX}\n{text}"}
 
 
-def notice(evt_id: str = "evt_notice") -> dict:
-    return goal_event({"kind": "state_notice", "revision": 3, "reason": "state_changed"}, evt_id)
+def read_result(*steps: dict) -> dict:
+    return {"role": "tool", "tool_name": "read_goal", "tool_call_id": "read",
+            "content": json.dumps({"objective": "Plan the reunion", "plan": list(steps)})}
 
 
-def wakeup(step: str, evt_id: str = "evt_wake") -> dict:
-    return goal_event({"kind": "wakeup", "wake_id": "wake_1", "reason": "planned", "step": step}, evt_id)
+async def read_goal() -> str:
+    """Read the goal."""
+    return ""
 
 
-async def reply(messages: list[dict]) -> ChatResponse:
+async def reply(messages: list[dict], tools=None) -> ChatResponse:
     final = None
-    async for chunk in FakeProvider().chat_stream(model="m", messages=messages, tools=None):
+    async for chunk in FakeProvider().chat_stream(model="m", messages=messages, tools=tools):
         if isinstance(chunk, ChatResponse):
             final = chunk
     assert final is not None
     return final
 
 
-async def test_state_notice_is_not_treated_as_the_last_user_message():
-    messages = build_llm_view([_started(ROOT, "Agent"), _user(ROOT, say("Here is the plan.")), notice()])
-    assert messages[-1]["content"].startswith("[System activity: goal state]")
-    assert (await reply(messages)).message.content == "Here is the plan."
+async def test_notice_makes_the_fake_read_the_goal_first():
+    final = await reply([notice()], tools=[read_goal])
+    assert [call.function.name for call in final.message.tool_calls] == ["read_goal"]
 
 
-async def test_state_notice_does_not_restart_a_running_script():
+async def test_working_step_title_is_the_task_after_the_read():
     messages = [
-        {"role": "user", "content": bash("echo one") + say("All done.")},
+        notice(),
+        {"role": "assistant", "content": None, "tool_calls": [{"id": "read"}]},
+        read_result({"id": "done", "title": "Done step", "status": "done"},
+                    {"id": "book", "title": say("Booked the pavilion."), "status": "in_progress"}),
+    ]
+    assert (await reply(messages, tools=[read_goal])).message.content == "Booked the pavilion."
+
+
+async def test_first_pending_step_is_used_when_none_is_in_progress():
+    messages = [notice(), read_result({"id": "book", "title": say("Pending step.")})]
+    assert (await reply(messages, tools=[read_goal])).message.content == "Pending step."
+
+
+async def test_steps_count_from_the_read_not_the_notice():
+    messages = [
+        notice(),
+        read_result({"id": "run", "title": bash("echo one") + say("All done."), "status": "in_progress"}),
         {"role": "assistant", "content": None, "tool_calls": [{"id": "x"}]},
         {"role": "tool", "tool_name": "run_bash_cmd", "tool_call_id": "x", "content": "one"},
-        build_llm_view([_started(ROOT, "Agent"), _user(ROOT, "x"), notice()])[-1],
     ]
-    final = await reply(messages)
+    final = await reply(messages, tools=[read_goal])
     assert final.message.tool_calls is None
     assert final.message.content == "All done."
 
 
-async def test_goal_wakeup_is_the_newest_task():
-    events = [
-        _started(ROOT, "Agent"), _user(ROOT, say("Started the plan.")), _iter(ROOT, 0, content="Started the plan."),
-        wakeup(say("Woke up for the next step.")),
-    ]
-    messages = build_llm_view(events)
-    assert messages[-1]["content"].startswith("[System activity: goal wakeup]")
-    assert (await reply(messages)).message.content == "Woke up for the next step."
+async def test_typed_message_after_a_notice_is_the_task():
+    messages = [notice("The user edited the goal."), {"role": "user", "content": say("Here is the plan.")}]
+    assert (await reply(messages, tools=[read_goal])).message.content == "Here is the plan."

@@ -2,7 +2,6 @@
 
 import pytest
 
-from agent_runtime._goal_events import goal_transition_event
 from goals import GoalQuestionChange, GoalStore
 
 from tests.unit.goals.support import (
@@ -22,11 +21,6 @@ def newest(store, goal):
 
 def all_entries(store, goal):
     return list(reversed(store.read_history(goal.id)["entries"]))
-
-
-def transitions(store, goal):
-    events = [goal_transition_event(goal.id, entry) for entry in all_entries(store, goal)]
-    return [event.payload.data.kind for event in events if event is not None]
 
 
 async def test_update_goal_tool_records_agent_actor_and_run(store):
@@ -72,16 +66,14 @@ def test_run_note_is_its_own_entry_and_a_repeated_note_is_kept(store):
     assert all(entry["actor"] == "agent" for entry in notes)
 
 
-def test_failed_run_records_one_error_transition(store):
+def test_failed_run_records_one_error_entry(store):
     goal = failed(store, create(store), "Rate limit reached (429).")
     entry = newest(store, goal)
     assert entry["kind"] == "state"
     assert entry["summary"] == "The run stopped with an error."
     assert entry["actor"] == "system" and entry["claim_id"] == "setup"
     assert entry["data"]["after"]["next"] == {"kind": "error", "message": "Rate limit reached (429)."}
-    kinds = transitions(store, goal)
-    assert kinds.count("error") == 1
-    assert "waiting" not in kinds
+    assert [entry["kind"] for entry in all_entries(store, goal)].count("state") == 1
 
 
 def test_stopped_wake_run_is_recorded_as_the_user_stopping_it(store):
@@ -150,52 +142,11 @@ def test_agent_sentences_for_next_actions(store):
     assert newest(store, goal)["summary"] == "Completed the goal."
 
 
-def test_transition_kinds_for_the_conversation_timeline(store):
-    goal = with_plan(store, create(store))
-    claim_wake(store, goal)
-    choose(store, goal, action="schedule", at=future())
-    store.finish_run(goal.id, "claim", "run-1", "success")
-    store.pause(goal.id)
-    store.resume(goal.id)
-    store.run(goal.id)
-    claim_wake(store, goal, "second")
-    store.finish_run(goal.id, "second", "run-2", "success")
-    completed(store, goal)
-    store.reopen(goal.id)
-    store.cancel(goal.id)
-    assert transitions(store, goal) == [
-        "started", "scheduled", "paused", "resumed", "waiting", "completed", "reopened", "cancelled",
-    ]
-
-
-def test_pause_during_wake_run_emits_paused_transition(store):
+def test_pause_during_wake_run_marks_the_wake_interrupted(store):
     goal = create(store)
     claim_wake(store, goal)
     store.pause(goal.id)
     entry = newest(store, goal)
     assert entry["data"]["after"]["paused"] is True
     assert entry["data"]["after"]["next"]["reason"] == "interrupted"
-    assert transitions(store, goal)[-1] == "paused"
     assert entry["summary"] == "Paused the goal."
-
-
-def test_wait_that_gains_a_question_gets_a_waiting_divider(store):
-    goal = create(store)
-    claim_wake(store, goal)
-    store.finish_run(goal.id, "claim", "run", "success")
-    assert transitions(store, goal)[-1] == "waiting"
-    waiting(store, goal)
-    assert transitions(store, goal)[-2:] == ["waiting", "waiting"]
-
-
-def test_wait_that_only_loses_answered_questions_gets_no_divider(store):
-    goal = create(store)
-    waiting(store, goal)
-    chat_turn(store, goal, "turn")
-    ask(store, goal, "turn", "place", "Where should we meet?")
-    choose(store, goal, "turn", action="wait_for_input", question_ids=["day", "place"])
-    before = transitions(store, goal)
-    current = store.get(goal.id)
-    store.update_questions(goal.id, [GoalQuestionChange(id="place", status="resolved")], current.revision, claim_id="turn")
-    assert store.get(goal.id).next.question_ids == ["day"]
-    assert transitions(store, goal) == before

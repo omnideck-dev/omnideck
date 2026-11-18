@@ -50,15 +50,8 @@ export interface GoalQuestionContext {
     answer: string;
 }
 
-export interface GoalStateNoticeData {
-    kind: 'state_notice';
-    revision: number;
-    reason: 'run_started' | 'state_changed' | 'compacted';
-}
-
 export interface GoalTransitionData {
-    kind: 'started' | 'paused' | 'resumed' | 'scheduled' | 'waiting' | 'error' | 'completed' | 'cancelled' | 'reopened';
-    objective: string;
+    kind: 'scheduled' | 'waiting' | 'error' | 'completed' | 'edited';
     resume_at: string | null;
     question_count: number;
 }
@@ -214,7 +207,7 @@ export interface NudgeRemovedPayload {
 export interface GoalEventPayload {
     type: 'goal';
     goal_id: string;
-    data: GoalWakeupData | GoalTransitionData | GoalStateNoticeData;
+    data: GoalWakeupData | GoalTransitionData;
 }
 
 export interface IterationPayload {

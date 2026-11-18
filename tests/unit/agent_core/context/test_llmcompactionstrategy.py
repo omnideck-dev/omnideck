@@ -13,7 +13,6 @@ from agent_core.context._models import ContextStats
 from agent_runtime._compaction import (
     _SUMMARY_PREFIX,
     _extract_prior_summary,
-    _find_first_user,
     _serialize_messages,
 )
 from agent_core.events import CompactionPayload
@@ -186,44 +185,6 @@ def test_extract_prior_summary_returns_none_when_absent():
         {"role": "assistant", "content": "hi"},
     ]
     assert _extract_prior_summary(messages) is None
-
-
-# ── _find_first_user ───────────────────────────────────────────────────
-
-
-@pytest.mark.unit
-def test_find_first_user_skips_assistant_summary():
-    """An assistant-role summary should be invisible to _find_first_user."""
-    messages = [
-        {"role": "assistant", "content": _SUMMARY_PREFIX + "summary"},
-        {"role": "user", "content": "real first"},
-    ]
-    idx, found = _find_first_user(messages)
-    assert found is True
-    assert idx == 1
-
-
-@pytest.mark.unit
-def test_find_first_user_skips_legacy_user_summary():
-    """A legacy user-role summary should also be skipped."""
-    messages = [
-        {"role": "user", "content": _SUMMARY_PREFIX + "summary"},
-        {"role": "user", "content": "real first"},
-    ]
-    idx, found = _find_first_user(messages)
-    assert found is True
-    assert idx == 1
-
-
-@pytest.mark.unit
-def test_find_first_user_finds_normal_first():
-    messages = [
-        {"role": "user", "content": "hello"},
-        {"role": "assistant", "content": "hi"},
-    ]
-    idx, found = _find_first_user(messages)
-    assert found is True
-    assert idx == 0
 
 
 # ── CompactionPayload forensic stats ───────────────────────────────────

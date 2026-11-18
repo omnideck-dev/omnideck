@@ -22,6 +22,7 @@ class ExecutionControl:
 
     stop_event: asyncio.Event = field(default_factory=asyncio.Event)
     nudges: list[UserMessagePayload] = field(default_factory=list)
+    model_texts: dict[str, str] = field(default_factory=dict)
     accepting_nudges: bool = True
 
     def stop(self) -> None:
@@ -31,8 +32,13 @@ class ExecutionControl:
         if self.stop_event.is_set():
             raise StopRequestedError()
 
-    def nudge(self, message: str, *, context: tuple[GoalQuestionContext, ...] = ()) -> str:
-        """Queue a message for the agent's next step and return its nudge ID."""
+    def nudge(
+        self, message: str, *, context: tuple[GoalQuestionContext, ...] = (), model_text: str | None = None,
+    ) -> str:
+        """Queue a message for the agent's next step and return its nudge ID.
+
+        ``model_text``, when given, is what the model reads in place of the message.
+        """
         if not self.accepting_nudges:
             raise ValueError("This execution has finished. Send a new message instead.")
         from agent_core.events._models import UserMessagePayload
@@ -41,6 +47,8 @@ class ExecutionControl:
         self.nudges.append(UserMessagePayload(
             type="user_message", content=message, context=list(context), is_nudge=True, nudge_id=nudge_id,
         ))
+        if model_text:
+            self.model_texts[nudge_id] = model_text
         return nudge_id
 
     def remove_nudge(self, nudge_id: str) -> bool:
@@ -48,6 +56,7 @@ class ExecutionControl:
         for index, message in enumerate(self.nudges):
             if message.nudge_id == nudge_id:
                 del self.nudges[index]
+                self.model_texts.pop(nudge_id, None)
                 return True
         return False
 
@@ -59,6 +68,7 @@ class ExecutionControl:
     def return_unread(self) -> list[UserMessagePayload]:
         """Stop accepting messages and take every message the agent never read."""
         self.accepting_nudges = False
+        self.model_texts.clear()
         return self.drain_nudges()
 
 

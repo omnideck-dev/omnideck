@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from aiohttp import web
 
-from goals import GoalAnswerRecorder, GoalStore
+from goals import GoalAnswerRecorder, GoalStore, stop_goal_runs
 from settings import goals_enabled
 from server._agent_runtime import AGENT_RUNTIME_KEY
 
@@ -12,20 +12,8 @@ GOAL_STORE_KEY: web.AppKey[GoalStore] = web.AppKey("goal_store", GoalStore)
 
 
 def disable_goals(app: web.Application) -> None:
-    """Stop goal runs when the experiment is turned off, leaving every goal as it was.
-
-    A stopped run is treated like a restart: a wake run keeps its wake and runs
-    again once Goals are back on.
-    """
-    store = app[GOAL_STORE_KEY]
-    runtime = app[AGENT_RUNTIME_KEY]
-    for goal in store.list():
-        if goal.claim is None:
-            continue
-        store.interrupt(goal.id)
-        handle = runtime.active_for_conversation(goal.conversation_id)
-        if handle is not None:
-            handle.stop()
+    """Stop goal runs when the experiment is turned off, leaving every goal as it was."""
+    stop_goal_runs(app[GOAL_STORE_KEY], app[AGENT_RUNTIME_KEY])
 
 
 def save_goal_answers_when_read(app: web.Application) -> None:

@@ -5,23 +5,24 @@ import json
 
 import pytest
 
-from agent_core.context import GOAL_STATE_PREFIX
+from agent_core.context import APP_TEXT_PREFIX
 from agent_core.context._view import build_llm_view
 from agent_core.events import AgentEvent, UserMessagePayload
-from agent_runtime import AgentRunRequest, GoalRunTrigger
+from agent_runtime import AgentRunRequest
 from conversations import load_events_jsonl
 from agent_runtime import QueuedMessage
 from goals import (
-    GoalAnswerRecorder, GoalAnswerSubmission, GoalQuestionChange, GoalStep, GoalStore, answer_message,
+    GoalAnswerRecorder, GoalAnswerSubmission, GoalQuestionChange, GoalRunTrigger, GoalStep, answer_message,
 )
 from goals._models import GoalChoice, local_time
 
 from ._support import call, reply
 
 
-def setup_scheduled_goal(store, conversation_id):
+def setup_scheduled_goal(h, conversation_id):
     """A goal that asked where to meet and scheduled its next run for 2099."""
-    goal = store.create(conversation_id, "Arrange a cleanup", "leaf")
+    store = h.goals
+    goal = h.goal(conversation_id, "Arrange a cleanup")
     goal = store.update(goal.id, goal.revision, plan=[
         GoalStep(id="forecast", title="Check the forecast for cleanup day", status="in_progress"),
     ])
@@ -38,11 +39,9 @@ def setup_scheduled_goal(store, conversation_id):
 async def test_goal_read_shows_the_next_action_except_in_the_run_that_holds_it(harness, tmp_path, cause):
     h = harness
     h.profile()
-    store = GoalStore(tmp_path / "goals")
-    h.manager._goal_store = store
-    h.manager._runner.goal_store = store
+    store = h.goals
     h.manager.observe_events(GoalAnswerRecorder(store).handle_event)
-    scheduled = setup_scheduled_goal(store, "scheduled-answer")
+    scheduled = setup_scheduled_goal(h, "scheduled-answer")
     submission = GoalAnswerSubmission(goal_id=scheduled.id, answers=[{
         "question_id": "place", "question_revision": 1, "answer": "Library entrance",
     }]) if cause == "answer" else None
@@ -52,10 +51,10 @@ async def test_goal_read_shows_the_next_action_except_in_the_run_that_holds_it(h
         trigger = GoalRunTrigger(scheduled.id, scheduled.next.id, "scheduled-run", "planned",
                                  "Check the forecast for cleanup day")
     h.provider.plan("leaf", reply(calls=[call("read_goal")]), reply("Noted"))
-    message, context = ("Continue", ()) if submission is None else answer_message(
+    message, context, model_text = ("Continue", (), None) if submission is None else answer_message(
         scheduled.id, store.check_answers("scheduled-answer", submission))
     handle = await h.manager.start(AgentRunRequest(
-        "scheduled-answer", message, None, "leaf", context=context, goal_trigger=trigger,
+        "scheduled-answer", message, None, "leaf", context=context, trigger=trigger, model_text=model_text,
     ))
     assert (await handle.wait()).status == "success"
     state = next(json.loads(m["content"]) for m in h.provider.requests[-1]["messages"]
@@ -63,7 +62,7 @@ async def test_goal_read_shows_the_next_action_except_in_the_run_that_holds_it(h
     assert not {"revision", "claim", "current_run_reason", "resume_at", "wake_reason"} & state.keys()
     if cause == "scheduled":
         assert "next_action" not in state
-        assert "Plan step: Check the forecast for cleanup day" in h.provider.requests[0]["messages"][1]["content"]
+        assert h.provider.requests[0]["messages"][1]["content"] == f"{APP_TEXT_PREFIX}\nA goal run started. Read the goal."
     else:
         assert state["next_action"] == {"action": "schedule", "at": local_time(scheduled.next.at)}
         assert store.get(scheduled.id).next == scheduled.next
@@ -78,11 +77,9 @@ async def test_goal_read_shows_the_next_action_except_in_the_run_that_holds_it(h
 async def test_goal_reply_context_reaches_provider_and_persisted_history(harness, tmp_path, during_run, batched):
     h = harness
     h.profile()
-    store = GoalStore(tmp_path / "goals")
-    h.manager._goal_store = store
-    h.manager._runner.goal_store = store
+    store = h.goals
     h.manager.observe_events(GoalAnswerRecorder(store).handle_event)
-    goal = store.create("answer-context", "Plan a cleanup", "leaf")
+    goal = h.goal("answer-context", "Plan a cleanup", 'leaf')
     store.claim_for_turn(goal.id, "setup")
     questions = [GoalQuestionChange(id="start_time", question="When should the cleanup start?")]
     if batched:
@@ -107,16 +104,17 @@ async def test_goal_reply_context_reaches_provider_and_persisted_history(harness
         h.provider.plan("leaf", waiting, reply("Received your answer"))
     else:
         h.provider.plan("leaf", reply("Received your answer"))
-    message, context = answer_message(goal.id, store.check_answers("answer-context", submission))
+    message, context, model_text = answer_message(goal.id, store.check_answers("answer-context", submission))
     handle = await h.manager.send(AgentRunRequest(
         "answer-context", "Continue" if during_run else message, None, "leaf",
-        context=() if during_run else context,
+        context=() if during_run else context, model_text=None if during_run else model_text,
     ))
     try:
         if during_run:
             await asyncio.wait_for(entered.wait(), 3)
             await h.manager.send(AgentRunRequest("answer-context", "Also check the weather", None, "leaf"))
-            queued = await h.manager.send(AgentRunRequest("answer-context", message, None, "leaf", context=context))
+            queued = await h.manager.send(AgentRunRequest("answer-context", message, None, "leaf", context=context,
+                                                          model_text=model_text))
             assert isinstance(queued, QueuedMessage)
             assert all(not question.answers for question in store.get(goal.id).questions)
             release.set()
@@ -152,33 +150,30 @@ async def test_goal_reply_context_reaches_provider_and_persisted_history(harness
         assert not any(e["type"] in {"nudge_queued", "nudge_removed"} for e in persisted)
 
 
-async def test_goal_query_notice_survives_compaction_without_creating_user_messages(harness, monkeypatch, tmp_path):
-    from ._support import call
-
+async def test_goal_write_after_compaction_needs_a_new_read(harness, monkeypatch):
     h = harness
     h.profile(context_window=1000, compaction_threshold=0.01)
-    store = GoalStore(tmp_path / 'goals')
-    h.manager._goal_store = store
-    h.manager._runner.goal_store = store
-    store.create('query-compaction', 'Private saved objective', 'leaf')
+    store = h.goals
+    goal = h.goal('query-compaction', 'Private saved objective', 'leaf')
 
     async def unload(_model):
         pass
 
     monkeypatch.setattr('agent_runtime._compaction._unload_model', unload)
-    h.provider.plan('leaf', *[reply(calls=[call('read_goal')]) for _ in range(4)], reply('Ready'))
+    h.provider.plan('leaf', reply(calls=[call('read_goal')]),
+                    *[reply(calls=[call('read_goal_history')]) for _ in range(3)],
+                    reply(calls=[call('update_goal', summary='From memory')]), reply('Ready'))
     h.provider.plan('summary', *[reply('Earlier work summarized.') for _ in range(20)])
     handle = await h.manager.start(AgentRunRequest('query-compaction', 'Continue', None, 'leaf'))
     assert (await handle.wait()).status == 'success'
-    requests = [r['messages'] for r in h.provider.requests if r['model'] == 'leaf']
-    assert 'Private saved objective' not in str(requests[0])
-    assert requests[0][-1]['content'].startswith(GOAL_STATE_PREFIX)
-    assert 'Read the goal before goal work' in requests[0][-1]['content']
-    assert any('Earlier messages were compacted' in str(r[-1].get('content', '')) for r in requests[2:])
-    assert any('Private saved objective' in m.get('content', '') for r in requests[1:] for m in r if m['role'] == 'tool')
     persisted = load_events_jsonl('query-compaction')
     assert any(e['type'] == 'compaction' for e in persisted)
-    assert any(e['type'] == 'goal' and e['data']['kind'] == 'state_notice' and e['data']['reason'] == 'compacted' for e in persisted)
-    assert GOAL_STATE_PREFIX in str(build_llm_view(persisted))
+    order = [e['type'] if e['type'] == 'compaction' else e.get('tool_name') for e in persisted
+             if e['type'] == 'compaction' or e['type'] == 'tool_result']
+    write = order.index('update_goal')
+    assert 'compaction' in order[order.index('read_goal'):write]
+    results = [e['content'] for e in persisted if e['type'] == 'tool_result' and e['tool_name'] == 'update_goal']
+    assert results == ['Error: Read the goal with read_goal, then try again.']
+    assert store.get(goal.id).summary == ''
     assert [e['content'] for e in persisted if e['type'] == 'user_message'] == ['Continue']
-    assert len([e for e in persisted if e['type'] == 'goal' and e['data']['kind'] == 'state_notice']) == len([e for e in persisted if e['type'] == 'compaction']) + 1
+    assert not any(e['type'] == 'goal' for e in persisted)

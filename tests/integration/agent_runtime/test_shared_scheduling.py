@@ -12,9 +12,7 @@ from ._support import reply
 
 
 def make_scheduler(h, tmp_path, *, capacity=1):
-    store = GoalStore(tmp_path / 'goals')
-    h.manager._goal_store = store
-    h.manager._runner.goal_store = store
+    store = h.goals
     scheduler = Scheduler(max_concurrent=capacity, poll_interval=0.01, shutdown_timeout=0)
     scheduler.register(GoalWorkSource(store, h.manager, enabled=lambda: True))
     routines = RoutineWorkSource(h.store, TaskExecutor(h.store, h.manager), h.config.routines, scheduler=scheduler)
@@ -26,8 +24,8 @@ async def test_goals_and_routines_share_capacity_and_take_turns(harness, tmp_pat
     h = harness
     h.profile()
     store, scheduler, routines = make_scheduler(h, tmp_path)
-    store.create('goal-1', 'First goal', 'leaf')
-    store.create('goal-2', 'Second goal', 'leaf')
+    h.goal('goal-1', 'First goal', 'leaf')
+    h.goal('goal-2', 'Second goal', 'leaf')
     routine = h.store.create_routine('Routine', auto_run=False)
     h.store.create_task(routine.id, 'Task', 'Run routine', agent_profile='leaf')
     run = h.store.queue_run(routine.id)
@@ -71,7 +69,7 @@ async def test_shared_start_recovers_interrupted_goal_and_routine_from_disk(harn
     h = harness
     h.profile()
     store, scheduler, _ = make_scheduler(h, tmp_path, capacity=2)
-    goal = store.create('interrupted', 'Check the prior action', 'leaf')
+    goal = h.goal('interrupted', 'Check the prior action', 'leaf')
     store.claim(goal.id, goal.next.id, 'old-process')
     routine = h.store.create_routine('Interrupted routine', auto_run=False)
     h.store.create_task(routine.id, 'Task', 'Resume work', agent_profile='leaf')
@@ -107,7 +105,7 @@ async def test_recurring_routine_and_goal_use_same_explicit_clock(harness, tmp_p
     h.profile()
     store, scheduler, _ = make_scheduler(h, tmp_path, capacity=2)
     future = datetime.now(timezone.utc) + timedelta(days=2)
-    goal = store.create('future-goal', 'Review tomorrow', 'leaf')
+    goal = h.goal('future-goal', 'Review tomorrow', 'leaf')
     goal = store.update(goal.id, goal.revision, plan=[GoalStep(id='report', title='Read report', status='in_progress')])
     store.claim_for_turn(goal.id, 'setup')
     store.choose(goal.id, GoalChoice.model_validate({'action': 'schedule', 'at': future.isoformat(), 'note': 'Wait for report.'}),
@@ -131,7 +129,7 @@ async def test_pausing_routine_source_does_not_pause_goal_work(harness, tmp_path
     h = harness
     h.profile()
     store, scheduler, routines = make_scheduler(h, tmp_path)
-    store.create('goal', 'Review report', 'leaf')
+    h.goal('goal', 'Review report', 'leaf')
     routine = h.store.create_routine('Routine', auto_run=False)
     h.store.create_task(routine.id, 'Task', 'Do task', agent_profile='leaf')
     run = h.store.queue_run(routine.id)
@@ -154,7 +152,7 @@ async def test_scheduler_shutdown_preserves_goal_claim_for_runtime_restart(harne
     h = harness
     h.profile()
     store, scheduler, _ = make_scheduler(h, tmp_path)
-    goal = store.create('interrupted-goal', 'Check prior action before repeating', 'leaf')
+    goal = h.goal('interrupted-goal', 'Check prior action before repeating', 'leaf')
     entered = asyncio.Event()
 
     async def hold(_request):
@@ -166,10 +164,9 @@ async def test_scheduler_shutdown_preserves_goal_claim_for_runtime_restart(harne
     await scheduler.tick()
     await asyncio.wait_for(entered.wait(), 3)
     await scheduler.stop()
-    # Stopping scheduling must not finish/release a still-running goal.
     assert store.get(goal.id).claim is not None
     await h.manager.close()
-    restored = GoalStore(tmp_path / 'goals')
+    restored = GoalStore(tmp_path / 'conversations')
     assert restored.get(goal.id).claim is not None
     assert len(restored.recover_claims()) == 1
     recovered = restored.get(goal.id)

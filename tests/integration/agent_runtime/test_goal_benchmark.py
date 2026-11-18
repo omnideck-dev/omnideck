@@ -38,7 +38,7 @@ async def test_goal_benchmark_grades_real_runtime_effects(tmp_path, monkeypatch,
     assert data['goal']['next']['kind'] == 'done'
     assert data['goal']['note'] == 'Checked the delivery receipt.'
     assert grade(data)['passed'] == (not premature)
-    assert (tmp_path / 'episode' / 'state' / 'session-goals' / data['goal']['id'] / 'goal.json').exists()
+    assert (tmp_path / 'episode' / 'conversations' / 'benchmark' / 'goals' / data['goal']['id'] / 'goal.json').exists()
 
 
 async def test_goal_benchmark_drains_scheduler_completion_before_next_virtual_wake(tmp_path, monkeypatch):

@@ -25,8 +25,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 from agent_runtime import AgentRuntime
 from config import load_config
-from goals import GoalStore
-from goals._scheduling import GoalWorkSource
+from goals import GoalRunExtension, GoalStore, GoalWorkSource
 from scheduling import Scheduler
 from server._scheduling import SCHEDULER_KEY
 from server._agent_run_routes import register_agent_run_routes
@@ -134,7 +133,7 @@ def create_app(
     app[AGENT_RUNTIME_KEY] = AgentRuntime(
         conversations=ConversationStore(), browser_runtime=browser_runtime,
         integration_cache=integration_cache,
-        goal_store=goal_store, goals_enabled=goals_enabled,
+        extensions=[GoalRunExtension(goal_store, enabled=goals_enabled)],
     )
     save_goal_answers_when_read(app)
     app[SCHEDULER_KEY] = Scheduler(**load_config().scheduling.model_dump())

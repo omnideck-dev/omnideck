@@ -10,7 +10,7 @@ from aiohttp import web
 from agent_core.events import AgentEvent, UserMessagePayload
 from agent_core.turn import ExecutionResult
 from agent_runtime import AgentRuntime
-from goals import GoalStore
+from goals import GoalRunExtension, GoalStore
 from server._agent_run_routes import register_agent_run_routes
 from server._agent_runtime import AGENT_RUNTIME_KEY
 from server._goal_routes import register_goal_routes
@@ -47,7 +47,7 @@ async def queue_client(tmp_path, monkeypatch, aiohttp_client):
     monkeypatch.setattr("server._goals.goals_enabled", lambda: enabled["value"])
     store = GoalStore(tmp_path / "goals")
     runner = WorkingRunner()
-    runtime = AgentRuntime(runner, goal_store=store)
+    runtime = AgentRuntime(runner, extensions=[GoalRunExtension(store, enabled=lambda: True)])
     app = web.Application(middlewares=[cors_and_error_middleware])
     app[GOAL_STORE_KEY] = store
     app[AGENT_RUNTIME_KEY] = runtime

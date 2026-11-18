@@ -6,7 +6,7 @@ import asyncio
 import logging
 from contextlib import AsyncExitStack
 from functools import partial
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from uuid import uuid4
 
 from rich.console import Console
@@ -16,8 +16,6 @@ from rich.text import Text
 from agents import AgentProfile, get_agent_profile
 from browser.runtime import BrowserRuntime
 from config import load_config
-from goals._store import GoalStore
-from goals._tools import GoalRevisionTracker
 from conversations import save_conversation_profile
 from agent_core import AgentExecutor, default_hooks
 from agent_core.context import ContextManager, ConversationHistory
@@ -25,7 +23,6 @@ from agent_core.control import StopRequestedError
 from agent_core.events import (
     AgentEvent,
     ErrorPayload,
-    GoalEventPayload, GoalWakeupData,
     SpawnRequestedPayload,
     UserAttachment,
     UserMessagePayload,
@@ -37,7 +34,6 @@ from tools.virtual_computer.receive_file import receive_attachment
 
 from ._compaction import LLMCompactionStrategy
 from ._factory import AgentFactory, persist_loaded_skills
-from ._goals import GoalContextHook, goal_skill
 from ._models import AgentRunRequest, RunAttachment, RunPolicy
 from ._scratchpad_hook import ScratchpadHook
 from ._session import RunSession
@@ -53,12 +49,8 @@ class AgentRunner:
 
     def __init__(
         self, *, factory: AgentFactory | None = None, browser_runtime: BrowserRuntime | None = None,
-        goal_store: GoalStore | None = None,
-        goals_enabled: Callable[[], bool] | None = None,
     ) -> None:
         self._factory = factory if factory is not None else AgentFactory()
-        self.goal_store = goal_store
-        self.goals_enabled = goals_enabled if goals_enabled is not None else lambda: True
         self.browser_runtime = browser_runtime if browser_runtime is not None else BrowserRuntime()
 
     async def run(self, request: AgentRunRequest, session: RunSession) -> ExecutionResult:
@@ -149,29 +141,12 @@ class AgentRunner:
             )
             hooks = default_hooks(agent, max_iterations=agent.max_iterations, ctx_manager=ctx_manager)
             hooks.append(ScratchpadHook())
-            if context.parent_execution_id is None and session.request.goal_trigger is not None and not self.goals_enabled():
-                raise StopRequestedError()
-            if context.parent_execution_id is None and self.goal_store is not None and self.goals_enabled():
-                trigger = session.request.goal_trigger
-                claim_id = trigger.claim_id if trigger is not None else session.run_id
-                goal = (self.goal_store.get(trigger.goal_id) if trigger is not None
-                        else self.goal_store.latest(session.conversation_id))
-                owned = goal is not None and goal.claim is not None and goal.claim.id == claim_id
-                if trigger is not None and not owned:
-                    raise StopRequestedError()
-                if goal is not None and (owned or goal.ended):
-                    # Unfinished goals get every goal tool on every turn, paused or not.
-                    # Ended goals take no claim and can only be read.
-                    tracker = GoalRevisionTracker()
-                    prepared.capabilities.add(goal_skill(
-                        self.goal_store, goal.id, context.execution_id, claim_id if owned else None,
-                        enabled=self.goals_enabled, tracker=tracker, read_only=not owned,
-                    ))
-                    if owned:
-                        hooks.append(GoalContextHook(
-                            self.goal_store, goal.id, claim_id,
-                            enabled=self.goals_enabled, wakeup=trigger is not None, tracker=tracker,
-                        ))
+            is_root = context.parent_execution_id is None
+            if is_root:
+                session.root_agent_name = agent.name
+                for additions in session.additions:
+                    for skill in additions.skills:
+                        prepared.capabilities.add(skill)
             if correlation_id is not None:
                 publish_event(
                     AgentEvent(payload=SpawnRequestedPayload(type="spawn_requested", correlation_id=correlation_id))
@@ -192,20 +167,18 @@ class AgentRunner:
                         agent_profile_id=profile.id,
                         browser_profile_id=profile.browser_profile_id,
                     ))
-                    trigger = session.request.goal_trigger if context.parent_execution_id is None else None
-                    if trigger is not None:
-                        publish_event(AgentEvent(payload=GoalEventPayload(
-                            type="goal", goal_id=trigger.goal_id, data=GoalWakeupData(
-                                kind="wakeup", wake_id=trigger.wake_id, reason=trigger.reason, step=trigger.step,
-                            ),
-                        )))
-                    else:
+                    if is_root:
+                        for additions in session.additions:
+                            for event in additions.opening_events:
+                                publish_event(event)
+                    if not is_root or session.request.trigger is None:
                         publish_event(
                             AgentEvent(
                                 payload=UserMessagePayload(
                                     type="user_message", content=message, attachments=attachments or [],
-                                    context=list(session.request.context) if context.parent_execution_id is None else [],
-                                )
+                                    context=list(session.request.context) if is_root else [],
+                                ),
+                                model_text=session.request.model_text if is_root else None,
                             )
                         )
                     parallel = load_config().parallel
