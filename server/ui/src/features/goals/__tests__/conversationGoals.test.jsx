@@ -11,7 +11,7 @@ vi.mock('../../conversation/session/ConversationSession.jsx', () => ({
     useConversationSessionState: () => ({ isOffline: false, stopRequested: false }),
 }));
 const openGoal = vi.fn();
-vi.mock('../GoalDesktopView.jsx', () => ({ useGoalDesktopActions: () => ({ openGoal }) }));
+vi.mock('../GoalDesktopAdapter.jsx', () => ({ useGoalDesktopActions: () => ({ openGoal }) }));
 
 const waiting = {
     id: 'g1', conversation_id: 'a', objective: 'Plan', revision: 1, paused: false, plan: [],

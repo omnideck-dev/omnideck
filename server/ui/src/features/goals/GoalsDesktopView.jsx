@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 
 import { useConversationSessionCommands } from '../conversation/session/ConversationSession.jsx';
 import { useDesktopNavigationCommands } from '../navigation/DesktopNavigation.jsx';
-import { useGoalDesktopActions } from './GoalDesktopView.jsx';
+import { useGoalDesktopActions } from './GoalDesktopAdapter.jsx';
 import GoalsView from './GoalsView.jsx';
 
 export default function GoalsDesktopView() {

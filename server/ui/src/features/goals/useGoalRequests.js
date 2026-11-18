@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { useConversationSessionState } from '../conversation/session/ConversationSession.jsx';
-import { useGoalDesktopActions } from './GoalDesktopView.jsx';
+import { useGoalDesktopActions } from './GoalDesktopAdapter.jsx';
 import { isGoalOpen, useGoals } from './GoalsState.jsx';
 
 /**

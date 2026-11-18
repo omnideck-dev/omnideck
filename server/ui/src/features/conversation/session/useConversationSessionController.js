@@ -12,6 +12,7 @@ import { projectTurns } from '../events/projectTurns.js';
 import { accumulateLiveIteration } from '../events/liveIteration.js';
 import { mapConversationEventToActions } from '../events/mapConversationEventToActions.js';
 import { getConversationRestorePlan } from '../events/conversationRestore.js';
+import { clearQueue, consumeReturned, dropQueued, queueMessage } from './queueState.js';
 import {
     ChatStreamHttpError,
     openChatTurn,
@@ -161,26 +162,17 @@ function conversationReducer(state, action) {
                 ),
             };
         case 'FINISH_TURN':
-            // The run returns unread messages before it ends; anything left is stale.
-            return { ...state, inflightIteration: null, pendingUserPrompt: null, queue: [] };
+            return clearQueue({ ...state, inflightIteration: null, pendingUserPrompt: null });
         case 'START_PENDING_USER_PROMPT':
             return { ...state, pendingUserPrompt: action.prompt };
         case 'CLEAR_PENDING_USER_PROMPT':
             return { ...state, pendingUserPrompt: null };
         case 'QUEUE_MESSAGE':
-            if (state.queue.some((message) => message.id === action.message.id)) return state;
-            return { ...state, queue: [...state.queue, action.message] };
-        case 'DROP_QUEUED_MESSAGE': {
-            const message = state.queue.find((item) => item.id === action.nudgeId);
-            if (!message) return state;
-            return {
-                ...state,
-                queue: state.queue.filter((item) => item.id !== action.nudgeId),
-                returned: action.returned ? [...state.returned, message] : state.returned,
-            };
-        }
+            return queueMessage(state, action.message);
+        case 'DROP_QUEUED_MESSAGE':
+            return dropQueued(state, action.nudgeId, action.returned);
         case 'CONSUME_RETURNED':
-            return { ...state, returned: state.returned.filter((item) => !action.ids.includes(item.id)) };
+            return consumeReturned(state, action.ids);
         case 'RESTORE_CONVERSATION':
             return {
                 ...INITIAL_CONVERSATION_STATE,

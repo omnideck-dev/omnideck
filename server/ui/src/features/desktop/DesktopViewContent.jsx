@@ -1,4 +1,4 @@
-import GoalDesktopView from '../goals/GoalDesktopView.jsx';
+import GoalDesktopView from '../goals/GoalDesktopAdapter.jsx';
 import AgentsView from '../../components/agents/AgentsView.jsx';
 import { useDesktopNavigationCommands } from '../navigation/DesktopNavigation.jsx';
 import SettingsView from '../../components/SettingsView.jsx';

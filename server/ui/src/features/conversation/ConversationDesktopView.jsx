@@ -25,7 +25,7 @@ import {
     useSelectedProfileId,
 } from './session/ConversationSession.jsx';
 import styles from '../../App.module.css';
-import { useGoalDesktopActions } from '../goals/GoalDesktopView.jsx';
+import { useGoalDesktopActions } from '../goals/GoalDesktopAdapter.jsx';
 import GoalRequestDialog from '../goals/GoalRequestDialog.jsx';
 import useGoalRequests from '../goals/useGoalRequests.js';
 

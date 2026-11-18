@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import useDesktopLayout from '../../desktop/useDesktopLayout.jsx';
 import { DesktopViewRuntimeProvider } from '../../desktop/DesktopViewRuntime.jsx';
 import { CONVERSATION_VIEW_ID } from '../../navigation/desktopNavigationViews.js';
-import GoalDesktopView, { GOAL_VIEW_ID, goalTabLabel, useGoalDesktopActions } from '../GoalDesktopView.jsx';
+import GoalDesktopView, { GoalDesktopEffects, useGoalDesktopActions } from '../GoalDesktopAdapter.jsx';
+import { GOAL_VIEW_ID, goalTabLabel } from '../goalDesktopViews.js';
 import { GoalsTestProvider } from './goalTestProviders.jsx';
 
 const state = vi.hoisted(() => ({
@@ -28,6 +29,8 @@ vi.mock('../../navigation/DesktopNavigation.jsx', () => ({
     useDesktopNavigationCommands: () => ({ openConversation: state.openConversation }),
 }));
 vi.mock('../../../hooks/useIsMobileViewport.js', () => ({ default: () => false }));
+const appData = vi.hoisted(() => ({ value: { features: { goals: true }, featuresLoaded: true } }));
+vi.mock('../../../contexts/AppData.jsx', () => ({ useAppData: () => appData.value }));
 
 const goal = (conversationId, objective) => ({
     id: `goal-${conversationId}`, conversation_id: conversationId, objective, revision: 1, profile_id: 'assistant',
@@ -48,7 +51,7 @@ function Shell() {
     const layout = useDesktopLayout({ initialView: CHAT });
     layoutRef = layout;
     return <DesktopViewRuntimeProvider desktopLayout={layout}>
-        <GoalsTestProvider goals={Object.values(GOALS)}><Content /></GoalsTestProvider>
+        <GoalsTestProvider goals={Object.values(GOALS)}><GoalDesktopEffects /><Content /></GoalsTestProvider>
     </DesktopViewRuntimeProvider>;
 }
 
@@ -64,6 +67,7 @@ function goalViews() {
 }
 
 beforeEach(() => {
+    appData.value = { features: { goals: true }, featuresLoaded: true };
     state.session = { activeConversationId: 'chat-a', isOffline: false };
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
         const match = url.match(/sessions\/([^/]+)\/goal$/);
@@ -122,6 +126,17 @@ describe('the Goal tab', () => {
         await act(async () => { openGoalRef(); });
         await screen.findByText('Book the pavilion for Saturday');
         expect(screen.queryByRole('button', { name: 'Open chat' })).not.toBeInTheDocument();
+    });
+});
+
+describe('GoalDesktopEffects', () => {
+    it('closes the Goal tab when Goals is turned off', async () => {
+        const view = render(<Shell />);
+        await act(async () => { openGoalRef(); });
+        expect(goalViews()).toHaveLength(1);
+        appData.value = { features: { goals: false }, featuresLoaded: true };
+        view.rerender(<Shell />);
+        expect(goalViews()).toHaveLength(0);
     });
 });
 
