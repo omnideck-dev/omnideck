@@ -128,6 +128,7 @@ class TestOllamaProviderChat:
             None,
             None,
             False,
+            thinking_required=True,
         )
 
         assert kwargs["think"] is True

@@ -41,12 +41,11 @@ async def test_compaction_chunk_size_uses_discovered_model_context():
              "compaction_model": "large-context-model",
              "compaction_options": {},
          }), \
-         patch("agent_runtime._compaction.get_provider", return_value=object()), \
-         patch(
-             "agent_core.providers.resolve_model_info",
-             new_callable=AsyncMock,
-             return_value=ModelInfo(name="large-context-model", context_window=100_000),
-         ):
+         patch("agent_runtime._compaction.get_provider", return_value=MagicMock(
+             list_models=AsyncMock(return_value=[
+                 ModelInfo(name="large-context-model", context_window=100_000),
+             ]),
+         )):
         call.return_value = ("summary", "large-context-model")
         result = await strategy._summarize(messages)
 
@@ -69,20 +68,16 @@ async def test_intent_extraction_only_sets_supported_temperature(
     provider.chat = AsyncMock(return_value=MagicMock(
         message=MagicMock(content="current intent"),
     ))
-    model_info = ModelInfo(
+    provider.list_models = AsyncMock(return_value=[ModelInfo(
         name="test-model",
         inference_controls=controls,
-    )
+    )])
 
     with patch("agent_runtime._compaction.load_settings", return_value={
         "compaction_provider": "test-provider",
         "compaction_model": "test-model",
         "compaction_options": {},
-    }), patch("agent_runtime._compaction.get_provider", return_value=provider), patch(
-        "agent_core.providers.resolve_role_options",
-        new_callable=AsyncMock,
-        return_value=({}, model_info),
-    ):
+    }), patch("agent_runtime._compaction.get_provider", return_value=provider):
         result = await strategy._extract_intent(["first", "second"])
 
     assert result == "current intent"

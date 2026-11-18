@@ -18,16 +18,15 @@ from __future__ import annotations
 import json
 import logging
 import re
-import urllib.parse
 
 from aiohttp import web
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from brokering.supervisor_client import SupervisorError
-from providers import get_provider, reset_provider
+from providers import get_provider, normalize_base_url, reset_provider
 from agent_core.providers import ProviderError
 from server._brokering import supervisor_call as _supervisor_call
-from settings import _validate_base_url, load_settings, save_settings
+from settings import _validate_base_url, aperture_enabled, load_settings, save_settings
 
 logger = logging.getLogger(__name__)
 
@@ -87,22 +86,22 @@ async def _brokered_provider_connections() -> list[dict[str, object]]:
     return list(result["connections"])
 
 
-def _normalize_aperture_url(value: str) -> str:
-    """Return an Aperture gateway root, accepting common pasted URL variants."""
-    candidate = value.strip()
-    if "://" not in candidate:
-        candidate = f"http://{candidate}"
-    parsed = urllib.parse.urlparse(candidate)
-    if not parsed.netloc or not parsed.hostname:
-        raise ValueError("Enter a valid Aperture gateway URL")
-    if parsed.username or parsed.password:
-        raise ValueError("Enter an Aperture gateway URL without embedded credentials")
-    path = parsed.path.rstrip("/")
-    if any(path == prefix or path.startswith(f"{prefix}/") for prefix in ("/ui", "/v1", "/bedrock")):
-        path = ""
-    if path:
-        raise ValueError("Enter the Aperture gateway root without /v1, /bedrock, or another path")
-    return urllib.parse.urlunparse((parsed.scheme, parsed.netloc, "", "", "", ""))
+_APERTURE_DISABLED = "Tailscale Aperture is experimental. Turn it on in Settings under Experimental first."
+
+# Direct providers that authenticate by network identity and take no API key.
+_KEYLESS_PROVIDERS: set[str] = {"aperture"}
+
+
+def _keyless_error(name: str) -> web.Response:
+    return web.json_response(
+        {"error": f"{_label(name)} does not use an API key"},
+        status=400,
+    )
+
+
+def _provider_available(name: str) -> bool:
+    """Experimental providers cannot be listed, added, or edited until switched on."""
+    return name != "aperture" or aperture_enabled()
 
 
 # ── GET ──────────────────────────────────────────────────────────────────
@@ -120,6 +119,8 @@ async def handle_list_providers(_request: web.Request) -> web.Response:
     providers: list[dict[str, object]] = []
 
     for name, entry in (settings.get("direct_providers") or {}).items():
+        if not _provider_available(name):
+            continue
         providers.append({
             "name": name,
             "label": _label(name),
@@ -198,18 +199,15 @@ async def handle_add_provider(request: web.Request) -> web.Response:
             status=400,
         )
 
+    if not _provider_available(name):
+        return web.json_response({"error": _APERTURE_DISABLED}, status=403)
+
+    if name in _KEYLESS_PROVIDERS and spec.api_key:
+        return _keyless_error(name)
     base_url = spec.base_url
-    if name == "aperture":
-        if spec.api_key:
-            return web.json_response(
-                {"error": "Aperture uses Tailscale identity; an API key is not required"},
-                status=400,
-            )
-        if not base_url:
-            return web.json_response({"error": "Aperture gateway URL is required"}, status=400)
+    if base_url:
         try:
-            base_url = _normalize_aperture_url(base_url)
-            _validate_base_url(base_url)
+            base_url = normalize_base_url(name, base_url)
         except ValueError as exc:
             return web.json_response({"error": str(exc)}, status=400)
 
@@ -363,6 +361,8 @@ async def handle_update_provider(request: web.Request) -> web.Response:
     name = request.match_info["name"]
     if name not in _KNOWN_PROVIDERS:
         return web.json_response({"error": f"Unknown provider: {name!r}"}, status=400)
+    if not _provider_available(name):
+        return web.json_response({"error": _APERTURE_DISABLED}, status=403)
     try:
         body = await request.json()
     except (json.JSONDecodeError, UnicodeDecodeError):
@@ -380,22 +380,15 @@ async def handle_update_provider(request: web.Request) -> web.Response:
 
     if name in direct:
         # Direct kind — update the base_url.
-        if name == "aperture" and spec.api_key:
-            return web.json_response(
-                {"error": "Aperture uses Tailscale identity; an API key is not required"},
-                status=400,
-            )
+        if name in _KEYLESS_PROVIDERS and spec.api_key:
+            return _keyless_error(name)
         if not spec.base_url:
             return web.json_response(
                 {"error": "base_url is required to update a direct provider"},
                 status=400,
             )
         try:
-            base_url = (
-                _normalize_aperture_url(spec.base_url)
-                if name == "aperture"
-                else spec.base_url
-            )
+            base_url = normalize_base_url(name, spec.base_url)
             _validate_base_url(base_url)
         except ValueError as exc:
             return web.json_response({"error": str(exc)}, status=400)

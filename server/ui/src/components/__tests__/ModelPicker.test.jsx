@@ -138,17 +138,16 @@ test('refreshes every open picker displaying the same provider', async () => {
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
 });
 
-test('shows friendly Aperture model names while selecting the qualified id', async () => {
+test('shows the gateway display name while selecting the model id', async () => {
     const onSelect = vi.fn();
     globalThis.fetch = vi.fn(() => Promise.resolve({
         ok: true,
         status: 200,
         json: async () => ({
             models: [{
-                name: 'bedrock/us.anthropic.claude-sonnet-4-6',
-                display_name: 'us.anthropic.claude-sonnet-4-6',
-                upstream_provider: 'Amazon Bedrock',
-                wire_api: 'Amazon Bedrock',
+                name: 'claude-sonnet-4-6',
+                display_name: 'Claude Sonnet 4.6',
+                wire_api: 'Anthropic Messages',
             }],
         }),
     }));
@@ -163,12 +162,12 @@ test('shows friendly Aperture model names while selecting the qualified id', asy
         />,
     );
 
-    fireEvent.click(await screen.findByText('us.anthropic.claude-sonnet-4-6'));
+    fireEvent.click(await screen.findByText('Claude Sonnet 4.6'));
 
     expect(onSelect).toHaveBeenCalledWith(
         'aperture',
-        'bedrock/us.anthropic.claude-sonnet-4-6',
-        expect.objectContaining({ upstream_provider: 'Amazon Bedrock' }),
+        'claude-sonnet-4-6',
+        expect.objectContaining({ wire_api: 'Anthropic Messages' }),
     );
 });
 
@@ -179,7 +178,7 @@ test('resolves the selected model metadata while the picker is closed', async ()
         status: 200,
         json: async () => ({
             models: [{
-                name: 'bedrock/openai.gpt-5.6-luna',
+                name: 'gpt-5.6-luna',
                 inference_api: 'openai_responses',
                 inference_controls: ['think', 'reasoning_effort'],
             }],
@@ -190,7 +189,7 @@ test('resolves the selected model metadata while the picker is closed', async ()
         <ModelPicker
             providers={[{ name: 'aperture' }]}
             selectedProvider="aperture"
-            selectedModel="bedrock/openai.gpt-5.6-luna"
+            selectedModel="gpt-5.6-luna"
             onSelect={vi.fn()}
             onModelResolved={onModelResolved}
         />,
@@ -198,7 +197,7 @@ test('resolves the selected model metadata while the picker is closed', async ()
 
     await waitFor(() => expect(onModelResolved).toHaveBeenCalledWith(
         'aperture',
-        'bedrock/openai.gpt-5.6-luna',
+        'gpt-5.6-luna',
         expect.objectContaining({ inference_api: 'openai_responses' }),
     ));
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);

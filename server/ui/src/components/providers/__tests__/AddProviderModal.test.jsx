@@ -67,9 +67,17 @@ describe('AddProviderModal Ollama host prefill', () => {
 });
 
 describe('AddProviderModal Aperture setup', () => {
-    it('asks only for the gateway URL and discovers the connection', async () => {
+    it('hides Aperture until the experimental switch is on', () => {
         globalThis.fetch = _mockFetch();
         render(<AddProviderModal onClose={vi.fn()} onAdded={vi.fn()} />);
+
+        expect(screen.queryByTestId('provider-catalog-card-aperture')).not.toBeInTheDocument();
+        expect(screen.getByTestId('provider-catalog-card-ollama')).toBeInTheDocument();
+    });
+
+    it('asks only for the gateway URL and discovers the connection', async () => {
+        globalThis.fetch = _mockFetch();
+        render(<AddProviderModal apertureEnabled onClose={vi.fn()} onAdded={vi.fn()} />);
         await _openConfigure('aperture');
 
         expect(screen.getByText('Tailscale handles access')).toBeInTheDocument();

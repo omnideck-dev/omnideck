@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from agent_core.providers._model_metadata import build_model_info
 from agent_core.providers._models import ProviderError
 from agent_core.providers._openai import (
     OpenAIProvider,
@@ -254,6 +255,7 @@ class TestOpenAIProviderModelCache:
     def _make_provider(self) -> OpenAIProvider:
         provider = OpenAIProvider.__new__(OpenAIProvider)
         provider._model_cache = None
+        provider._model_details = None
         provider._model_cache_at = 0.0
         return provider
 
@@ -319,3 +321,19 @@ class TestOpenAIProviderModelCache:
 
         result = await provider.list_models()
         assert [m.name for m in result] == ["new-model"]
+
+
+@pytest.mark.unit
+def test_sampling_follows_the_provider_parameter_list() -> None:
+    provider = OpenAIProvider.__new__(OpenAIProvider)
+    provider._model_details = None
+    provider._model_cache = [build_model_info("openai/gpt-5.4", "openai_chat", {
+        "supported_parameters": ["temperature", "max_tokens"],
+    })]
+    messages = [{"role": "user", "content": "hi"}]
+
+    listed = provider._build_kwargs("openai/gpt-5.4", messages, None, {"temperature": 0.3})
+    unlisted = provider._build_kwargs("gpt-5.4", messages, None, {"temperature": 0.3})
+
+    assert listed["temperature"] == 0.3
+    assert "temperature" not in unlisted

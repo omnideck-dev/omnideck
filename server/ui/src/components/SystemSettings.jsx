@@ -64,13 +64,18 @@ export default function SystemSettings() {
                 if ('custom_apps_enabled' in patch || 'custom_tools_enabled' in patch) {
                     await refreshFeatures();
                 }
+                if ('aperture_enabled' in patch) {
+                    await refreshFeatures();
+                    // The server hides Aperture from the provider list while it is off.
+                    providersHook.refresh?.();
+                }
                 return;
             }
         } catch {
             // Restore the server-backed value below.
         }
         setSettings((prev) => ({ ...prev, ...previousValues }));
-    }, [refreshFeatures, settings]);
+    }, [providersHook, refreshFeatures, settings]);
 
     const updateSetting = useCallback((key, value) => updateSettings({ [key]: value }), [updateSettings]);
 
@@ -82,23 +87,19 @@ export default function SystemSettings() {
             [`${role}_model`]: model || '',
         };
         if (role === 'vision') {
+            if (capabilities.thinkingRequired) patch.vision_think = true;
+            else if (!capabilities.controls.includes('think')) patch.vision_think = false;
             patch.vision_options = sanitizeInferenceOptions(
                 settings.vision_options,
                 capabilities,
-                { allowContext: capabilities.api === 'ollama' },
+                { think: patch.vision_think ?? settings.vision_think },
             );
-            if (capabilities.thinkingRequired) patch.vision_think = true;
-            else if (!capabilities.controls.includes('think')) patch.vision_think = false;
         } else if (role === 'compaction') {
-            patch.compaction_options = sanitizeInferenceOptions(
-                settings.compaction_options,
-                capabilities,
-                { allowContext: capabilities.api === 'ollama' },
-            );
+            patch.compaction_options = sanitizeInferenceOptions(settings.compaction_options, capabilities);
         }
         setResolvedModels((prev) => ({ ...prev, [role]: { provider, model, info } }));
         updateSettings(patch);
-    }, [settings.compaction_options, settings.vision_options, updateSettings]);
+    }, [settings.compaction_options, settings.vision_options, settings.vision_think, updateSettings]);
 
     const handleModelResolved = useCallback((role, provider, model, info) => {
         setResolvedModels((prev) => ({ ...prev, [role]: { provider, model, info } }));
@@ -213,6 +214,23 @@ export default function SystemSettings() {
                     />
                 </label>
 
+                <label className={styles.settingRow} data-testid="aperture-toggle">
+                    <div className={styles.settingIcon}>
+                        <i className="bi bi-diagram-3" aria-hidden="true" />
+                    </div>
+                    <div className={styles.settingInfo}>
+                        <span className={styles.settingTitle}>Tailscale Aperture</span>
+                        <span className={styles.settingDesc}>
+                            Add a Tailscale Aperture gateway as a provider and use the models your organization manages.
+                        </span>
+                    </div>
+                    <ToggleSwitch
+                        checked={!!settings.aperture_enabled}
+                        onChange={(e) => updateSetting('aperture_enabled', e.target.checked)}
+                        aria-label="Tailscale Aperture"
+                    />
+                </label>
+
                 <div className={styles.groupFootnote}>
                     Experimental features are early access and may change, break, or be removed without notice. Backward compatibility is not guaranteed.
                 </div>
@@ -272,6 +290,7 @@ export default function SystemSettings() {
                         <SpecializedModelOptions
                             role="vision"
                             capabilities={roleCapabilities.vision}
+                            outputCap={settings.role_output_caps?.vision}
                             options={settings.vision_options}
                             think={!!settings.vision_think}
                             open={visionAdvancedOpen}
@@ -306,6 +325,7 @@ export default function SystemSettings() {
                         <SpecializedModelOptions
                             role="compaction"
                             capabilities={roleCapabilities.compaction}
+                            outputCap={settings.role_output_caps?.compaction}
                             options={settings.compaction_options}
                             open={compactionAdvancedOpen}
                             onToggle={() => setCompactionAdvancedOpen((value) => !value)}
@@ -336,7 +356,11 @@ export default function SystemSettings() {
                                 inline
                             />
                         </div>
-                        <ModelDefaultsSummary capabilities={roleCapabilities.title} role="title" />
+                        <ModelDefaultsSummary
+                            capabilities={roleCapabilities.title}
+                            role="title"
+                            outputCap={settings.role_output_caps?.title}
+                        />
                     </div>
                 </section>
             </div>

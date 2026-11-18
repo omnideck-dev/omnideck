@@ -13,7 +13,7 @@ from typing import Any
 
 from agent_core.tools import callable_to_json_schema
 
-from ._base import BaseAPIProvider
+from ._base import BaseAPIProvider, ModelDetails
 from ._models import (
     ChatDelta,
     ChatMessage,
@@ -26,12 +26,9 @@ from ._models import (
     ToolCallFunction,
 )
 from ._model_metadata import (
+    build_model_info,
     discovered_metadata,
-    fallback_metadata,
-    inference_controls,
-    request_control_supported,
-    thinking_configuration,
-    thinking_default,
+    request_sampling,
 )
 
 logger = logging.getLogger(__name__)
@@ -51,6 +48,8 @@ _DONE_REASON_MAP: dict[str, str] = {
 class OpenAIResponsesProvider(BaseAPIProvider):
     """LLM provider backed by the OpenAI Responses API."""
 
+    inference_api = "openai_responses"
+
     def __init__(
         self,
         api_key: str | None = None,
@@ -58,8 +57,9 @@ class OpenAIResponsesProvider(BaseAPIProvider):
         *,
         proxy_socket: Path | None = None,
         send_authorization: bool = True,
+        model_details: ModelDetails | None = None,
     ) -> None:
-        super().__init__(api_key, base_url)
+        super().__init__(api_key, base_url, model_details=model_details)
         import openai
 
         if proxy_socket is not None:
@@ -88,7 +88,6 @@ class OpenAIResponsesProvider(BaseAPIProvider):
                 client_class = _NoAuthAsyncOpenAI
             self._client = client_class(**kwargs)
 
-        self._model_cache: list[ModelInfo] | None = None
         self._model_cache_at: float = 0.0
 
     @classmethod
@@ -118,20 +117,8 @@ class OpenAIResponsesProvider(BaseAPIProvider):
         max_tokens = opts.get("num_predict") or opts.get("max_tokens")
         if max_tokens:
             kwargs["max_output_tokens"] = max_tokens
-        if (
-            opts.get("temperature") is not None
-            and request_control_supported(
-                "openai_responses", model, "temperature", think=think,
-            )
-        ):
-            kwargs["temperature"] = opts["temperature"]
-        if (
-            opts.get("top_p") is not None
-            and request_control_supported(
-                "openai_responses", model, "top_p", think=think,
-            )
-        ):
-            kwargs["top_p"] = opts["top_p"]
+        info = self._listed_model(model)
+        kwargs.update(request_sampling(info, opts, think=think))
         if tools:
             kwargs["tools"] = _convert_tools(tools)
         if think:
@@ -233,48 +220,10 @@ class OpenAIResponsesProvider(BaseAPIProvider):
             return self._model_cache
         try:
             response = await self._client.models.list()
-            results: list[ModelInfo] = []
-            for m in response.data:
-                meta = fallback_metadata(m.id)
-                discovered = discovered_metadata(m)
-                supports_thinking = bool(discovered.get(
-                    "supports_thinking", meta.get("supports_thinking", False),
-                ))
-                thinking_control, thinking_levels, thinking_required = thinking_configuration(
-                    "openai_responses", m.id, supports_thinking,
-                )
-                if discovered.get("thinking_levels"):
-                    thinking_levels = discovered["thinking_levels"]
-                if "thinking_required" in discovered:
-                    thinking_required = discovered["thinking_required"]
-                results.append(
-                    ModelInfo(
-                        name=m.id,
-                        context_window=discovered.get("context_window", meta.get("context_window")),
-                        max_output_tokens=discovered.get(
-                            "max_output_tokens", meta.get("max_output_tokens"),
-                        ),
-                        supports_images=bool(discovered.get(
-                            "supports_images", meta.get("supports_images", False),
-                        )),
-                        supports_thinking=supports_thinking,
-                        inference_api="openai_responses",
-                        inference_controls=inference_controls(
-                            "openai_responses",
-                            supports_thinking,
-                            thinking_control,
-                            model_id=m.id,
-                            supported_parameters=discovered.get("supported_parameters"),
-                        ),
-                        thinking_control=thinking_control,
-                        thinking_levels=thinking_levels,
-                        thinking_default=discovered.get("thinking_default") or thinking_default(
-                            m.id, thinking_control, thinking_levels,
-                        ),
-                        thinking_required=thinking_required,
-                        reasoning_efforts=thinking_levels if supports_thinking else None,
-                    )
-                )
+            results = [
+                build_model_info(m.id, "openai_responses", discovered_metadata(m))
+                for m in response.data
+            ]
             self._model_cache = results
             self._model_cache_at = now
             return self._model_cache

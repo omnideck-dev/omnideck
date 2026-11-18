@@ -13,13 +13,7 @@ from rich.panel import Panel
 from rich.text import Text
 from agent_core.tools._schema_tool import SchemaTool
 
-from ._model_metadata import (
-    fallback_metadata,
-    inference_controls,
-    metadata_value,
-    thinking_configuration,
-    thinking_default,
-)
+from ._model_metadata import build_model_info, listed_model
 from ._models import ChatDelta, ChatMessage, ChatResponse, LLMConfig, ModelInfo, ProviderError, TokenUsage, ToolCall, ToolCallFunction
 
 logger = logging.getLogger(__name__)
@@ -39,6 +33,8 @@ def _build_ollama_kwargs(
     tools: list[Callable[..., Any]] | None,
     options: dict[str, Any] | None,
     think: bool,
+    *,
+    thinking_required: bool = False,
 ) -> dict[str, Any]:
     """Build kwargs dict for the Ollama chat API."""
     clean_options = dict(options or {})
@@ -47,7 +43,7 @@ def _build_ollama_kwargs(
     # into Ollama's model `options` object.
     thinking_level = clean_options.pop("reasoning_effort", None)
     effective_think = thinking_level if think and thinking_level else think
-    if fallback_metadata(model).get("thinking_required") and not effective_think:
+    if thinking_required and not effective_think:
         effective_think = True
     kwargs: dict[str, Any] = {
         "model": model,
@@ -81,6 +77,8 @@ def _convert_messages_for_ollama(messages: list[dict[str, Any]]) -> list[dict[st
 class OllamaProvider:
     """LLM provider backed by an Ollama server."""
 
+    inference_api = "ollama"
+
     def __init__(self, host: str | None = None) -> None:
         self._client = AsyncClient(host=host, timeout=_DEFAULT_TIMEOUT)
         self._model_cache: list[ModelInfo] | None = None
@@ -101,7 +99,10 @@ class OllamaProvider:
         think: bool = False,
     ) -> ChatResponse:
         """Send a chat request via Ollama and normalize the response."""
-        kwargs = _build_ollama_kwargs(model, messages, tools, options, think)
+        kwargs = _build_ollama_kwargs(
+            model, messages, tools, options, think,
+            thinking_required=listed_model(self._model_cache, model, "ollama").thinking_required,
+        )
 
         try:
             raw = None
@@ -159,7 +160,10 @@ class OllamaProvider:
         think: bool = False,
     ) -> AsyncGenerator[ChatDelta | ChatResponse, None]:
         """Stream token deltas followed by a final ChatResponse."""
-        kwargs = _build_ollama_kwargs(model, messages, tools, options, think)
+        kwargs = _build_ollama_kwargs(
+            model, messages, tools, options, think,
+            thinking_required=listed_model(self._model_cache, model, "ollama").thinking_required,
+        )
 
         try:
             raw = None
@@ -253,39 +257,19 @@ class OllamaProvider:
         for m, (capabilities, context_window) in zip(models, detail_lists, strict=True):
             name = m.model
             details = getattr(m, "details", None)
-            meta = fallback_metadata(name)
-            supports_images = (
-                "vision" in capabilities
-                if capabilities is not None
-                else bool(meta.get("supports_images", False))
-            )
-            supports_thinking = (
-                "thinking" in capabilities
-                if capabilities is not None
-                else bool(meta.get("supports_thinking", False))
-            )
-            thinking_control, thinking_levels, thinking_required = thinking_configuration(
-                "ollama", name, supports_thinking,
-            )
-            model_controls = inference_controls(
-                "ollama", supports_thinking, thinking_control, model_id=name,
-            )
-            results.append(ModelInfo(
-                name=name,
-                context_window=metadata_value(name, "context_window", context_window),
-                max_output_tokens=meta.get("max_output_tokens"),
-                supports_images=supports_images,
-                supports_thinking=supports_thinking,
+            discovered: dict[str, Any] = {}
+            if capabilities is not None:
+                discovered["supports_images"] = "vision" in capabilities
+                discovered["supports_thinking"] = "thinking" in capabilities
+            if context_window:
+                discovered["context_window"] = context_window
+            results.append(build_model_info(
+                name,
+                "ollama",
+                discovered,
                 parameter_size=getattr(details, "parameter_size", None) if details else None,
                 quantization_level=getattr(details, "quantization_level", None) if details else None,
                 family=getattr(details, "family", None) if details else None,
-                inference_api="ollama",
-                inference_controls=model_controls,
-                thinking_control=thinking_control,
-                thinking_levels=thinking_levels,
-                thinking_default=thinking_default(name, thinking_control, thinking_levels),
-                thinking_required=thinking_required,
-                reasoning_efforts=thinking_levels if thinking_control == "reasoning_effort" else None,
                 capabilities=capabilities or [],
                 is_cloud=name.endswith(":cloud"),
             ))

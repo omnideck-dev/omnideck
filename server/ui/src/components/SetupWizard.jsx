@@ -95,7 +95,7 @@ function ModelCard({ name, value, description, model, selected, onSelect }) {
     );
 }
 
-export default function SetupWizard({ onComplete }) {
+export default function SetupWizard({ onComplete, apertureEnabled = false }) {
     const [step, setStep] = useState(0);
 
     // Provider step state
@@ -260,10 +260,7 @@ export default function SetupWizard({ onComplete }) {
                     provider: resolvedProviderName,
                     main_model: selectedMain,
                     vision_model: selectedVision,
-                    context_window: resolvedProviderName === 'ollama'
-                        && mainModelMeta?.is_cloud !== true
-                        ? mainModelMeta?.context_window ?? null
-                        : null,
+                    context_window: mainModelMeta?.context_window ?? null,
                 }),
             });
             if (!res.ok) {
@@ -365,11 +362,11 @@ export default function SetupWizard({ onComplete }) {
                                     name: 'Ollama (local)',
                                     desc: 'Run models on your own machine or in the cloud',
                                 },
-                                {
+                                ...(apertureEnabled ? [{
                                     key: PROVIDER_APERTURE,
                                     name: 'Tailscale Aperture',
                                     desc: 'Discover models managed by your organization',
-                                },
+                                }] : []),
                                 {
                                     key: PROVIDER_OPENAI_COMPAT,
                                     name: 'OpenAI-compatible endpoint',

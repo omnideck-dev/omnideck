@@ -290,3 +290,22 @@ def test_env_gating_routes_to_fake(monkeypatch):
         assert isinstance(provider, FakeProvider)
     finally:
         providers.reset_provider()
+
+
+@pytest.mark.unit
+async def test_fake_reports_models_in_the_request_format_of_the_provider_it_replaces(monkeypatch):
+    import providers
+
+    monkeypatch.setenv("MOCK_LLM", "1")
+    providers.reset_provider()
+    try:
+        anthropic = {m.name: m for m in await providers.get_provider("anthropic").list_models()}
+        openai = {m.name: m for m in await providers.get_provider("openai").list_models()}
+    finally:
+        providers.reset_provider()
+
+    assert anthropic["kimi-k2.5:cloud"].inference_api == "anthropic_messages"
+    assert anthropic["kimi-k2.5:cloud"].thinking_control == "thinking_budget"
+    assert anthropic["kimi-k2.5:cloud"].thinking_excluded_controls == ["temperature", "top_k"]
+    assert openai["kimi-k2.5:cloud"].inference_api == "openai_responses"
+    assert openai["kimi-k2.5:cloud"].thinking_excluded_controls == ["temperature", "top_p"]

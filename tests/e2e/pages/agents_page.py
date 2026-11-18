@@ -104,10 +104,6 @@ class ProfileBuilder:
         """Advanced inference field by name (e.g. 'temperature', 'top_k')."""
         return self.page.get_by_test_id(f"field-{name}")
 
-    @property
-    def thinking_switch(self) -> Locator:
-        return self.page.get_by_role("switch", name="Thinking")
-
     # ── Action bar ────────────────────────────────────────────────
     def save(self) -> "ProfileBuilder":
         self.page.get_by_role("button", name=re.compile(r"^(Save|Create agent)$")).click()

@@ -43,19 +43,6 @@ class TestBuildAgent:
         assert agent.max_iterations == 0
         assert agent.think is False
 
-    def test_cloud_context_is_not_sent_as_ollama_runtime_option(self):
-        """Cloud context is local compaction metadata, not a provider option."""
-        p = _make_profile(
-            provider="aperture",
-            model="openai/gpt-5.6-luna",
-            context_window=1_050_000,
-        )
-
-        agent = AgentFactory.build_agent(p)
-
-        assert "num_ctx" not in agent.options
-        assert agent.context_window == 1_050_000
-
     def test_missing_model_raises(self):
         """Profile with no model raises RuntimeError."""
         p = _make_profile(id="child", model="")

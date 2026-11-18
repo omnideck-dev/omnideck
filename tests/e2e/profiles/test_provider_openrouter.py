@@ -7,8 +7,8 @@ from playwright.sync_api import expect
 from tests.e2e.pages import AgentsPage
 
 
-VISIBLE_FIELDS = ("temperature", "top_p", "num_predict", "max_iterations", "think", "context_window")
-HIDDEN_FIELDS = ("top_k", "repeat_penalty")
+VISIBLE_FIELDS = ("temperature", "top_p", "num_predict", "max_iterations", "thinking-level")
+HIDDEN_FIELDS = ("top_k", "repeat_penalty", "context_window")
 
 
 def test_missing_saved_provider_can_be_replaced_in_picker(page, provider_profile):
@@ -38,7 +38,7 @@ def test_missing_saved_provider_can_be_replaced_in_picker(page, provider_profile
 
 
 def test_openrouter_field_visibility(page, provider_profile):
-    """OpenRouter shows think toggle but hides Ollama-only fields."""
+    """OpenRouter shows a thinking level but hides Ollama-only fields."""
     provider_profile("test_prov_or_vis", "openrouter")
 
     agents = AgentsPage(page).goto()
@@ -62,13 +62,14 @@ def test_openrouter_code_preset(page, provider_profile):
 
 
 def test_openrouter_reasoning_fields_with_think(page, provider_profile):
-    """OpenRouter shows reasoning_effort when think is enabled."""
+    """OpenRouter shows the thinking level at its default when thinking is on."""
     provider_profile("test_prov_or_reason", "openrouter", think=True)
 
     agents = AgentsPage(page).goto()
     agents.profiles.select("test_prov_or_reason")
     agents.builder.open_advanced()
 
-    expect(agents.builder.field("reasoning_effort")).to_be_visible()
+    expect(page.get_by_test_id("thinking-level-select")).to_have_attribute("data-value", "medium")
     expect(agents.builder.field("reasoning_summary")).not_to_be_attached()
-    expect(agents.builder.field("thinking_budget")).not_to_be_attached()
+    # Chat Completions keeps sampling while reasoning.
+    expect(agents.builder.field("temperature")).to_be_visible()

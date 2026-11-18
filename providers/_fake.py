@@ -60,6 +60,7 @@ from typing import Any
 
 from agent_core.providers import (
     ChatDelta,
+    build_model_info,
     ChatMessage,
     ChatResponse,
     LLMConfig,
@@ -69,15 +70,18 @@ from agent_core.providers import (
     ToolCallFunction,
 )
 
-# Models advertised by list_models(). Names are chosen so the setup wizard
-# and provider tests, which match on fragments like "kimi-k2.5" and
-# "qwen3.5", resolve a model without a real backend.
-_FAKE_MODELS: list[ModelInfo] = [
-    ModelInfo(name="kimi-k2.5:cloud", context_window=200_000, supports_thinking=True),
-    ModelInfo(name="qwen3.5:cloud", context_window=128_000, supports_images=True),
-    ModelInfo(name="gemma3:cloud", context_window=128_000, supports_images=True),
-    ModelInfo(name="fake-model", context_window=32_000),
-]
+# Models advertised by list_models(), as a provider would report them. Names
+# are chosen so the setup wizard and provider tests, which match on fragments
+# like "kimi-k2.5" and "qwen3.5", resolve a model without a real backend.
+_FAKE_MODELS: dict[str, dict[str, Any]] = {
+    "kimi-k2.5:cloud": {"context_window": 200_000, "supports_thinking": True},
+    "qwen3.5:cloud": {"context_window": 128_000, "supports_images": True},
+    "gemma3:cloud": {"context_window": 128_000, "supports_images": True},
+    "fake-model": {"context_window": 32_000},
+}
+
+# Request format used when the fake stands in for a provider without one.
+_DEFAULT_API = "ollama"
 
 # Bare marker (no body / <<END>>): when present anywhere in the task, text
 # replies stream with a small delay per chunk — gives UI tests a window to
@@ -218,6 +222,10 @@ def _tool_call(name: str, arguments: dict[str, Any]) -> ToolCall:
 class FakeProvider:
     """A scripted provider that drives the agent loop from a directive protocol."""
 
+    def __init__(self, inference_api: str | None = None) -> None:
+        # Model details are built the way the real provider builds them.
+        self._inference_api = inference_api or _DEFAULT_API
+
     @classmethod
     def from_config(cls, llm_config: LLMConfig) -> "FakeProvider":
         return cls()
@@ -288,7 +296,10 @@ class FakeProvider:
         yield ChatResponse(message=ChatMessage(content=text), done_reason="stop")
 
     async def list_models(self) -> list[ModelInfo]:
-        return list(_FAKE_MODELS)
+        return [
+            build_model_info(name, self._inference_api, discovered)
+            for name, discovered in _FAKE_MODELS.items()
+        ]
 
     def invalidate_model_cache(self) -> None:
         """No cache to clear."""

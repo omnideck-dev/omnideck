@@ -17,7 +17,6 @@ import {
     resolvePreset,
     detectPreset,
     INFERENCE_FIELDS,
-    isSupported,
     resolveInferenceCapabilities,
     sanitizeProfileForModel,
 } from './inference';
@@ -97,7 +96,8 @@ export default function ProfileBuilder({
             if (!prev) return prev;
             const next = { ...prev };
             for (const key of INFERENCE_FIELDS) next[key] = null;
-            for (const [key, value] of Object.entries(values)) if (isSupported(key, inferenceCapabilities)) next[key] = value;
+            for (const [key, value] of Object.entries(values)) next[key] = value;
+            if (inferenceCapabilities.thinkingRequired) next.think = true;
             return next;
         });
     }, [inferenceCapabilities]);

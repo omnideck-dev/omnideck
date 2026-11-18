@@ -37,7 +37,7 @@ def migrate(state_dir: Path) -> None:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
-        logger.warning("Corrupt %s, skipping migration 016", path)
+        logger.warning("Corrupt %s, skipping migration 017", path)
         return
 
     changed = False

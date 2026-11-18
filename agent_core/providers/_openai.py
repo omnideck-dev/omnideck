@@ -9,7 +9,7 @@ from typing import Any
 
 from agent_core.tools import callable_to_json_schema
 
-from ._base import BaseAPIProvider
+from ._base import BaseAPIProvider, ModelDetails
 from ._models import (
     ChatDelta,
     ChatMessage,
@@ -22,11 +22,9 @@ from ._models import (
     ToolCallFunction,
 )
 from ._model_metadata import (
+    build_model_info,
     discovered_metadata,
-    inference_controls,
-    metadata_value,
-    thinking_configuration,
-    thinking_default,
+    request_sampling,
 )
 
 logger = logging.getLogger(__name__)
@@ -47,6 +45,8 @@ _RETRYABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
 class OpenAIProvider(BaseAPIProvider):
     """LLM provider backed by the OpenAI API or any OpenAI-compatible endpoint."""
 
+    inference_api = "openai_chat"
+
     def __init__(
         self,
         api_key: str | None = None,
@@ -54,8 +54,9 @@ class OpenAIProvider(BaseAPIProvider):
         *,
         proxy_socket: Path | None = None,
         send_authorization: bool = True,
+        model_details: ModelDetails | None = None,
     ) -> None:
-        super().__init__(api_key, base_url)
+        super().__init__(api_key, base_url, model_details=model_details)
         # Lazy import — the openai package is an optional heavy dep.
         import openai
 
@@ -90,7 +91,6 @@ class OpenAIProvider(BaseAPIProvider):
                 client_class = _NoAuthAsyncOpenAI
             self._client = client_class(**kwargs)
 
-        self._model_cache: list[ModelInfo] | None = None
         self._model_cache_at: float = 0.0
 
     @classmethod
@@ -115,10 +115,8 @@ class OpenAIProvider(BaseAPIProvider):
         max_tokens = opts.get("num_predict") or opts.get("max_tokens")
         if max_tokens:
             kwargs["max_tokens"] = max_tokens
-        if opts.get("temperature") is not None:
-            kwargs["temperature"] = opts["temperature"]
-        if opts.get("top_p") is not None:
-            kwargs["top_p"] = opts["top_p"]
+        info = self._listed_model(model)
+        kwargs.update(request_sampling(info, opts, think=think))
         if tools:
             kwargs["tools"] = _convert_tools(tools)
             kwargs["tool_choice"] = "auto"
@@ -289,46 +287,18 @@ def _parse_model_object(m: Any) -> ModelInfo:
             for parameter in ("reasoning", "reasoning_effort", "thinking", "thinking_budget")
         )
 
-    ctx = metadata_value(m.id, "context_window", ctx if isinstance(ctx, int) else None)
-    max_out = metadata_value(
-        m.id,
-        "max_output_tokens",
-        max_out if isinstance(max_out, int) else None,
-    )
-    images = bool(metadata_value(m.id, "supports_images", images))
-    thinking = bool(metadata_value(m.id, "supports_thinking", thinking))
-    thinking_control, thinking_levels, thinking_required = thinking_configuration(
-        "openai_chat", m.id, thinking,
-    )
-    if discovered.get("thinking_levels"):
-        thinking_levels = discovered["thinking_levels"]
-    if "thinking_required" in discovered:
-        thinking_required = discovered["thinking_required"]
-
-    model_controls = inference_controls(
-        "openai_chat",
-        thinking,
-        thinking_control,
-        model_id=m.id,
-        supported_parameters=supported_params if isinstance(supported_params, list) else None,
-    )
-
-    return ModelInfo(
-        name=m.id,
-        context_window=ctx,
-        max_output_tokens=max_out,
-        supports_images=images,
-        supports_thinking=thinking,
-        inference_api="openai_chat",
-        inference_controls=model_controls,
-        thinking_control=thinking_control,
-        thinking_levels=thinking_levels,
-        thinking_default=discovered.get("thinking_default") or thinking_default(
-            m.id, thinking_control, thinking_levels,
-        ),
-        thinking_required=thinking_required,
-        reasoning_efforts=thinking_levels if thinking else None,
-    )
+    listed = dict(discovered)
+    if isinstance(ctx, int) and not isinstance(ctx, bool) and ctx > 0:
+        listed["context_window"] = ctx
+    if isinstance(max_out, int) and not isinstance(max_out, bool) and max_out > 0:
+        listed["max_output_tokens"] = max_out
+    if images is not None:
+        listed["supports_images"] = images
+    if thinking is not None:
+        listed["supports_thinking"] = thinking
+    if isinstance(supported_params, list):
+        listed["supported_parameters"] = supported_params
+    return build_model_info(m.id, "openai_chat", listed)
 
 
 # ---------------------------------------------------------------------------

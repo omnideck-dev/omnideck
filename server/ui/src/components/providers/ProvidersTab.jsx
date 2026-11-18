@@ -42,7 +42,7 @@ function _statusView(status) {
 }
 
 export default function ProvidersTab() {
-    const { providersHook } = useAppData();
+    const { providersHook, features } = useAppData();
     const {
         providers,
         loading,
@@ -187,6 +187,7 @@ export default function ProvidersTab() {
             {modalOpen && (
                 <AddProviderModal
                     existingNames={providers.map(p => p.name)}
+                    apertureEnabled={!!features?.aperture}
                     onClose={() => setModalOpen(false)}
                     onAdded={handleAdded}
                 />
@@ -393,8 +394,8 @@ function EmptyState({ onAdd }) {
             <div className={styles.emptyIcon}><i className="bi bi-plug" /></div>
             <div className={styles.emptyHeading}>No providers configured</div>
             <div className={styles.emptyDesc}>
-                Agents need at least one LLM provider to run. Add Ollama for local models,
-                Tailscale Aperture for managed work models, or a cloud API.
+                Agents need at least one LLM provider to run. Add Ollama for local models
+                or a cloud API.
             </div>
             <Button variant="filled" onClick={onAdd} data-testid="providers-empty-add-btn">
                 <i className="bi bi-plus-lg" /> Add Provider

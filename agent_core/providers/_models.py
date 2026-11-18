@@ -104,21 +104,20 @@ class ModelInfo(BaseModel):
     parameter_size: str | None = None
     quantization_level: str | None = None
     family: str | None = None
-    upstream_provider: str | None = None
     wire_api: str | None = None
-    # Machine-readable transport and UI controls. ``wire_api`` remains the
-    # human-facing label shown by model pickers; these fields let clients
-    # render model-specific inference settings without keying off that label
-    # or the configured provider name.
+    # The request format and the request settings this model accepts.
+    # ``wire_api`` is only a readable label for that format.
     inference_api: str | None = None
     inference_controls: list[str] | None = None
-    # Thinking is a plain toggle for some models, but a level selector for
-    # others. These generic fields keep that distinction provider-neutral.
+    # How a thinking level is sent, which levels the model accepts, and the
+    # level it uses when none is chosen. None means thinking cannot be set.
     thinking_control: str | None = None
     thinking_levels: list[str] | None = None
     thinking_default: str | None = None
     thinking_required: bool = False
-    # Kept for older clients; new clients should prefer thinking_levels.
-    reasoning_efforts: list[str] | None = None
+    # Controls the request format rejects while thinking is on, and groups of
+    # controls the model rejects when more than one of them is set.
+    thinking_excluded_controls: list[str] | None = None
+    exclusive_controls: list[list[str]] | None = None
     capabilities: list[str] = Field(default_factory=list)
     is_cloud: bool = False

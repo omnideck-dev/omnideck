@@ -1,29 +1,20 @@
 import styles from './inference.module.css';
-import { INFERENCE_FIELDS, THINKING_DEFAULTS, isSupported } from './inferenceConstants.js';
+import {
+    INFERENCE_FIELDS,
+    THINKING_DEFAULTS,
+    clearRejectedValues,
+    isSupported,
+} from './inferenceConstants.js';
 
+// Each preset only says what it wants. resolvePreset applies a value only
+// where the selected model accepts it, so a preset never sets a value the
+// model refuses. Values stay inside every provider's accepted range.
 const PRESETS = {
-    balanced: {
-        _default: { temperature: 0.7 },
-    },
-    creative: {
-        _default: { temperature: 1.0, top_p: 0.95 },
-    },
-    precise: {
-        _default: { temperature: 0.2, top_k: 40 },
-    },
-    code: {
-        _default:      { temperature: 0.3, think: true },
-        anthropic:     { temperature: 1.0, think: true, thinking_budget: 'standard' },
-        anthropic_messages: { temperature: 1.0, think: true, thinking_budget: 'standard' },
-        bedrock_model_invoke: { think: true, thinking_budget: 'standard' },
-    },
+    balanced: { temperature: 0.7 },
+    creative: { temperature: 1.0, top_p: 0.95 },
+    precise: { temperature: 0.2, top_k: 40 },
+    code: { temperature: 0.3, think: true },
 };
-
-function capabilityKey(capabilities) {
-    return typeof capabilities === 'object'
-        ? capabilities.api || capabilities.provider
-        : capabilities;
-}
 
 function getPresetHint(presetId, capabilities) {
     const values = resolvePreset(presetId, capabilities) || {};
@@ -41,29 +32,24 @@ function getPresetHint(presetId, capabilities) {
 const PRESET_IDS = ['balanced', 'creative', 'precise', 'code'];
 const PRESET_LABELS = { balanced: 'Balanced', creative: 'Creative', precise: 'Precise', code: 'Code' };
 
+/** Return the values one preset sets for the selected model. */
 export function resolvePreset(presetId, capabilities) {
-    const entry = PRESETS[presetId];
-    if (!entry) return null;
-    const provider = capabilityKey(capabilities);
-    const resolved = { ...(entry[provider] || entry._default) };
-    if (presetId === 'code' && typeof capabilities === 'object'
-        && isSupported('think', capabilities)) {
-        resolved.think = true;
+    const wanted = PRESETS[presetId];
+    if (!wanted) return null;
+    const resolved = { ...wanted };
+    // A preset that thinks uses the model's own default level.
+    if (resolved.think && capabilities.thinkingDefault) {
         if (capabilities.thinkingControl === 'reasoning_effort') {
-            delete resolved.thinking_budget;
             resolved.reasoning_effort = capabilities.thinkingDefault;
-            if (['anthropic_messages', 'bedrock_model_invoke'].includes(capabilities.api)) {
-                resolved.temperature = 1;
-            }
         } else if (capabilities.thinkingControl === 'thinking_budget') {
-            delete resolved.reasoning_effort;
-            resolved.thinking_budget = capabilities.thinkingDefault || 'standard';
+            resolved.thinking_budget = capabilities.thinkingDefault;
         }
     }
-    if (typeof capabilities !== 'object') return resolved;
-    return Object.fromEntries(
+    const supported = Object.fromEntries(
         Object.entries(resolved).filter(([field]) => isSupported(field, capabilities)),
     );
+    const accepted = clearRejectedValues(supported, capabilities, supported.think);
+    return Object.fromEntries(Object.entries(accepted).filter(([, value]) => value != null));
 }
 
 export function detectPreset(draft, capabilities) {

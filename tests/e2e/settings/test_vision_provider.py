@@ -51,3 +51,43 @@ def test_anthropic_shows_top_k_hides_num_ctx(page: Page):
         expect(settings.system.vision_option("num_ctx")).not_to_be_attached()
     finally:
         _set_vision_provider(page, "ollama")
+
+
+def test_anthropic_vision_thinking_clears_temperature(page: Page):
+    """Turning vision thinking on removes the temperature older Claude models refuse."""
+    original_model = page.request.get("/api/settings").json()["vision_model"]
+    # The wizard's vision model cannot think, so use the fake model that can.
+    page.request.put("/api/settings", data={
+        "vision_provider": "anthropic",
+        "vision_model": "kimi-k2.5:cloud",
+        "vision_think": False,
+        "vision_options": {"temperature": 0.5, "top_p": 0.9},
+    })
+
+    try:
+        settings = SettingsPage(page).goto_system()
+        settings.system.open_vision_advanced()
+        expect(settings.system.vision_option("temperature")).to_have_value("0.5")
+
+        with page.expect_response(
+            lambda r: r.url.endswith("/api/settings") and r.request.method == "PUT",
+        ) as saved:
+            page.get_by_role("combobox", name="Vision thinking level").click()
+            page.locator('[role="option"][data-value="standard"]').click()
+        assert saved.value.ok
+
+        expect(settings.system.vision_option("temperature")).not_to_be_attached()
+        expect(settings.system.vision_option("top_k")).not_to_be_attached()
+        expect(settings.system.vision_option("top_p")).to_have_value("0.9")
+
+        stored = page.request.get("/api/settings").json()
+        assert stored["vision_think"] is True
+        assert stored["vision_options"].get("temperature") is None
+        assert stored["vision_options"]["top_p"] == 0.9
+    finally:
+        page.request.put("/api/settings", data={
+            "vision_provider": "ollama",
+            "vision_model": original_model,
+            "vision_think": False,
+            "vision_options": {},
+        })

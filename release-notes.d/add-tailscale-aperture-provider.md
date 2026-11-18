@@ -5,8 +5,12 @@ area: providers
 ---
 
 Tailscale Aperture can now be added as a provider using only its gateway URL.
-OmniDeck discovers the models and supported API formats available to your
-Tailscale identity automatically.
+It is experimental. Turn it on in Settings under Experimental, and it then
+appears when you add a provider.
+OmniDeck discovers the models available to your Tailscale identity, and the
+API format each one accepts, automatically. A model that the gateway serves
+from more than one upstream appears once, and the gateway chooses where each
+request goes.
 
 Agent inference controls now follow the selected model's discovered API and
 capabilities. A GPT model routed through Aperture exposes Responses reasoning

@@ -1,10 +1,10 @@
-"""Tailscale Aperture provider with automatic upstream/API discovery.
+"""Tailscale Aperture provider with automatic model and API discovery.
 
-Aperture is a gateway rather than one wire protocol.  Its ``/api/providers``
-endpoint reports compatibility flags, while ``/v1/models`` reports the models
-available to the current Tailscale identity.  We combine those catalogs to
-select the richest adapter Omnideck already supports for each model, keeping
-protocol choices out of the setup UX.
+Aperture is a gateway rather than one wire protocol. Its ``/v1/models``
+endpoint lists the models the current Tailscale identity may use, and each
+entry names the request paths that model accepts. We pick the richest adapter
+Omnideck already supports for each model, keeping protocol choices out of the
+setup UX.
 """
 
 from __future__ import annotations
@@ -13,24 +13,19 @@ import asyncio
 import json
 import logging
 import time
+import urllib.parse
 from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 import aiohttp
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from ._anthropic import AnthropicProvider
 from ._base import BaseAPIProvider
 from ._models import ChatDelta, ChatResponse, LLMConfig, ModelInfo, ProviderError
 from ._openai import OpenAIProvider
-from ._model_metadata import (
-    discovered_metadata,
-    fallback_metadata,
-    inference_controls as controls_for_api,
-    reasoning_efforts as known_reasoning_efforts,
-    thinking_configuration,
-    thinking_default,
-)
+from ._model_metadata import build_model_info
 from ._openai_responses import OpenAIResponsesProvider
 from ._protocol import Provider
 
@@ -39,70 +34,60 @@ logger = logging.getLogger(__name__)
 _DISCOVERY_CACHE_TTL = 300.0
 _DISCOVERY_TIMEOUT = aiohttp.ClientTimeout(total=10)
 
-WireAPI = Literal[
-    "openai_responses",
-    "anthropic_messages",
-    "bedrock_model_invoke",
-    "openai_chat",
-]
+WireAPI = Literal["openai_responses", "anthropic_messages", "openai_chat"]
 
-_WIRE_PRIORITY: dict[WireAPI, int] = {
-    "openai_responses": 0,
-    "anthropic_messages": 1,
-    "bedrock_model_invoke": 2,
-    "openai_chat": 3,
-}
+# Request paths Aperture lists in ``supported_endpoints``, best first.
+# Responses carries the richest reasoning controls, so it wins when a model
+# accepts both OpenAI formats.
+_ENDPOINT_APIS: tuple[tuple[str, WireAPI], ...] = (
+    ("/v1/responses", "openai_responses"),
+    ("/v1/messages", "anthropic_messages"),
+    ("/v1/chat/completions", "openai_chat"),
+)
+
+# Aperture serves Chat Completions when an upstream enables no other format,
+# so an entry without endpoint information is treated the same way.
+_DEFAULT_ENDPOINTS = ("/v1/chat/completions",)
 
 _WIRE_LABELS: dict[WireAPI, str] = {
     "openai_responses": "Responses",
     "anthropic_messages": "Anthropic Messages",
-    "bedrock_model_invoke": "Amazon Bedrock",
     "openai_chat": "Chat Completions",
 }
+
+
+class _UpstreamInfo(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    # Set on passthrough upstreams, which expect the caller's own API key.
+    requires_client_auth: bool = False
+
+
+class _EntryMetadata(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    provider: _UpstreamInfo | None = None
+
+
+class _ModelEntry(BaseModel):
+    """One ``/v1/models`` entry: a model as served by one upstream."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: str
+    display_name: str | None = None
+    supported_endpoints: list[str] | None = None
+    context_window_tokens: int | None = None
+    max_output_tokens: int | None = None
+    metadata: _EntryMetadata | None = None
 
 
 @dataclass(frozen=True)
 class _Route:
     wire_api: WireAPI
-    upstream_id: str
-    upstream_name: str
-    request_model: str
-    metadata: dict[str, Any]
-
-
-@dataclass
-class _EnabledModel:
-    provider_ids: set[str]
-    metadata_by_provider: dict[str, dict[str, Any]]
-    generic_metadata: dict[str, Any] | None = None
-
-
-class _ApertureBedrockProvider(AnthropicProvider):
-    """Anthropic Messages semantics over Aperture's Bedrock invoke endpoint.
-
-    The Anthropic SDK handles Bedrock's model-specific request shape and AWS
-    event-stream response framing.  Aperture authenticates the caller using
-    Tailscale identity and injects its configured Bedrock bearer token, so the
-    client request must remain unsigned.
-    """
-
-    def __init__(self, base_url: str) -> None:
-        BaseAPIProvider.__init__(self, base_url=base_url)
-        import anthropic
-
-        class _UnsignedAsyncAnthropicBedrock(anthropic.AsyncAnthropicBedrock):
-            async def _prepare_request(self, request: Any) -> None:
-                # Aperture's equivalent of CLAUDE_CODE_SKIP_BEDROCK_AUTH=1:
-                # do not attach a dummy SigV4 Authorization header that can be
-                # forwarded instead of the gateway-managed bearer token.
-                return None
-
-        self._client = _UnsignedAsyncAnthropicBedrock(
-            aws_region="us-east-1",
-            base_url=base_url,
-        )
-        self._model_cache: list[ModelInfo] | None = None
-        self._model_cache_at = 0.0
+    display_name: str
+    context_window: int | None
+    max_output_tokens: int | None
 
 
 class ApertureProvider(BaseAPIProvider):
@@ -117,6 +102,24 @@ class ApertureProvider(BaseAPIProvider):
         self._discovered_at = 0.0
         self._discovery_lock = asyncio.Lock()
         self._adapters: dict[WireAPI, Provider] = {}
+
+    @staticmethod
+    def normalize_base_url(value: str) -> str:
+        """Return the gateway root, accepting common pasted URL variants."""
+        candidate = value.strip()
+        if "://" not in candidate:
+            candidate = f"http://{candidate}"
+        parsed = urllib.parse.urlparse(candidate)
+        if not parsed.netloc or not parsed.hostname:
+            raise ValueError("Enter a valid Aperture gateway URL")
+        if parsed.username or parsed.password:
+            raise ValueError("Enter an Aperture gateway URL without embedded credentials")
+        path = parsed.path.rstrip("/")
+        if any(path == prefix or path.startswith(f"{prefix}/") for prefix in ("/ui", "/v1", "/bedrock")):
+            path = ""
+        if path:
+            raise ValueError("Enter the Aperture gateway root without /v1, /bedrock, or another path")
+        return urllib.parse.urlunparse((parsed.scheme, parsed.netloc, "", "", "", ""))
 
     @classmethod
     def from_config(cls, llm_config: LLMConfig) -> "ApertureProvider":
@@ -141,9 +144,8 @@ class ApertureProvider(BaseAPIProvider):
     ) -> ChatResponse:
         """Route a request through the API format Aperture advertises for the model."""
         adapter = await self._adapter_for_model(model)
-        route = self._routes[model]
         return await adapter.chat(
-            model=route.request_model,
+            model=model,
             messages=messages,
             tools=tools,
             options=options,
@@ -161,9 +163,8 @@ class ApertureProvider(BaseAPIProvider):
     ) -> AsyncGenerator[ChatDelta | ChatResponse, None]:
         """Stream through the API format Aperture advertises for the model."""
         adapter = await self._adapter_for_model(model)
-        route = self._routes[model]
         async for event in adapter.chat_stream(
-            model=route.request_model,
+            model=model,
             messages=messages,
             tools=tools,
             options=options,
@@ -193,21 +194,29 @@ class ApertureProvider(BaseAPIProvider):
             self._adapters[route.wire_api] = adapter
         return adapter
 
+    def _listed(self, model: str) -> ModelInfo | None:
+        return next((info for info in self._models or () if info.name == model), None)
+
     def _build_adapter(self, wire_api: WireAPI) -> Provider:
+        # Requests follow the details Aperture listed, not the adapter's own.
         if wire_api == "openai_responses":
             return OpenAIResponsesProvider(
                 base_url=f"{self._gateway_url}/v1",
                 send_authorization=False,
+                model_details=self._listed,
             )
         if wire_api == "openai_chat":
             return OpenAIProvider(
                 base_url=f"{self._gateway_url}/v1",
                 send_authorization=False,
+                model_details=self._listed,
             )
         if wire_api == "anthropic_messages":
-            return AnthropicProvider(base_url=self._gateway_url, send_authorization=False)
-        if wire_api == "bedrock_model_invoke":
-            return _ApertureBedrockProvider(base_url=f"{self._gateway_url}/bedrock")
+            return AnthropicProvider(
+                base_url=self._gateway_url,
+                send_authorization=False,
+                model_details=self._listed,
+            )
         raise AssertionError(f"Unhandled Aperture wire API: {wire_api}")
 
     async def _ensure_discovered(self) -> None:
@@ -218,28 +227,27 @@ class ApertureProvider(BaseAPIProvider):
             now = time.monotonic()
             if self._models is not None and now - self._discovered_at < _DISCOVERY_CACHE_TTL:
                 return
-            catalog = await self._fetch_catalog()
-            models, routes = _routes_from_catalog(catalog)
-            if not models:
-                flags = sorted(
-                    {flag for upstream in catalog for flag, enabled in _compatibility(upstream).items() if enabled}
-                )
-                detail = f" Advertised API formats: {', '.join(flags)}." if flags else ""
+            entries = await self._fetch_models()
+            routes = _routes_from_entries(entries)
+            if not routes:
+                endpoints = sorted({
+                    endpoint
+                    for entry in entries
+                    for endpoint in entry.supported_endpoints or _DEFAULT_ENDPOINTS
+                })
+                detail = f" Advertised endpoints: {', '.join(endpoints)}." if endpoints else ""
                 raise ProviderError(
                     "Aperture is reachable, but it did not return any models using an API format "
                     f"Omnideck supports.{detail}"
                 )
-            self._models = models
+            self._models = [_model_info(model, route) for model, route in routes.items()]
             self._routes = routes
             self._discovered_at = time.monotonic()
 
-    async def _fetch_catalog(self) -> list[dict[str, Any]]:
+    async def _fetch_models(self) -> list[_ModelEntry]:
         try:
             async with aiohttp.ClientSession(timeout=_DISCOVERY_TIMEOUT) as session:
-                providers_payload, models_payload = await asyncio.gather(
-                    self._get_json(session, "/api/providers"),
-                    self._get_json(session, "/v1/models"),
-                )
+                payload = await self._get_json(session, "/v1/models")
         except ProviderError:
             raise
         except (aiohttp.ClientError, TimeoutError) as exc:
@@ -250,18 +258,15 @@ class ApertureProvider(BaseAPIProvider):
                 cause=exc,
             ) from exc
 
-        providers = _provider_list(providers_payload)
-        if providers is None:
-            raise ProviderError("Aperture returned an unexpected provider catalog.")
-        enabled_models = _enabled_models(models_payload)
-        if enabled_models is None:
+        entries = _model_entries(payload)
+        if entries is None:
             raise ProviderError("Aperture returned an unexpected model catalog.")
-        if not enabled_models:
+        if not entries:
             raise ProviderError(
                 "Aperture is reachable, but this Tailscale identity has no granted models. "
                 "Check the gateway's model grants."
             )
-        return _filter_catalog(providers, enabled_models)
+        return entries
 
     async def _get_json(self, session: aiohttp.ClientSession, path: str) -> Any:
         async with session.get(f"{self._gateway_url}{path}") as response:
@@ -282,201 +287,93 @@ class ApertureProvider(BaseAPIProvider):
             raise ProviderError("Aperture returned an invalid discovery response.", cause=exc) from exc
 
 
-def _provider_list(payload: Any) -> list[dict[str, Any]] | None:
-    if isinstance(payload, dict):
-        payload = payload.get("providers")
-        if isinstance(payload, dict):
-            payload = [{"id": provider_id, **item} for provider_id, item in payload.items() if isinstance(item, dict)]
-    if not isinstance(payload, list) or not all(isinstance(item, dict) for item in payload):
+def _model_entries(payload: Any) -> list[_ModelEntry] | None:
+    """Parse ``/v1/models``, skipping malformed entries."""
+    raw = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(raw, list):
         return None
-    return cast(list[dict[str, Any]], payload)
-
-
-def _enabled_models(payload: Any) -> dict[str, _EnabledModel] | None:
-    """Map each granted model id to explicit provider ids, when supplied."""
-    if isinstance(payload, dict):
-        payload = payload.get("data")
-    if not isinstance(payload, list):
-        return None
-    enabled: dict[str, _EnabledModel] = {}
-    for item in payload:
-        if not isinstance(item, dict):
+    entries: list[_ModelEntry] = []
+    for item in raw:
+        try:
+            entry = _ModelEntry.model_validate(item)
+        except ValidationError:
+            logger.warning("Skipping malformed Aperture model entry")
             continue
-        model = item.get("id")
-        if not isinstance(model, str) or not model:
-            continue
-        granted = enabled.setdefault(model, _EnabledModel(set(), {}))
-        metadata = item.get("metadata")
-        provider = metadata.get("provider") if isinstance(metadata, dict) else None
-        provider_id = provider.get("id") if isinstance(provider, dict) else None
-        if isinstance(provider_id, str) and provider_id:
-            granted.provider_ids.add(provider_id)
-            granted.metadata_by_provider[provider_id] = item
-        else:
-            granted.generic_metadata = item
-    return enabled
+        if entry.id.strip():
+            entries.append(entry)
+    return entries
 
 
-def _filter_catalog(
-    catalog: list[dict[str, Any]],
-    enabled_models: dict[str, _EnabledModel],
-) -> list[dict[str, Any]]:
-    filtered: list[dict[str, Any]] = []
-    for upstream in catalog:
-        upstream_id = str(upstream.get("id") or "").strip()
-        raw_models = upstream.get("models")
-        if not isinstance(raw_models, list):
-            continue
-        granted_models = [
-            (model, enabled_models[model])
-            for model in raw_models
-            if isinstance(model, str)
-            and model in enabled_models
-            and (
-                not enabled_models[model].provider_ids
-                or upstream_id in enabled_models[model].provider_ids
-            )
-        ]
-        if granted_models:
-            filtered.append({
-                **upstream,
-                "models": [model for model, _granted in granted_models],
-                "model_metadata": {
-                    model: granted.metadata_by_provider.get(upstream_id)
-                    or granted.generic_metadata
-                    or {}
-                    for model, granted in granted_models
-                },
-            })
-    return filtered
-
-
-def _compatibility(upstream: dict[str, Any]) -> dict[str, bool]:
-    raw = upstream.get("compatibility")
-    if not isinstance(raw, dict):
-        return {"openai_chat": True}
-    values = {str(key): bool(value) for key, value in raw.items()}
-    if not values:
-        # Aperture's default when no explicit compatibility flag is enabled.
-        values["openai_chat"] = True
-    return values
-
-
-def _select_wire_api(compatibility: dict[str, bool], model: str) -> WireAPI | None:
-    if compatibility.get("openai_responses"):
-        return "openai_responses"
-    if compatibility.get("anthropic_messages"):
-        return "anthropic_messages"
-    if compatibility.get("bedrock_model_invoke") and _is_anthropic_bedrock_model(model):
-        return "bedrock_model_invoke"
-    if compatibility.get("openai_chat"):
-        return "openai_chat"
+def _wire_api(endpoints: set[str]) -> WireAPI | None:
+    for endpoint, wire_api in _ENDPOINT_APIS:
+        if endpoint in endpoints:
+            return wire_api
     return None
 
 
-def _is_anthropic_bedrock_model(model: str) -> bool:
-    lowered = model.lower()
-    return "anthropic" in lowered or "claude" in lowered
+def _smallest_limit(values: list[int | None]) -> int | None:
+    """Return the tightest positive limit, since any upstream may serve the request."""
+    reported = [value for value in values if value is not None and value > 0]
+    return min(reported) if reported else None
 
 
-def _routes_from_catalog(catalog: list[dict[str, Any]]) -> tuple[list[ModelInfo], dict[str, _Route]]:
-    routes: dict[str, _Route] = {}
+def _routes_from_entries(entries: list[_ModelEntry]) -> dict[str, _Route]:
+    """Merge entries that share a model id into one route per model.
 
-    for upstream in catalog:
-        upstream_id = str(upstream.get("id") or "").strip()
-        upstream_name = str(upstream.get("name") or upstream_id or "Aperture").strip()
-        compatibility = _compatibility(upstream)
-        raw_models = upstream.get("models")
-        raw_model_metadata = upstream.get("model_metadata")
-        model_metadata = raw_model_metadata if isinstance(raw_model_metadata, dict) else {}
-        if not isinstance(raw_models, list):
+    The same model can be served by several upstreams. Requests send the bare
+    id and Aperture picks the upstream, so each model is listed once with the
+    formats any of its upstreams accept and the limits all of them can honor.
+    """
+    by_model: dict[str, list[_ModelEntry]] = {}
+    for entry in entries:
+        upstream = entry.metadata.provider if entry.metadata else None
+        if upstream and upstream.requires_client_auth:
+            # Omnideck never sends a key to the gateway, so these cannot work.
             continue
-        for raw_model in raw_models:
-            if not isinstance(raw_model, str) or not raw_model.strip():
-                continue
-            model = raw_model.strip()
-            wire_api = _select_wire_api(compatibility, model)
-            if wire_api is None:
-                continue
-            exposed_model = f"{upstream_id}/{model}" if upstream_id else model
-            candidate = _Route(
-                wire_api=wire_api,
-                upstream_id=upstream_id,
-                upstream_name=upstream_name,
-                # Aperture supports provider-qualified ids in JSON bodies. APIs
-                # with the model embedded in the URL path require the bare id.
-                request_model=model if wire_api == "bedrock_model_invoke" else exposed_model,
-                metadata=discovered_metadata(model_metadata.get(model)),
-            )
-            current = routes.get(exposed_model)
-            if current is None or _WIRE_PRIORITY[candidate.wire_api] < _WIRE_PRIORITY[current.wire_api]:
-                routes[exposed_model] = candidate
+        by_model.setdefault(entry.id.strip(), []).append(entry)
 
-    models = [_model_info(model, route) for model, route in routes.items()]
-    return models, routes
+    routes: dict[str, _Route] = {}
+    for model, served in by_model.items():
+        endpoints = {
+            endpoint
+            for entry in served
+            for endpoint in (
+                entry.supported_endpoints
+                if entry.supported_endpoints is not None
+                else _DEFAULT_ENDPOINTS
+            )
+        }
+        wire_api = _wire_api(endpoints)
+        if wire_api is None:
+            continue
+        routes[model] = _Route(
+            wire_api=wire_api,
+            display_name=next((entry.display_name for entry in served if entry.display_name), model),
+            context_window=_smallest_limit([entry.context_window_tokens for entry in served]),
+            max_output_tokens=_smallest_limit([entry.max_output_tokens for entry in served]),
+        )
+    return routes
 
 
 def _model_info(model: str, route: _Route) -> ModelInfo:
-    display_name = model.removeprefix(f"{route.upstream_id}/") if route.upstream_id else model
-    meta = fallback_metadata(display_name)
-    discovered = route.metadata
-    context_window = discovered.get("context_window", meta.get("context_window"))
-    max_output_tokens = discovered.get("max_output_tokens", meta.get("max_output_tokens"))
-    supports_images = bool(discovered.get("supports_images", meta.get("supports_images", False)))
-    supports_thinking = bool(discovered.get("supports_thinking", meta.get("supports_thinking", False)))
-    inference_controls: list[str]
-    reasoning_efforts: list[str] | None = None
-
-    if route.wire_api in {"openai_responses", "openai_chat"}:
-        inference_controls = controls_for_api(route.wire_api, supports_thinking)
-        if supports_thinking:
-            reasoning_efforts = discovered.get("thinking_levels") or known_reasoning_efforts(display_name)
-    elif route.wire_api in {"anthropic_messages", "bedrock_model_invoke"}:
-        inference_controls = controls_for_api(route.wire_api, supports_thinking)
-    else:  # pragma: no cover - WireAPI is exhaustive
-        inference_controls = []
-
-    thinking_control, thinking_levels, thinking_required = thinking_configuration(
-        route.wire_api, display_name, supports_thinking,
-    )
-    if discovered.get("thinking_control"):
-        thinking_control = discovered["thinking_control"]
-    if discovered.get("thinking_levels"):
-        thinking_levels = discovered["thinking_levels"]
-    if "thinking_required" in discovered:
-        thinking_required = discovered["thinking_required"]
-    inference_controls = controls_for_api(
+    # Aperture reports limits but not features, so thinking and image support
+    # come from the known-model catalog.
+    discovered: dict[str, int] = {}
+    if route.context_window:
+        discovered["context_window"] = route.context_window
+    if route.max_output_tokens:
+        discovered["max_output_tokens"] = route.max_output_tokens
+    info = build_model_info(
+        model,
         route.wire_api,
-        supports_thinking,
-        thinking_control,
-        model_id=display_name,
-        supported_parameters=discovered.get("supported_parameters"),
-    )
-
-    capabilities: list[str] = []
-    if supports_images:
-        capabilities.append("vision")
-    if supports_thinking:
-        capabilities.append("thinking")
-
-    return ModelInfo(
-        name=model,
-        display_name=display_name,
-        context_window=context_window,
-        max_output_tokens=max_output_tokens,
-        supports_images=supports_images,
-        supports_thinking=supports_thinking,
-        upstream_provider=route.upstream_name,
+        discovered,
+        display_name=route.display_name,
         wire_api=_WIRE_LABELS[route.wire_api],
-        inference_api=route.wire_api,
-        inference_controls=inference_controls,
-        thinking_control=thinking_control,
-        thinking_levels=thinking_levels,
-        thinking_default=discovered.get("thinking_default") or thinking_default(
-            display_name, thinking_control, thinking_levels,
-        ),
-        thinking_required=thinking_required,
-        reasoning_efforts=reasoning_efforts,
-        capabilities=capabilities,
         is_cloud=True,
     )
+    capabilities = [
+        name
+        for name, supported in (("vision", info.supports_images), ("thinking", info.supports_thinking))
+        if supported
+    ]
+    return info.model_copy(update={"capabilities": capabilities})

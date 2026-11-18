@@ -139,8 +139,16 @@ describe('SetupWizard provider-step field visibility', () => {
         expect(container.querySelector('#cloud-key')).not.toBeInTheDocument();
     });
 
+    it('hides Aperture until the experimental switch is on', async () => {
+        render(<SetupWizard onComplete={vi.fn()} />);
+        await _advanceToProviderStep();
+
+        expect(screen.queryByText('Tailscale Aperture')).not.toBeInTheDocument();
+        expect(screen.getByText('Ollama (local)')).toBeInTheDocument();
+    });
+
     it('asks Aperture for only its gateway URL', async () => {
-        const { container } = render(<SetupWizard onComplete={vi.fn()} />);
+        const { container } = render(<SetupWizard apertureEnabled onComplete={vi.fn()} />);
         await _advanceToProviderStep();
 
         await act(async () => {
@@ -154,7 +162,7 @@ describe('SetupWizard provider-step field visibility', () => {
     });
 
     it('posts an Aperture direct-provider connection with no API key', async () => {
-        render(<SetupWizard onComplete={vi.fn()} />);
+        render(<SetupWizard apertureEnabled onComplete={vi.fn()} />);
         await _advanceToProviderStep();
 
         fireEvent.click(screen.getByText('Tailscale Aperture'));

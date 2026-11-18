@@ -361,6 +361,8 @@ class TestStreamingOutOfOrderEvents:
 
         # Create a provider instance and inject a mock client
         provider = OpenAIResponsesProvider.__new__(OpenAIResponsesProvider)
+        provider._model_cache = None
+        provider._model_details = None
         provider._client = AsyncMock()
         provider._client.responses.create.return_value = _fake_stream()
 
@@ -425,6 +427,10 @@ class TestStreamingOutOfOrderEvents:
                 yield ev
 
         provider = OpenAIResponsesProvider.__new__(OpenAIResponsesProvider)
+
+        provider._model_cache = None
+
+        provider._model_details = None
         provider._client = AsyncMock()
         provider._client.responses.create.return_value = _fake_stream()
 
@@ -480,6 +486,10 @@ class TestStreamingOutOfOrderEvents:
                 yield ev
 
         provider = OpenAIResponsesProvider.__new__(OpenAIResponsesProvider)
+
+        provider._model_cache = None
+
+        provider._model_details = None
         provider._client = AsyncMock()
         provider._client.responses.create.return_value = _fake_stream()
 
@@ -546,6 +556,10 @@ class TestStreamingOutOfOrderEvents:
                 yield ev
 
         provider = OpenAIResponsesProvider.__new__(OpenAIResponsesProvider)
+
+        provider._model_cache = None
+
+        provider._model_details = None
         provider._client = AsyncMock()
         provider._client.responses.create.return_value = _fake_stream()
 
@@ -570,7 +584,10 @@ class TestBuildKwargsSamplingControls:
     def _provider(self):
         from agent_core.providers._openai_responses import OpenAIResponsesProvider
 
-        return OpenAIResponsesProvider.__new__(OpenAIResponsesProvider)
+        provider = OpenAIResponsesProvider.__new__(OpenAIResponsesProvider)
+        provider._model_cache = None
+        provider._model_details = None
+        return provider
 
     def test_provider_qualified_gpt_sol_drops_sampling(self):
         kwargs = self._provider()._build_kwargs(

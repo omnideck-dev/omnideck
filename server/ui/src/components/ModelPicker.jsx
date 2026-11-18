@@ -275,9 +275,6 @@ export default function ModelPicker({
         if (!provs.length) return 'No providers configured';
         return placeholder;
     })();
-    const selectedDisplay = selectedProvider === 'aperture' && selectedModel?.includes('/')
-        ? selectedModel.slice(selectedModel.indexOf('/') + 1)
-        : selectedModel;
 
     const popoverStyle = inline && popoverPos ? {
         position: 'fixed',
@@ -363,7 +360,6 @@ export default function ModelPicker({
                             <span className={styles.badges}>
                                 {m.supports_thinking && <span className={styles.capBadge}>think</span>}
                                 {m.supports_images && <span className={styles.capBadge}>vision</span>}
-                                {m.upstream_provider && <span className={styles.badge}>{m.upstream_provider}</span>}
                                 {m.wire_api && <span className={styles.badge}>{m.wire_api}</span>}
                                 {ctx && <span className={styles.badge}>{ctx}</span>}
                                 {m.parameter_size && <span className={styles.badge}>{m.parameter_size}</span>}
@@ -397,7 +393,7 @@ export default function ModelPicker({
                                 <span className={styles.triggerSep}>/</span>
                             </>
                         )}
-                        <span className={styles.triggerModel}>{selectedDisplay}</span>
+                        <span className={styles.triggerModel}>{selectedModel}</span>
                     </>
                 ) : (
                     <span className={styles.triggerPlaceholder}>{triggerLabel}</span>

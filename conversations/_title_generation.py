@@ -7,8 +7,7 @@ to generate concise titles (3-5 words) that capture the essence of the conversat
 
 import logging
 
-from agent_core.providers import resolve_role_options
-from providers import get_provider
+from providers import get_provider, resolve_role_options
 from settings import load_settings
 
 logger = logging.getLogger(__name__)
@@ -49,17 +48,13 @@ async def generate_conversation_title(first_message: str) -> str:
 
         # Titles are tiny, so cap output. Sampling stays provider-native; some
         # reasoning models reject temperature overrides entirely.
-        options, _model_info = await resolve_role_options(
-            provider,
-            title_model,
-            "title",
-        )
+        request = await resolve_role_options(provider, title_model, "title")
 
         response = await provider.chat(
             model=title_model,
             messages=messages,
-            options=options,
-            think=False,
+            options=request.options,
+            think=request.think,
         )
         
         if response and response.message and response.message.content:

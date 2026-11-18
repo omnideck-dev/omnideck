@@ -6,7 +6,7 @@ import { invalidateModelCache } from '../ModelPicker.jsx';
 import { OmnideckHostProvider } from '../../features/app/OmnideckHost.jsx';
 
 const refreshFeatures = vi.fn();
-const providersHook = { providers: [] };
+const providersHook = { providers: [], refresh: vi.fn() };
 
 vi.mock('../../contexts/AppData.jsx', () => ({
     useAppData: () => ({ providersHook, refreshFeatures }),
@@ -15,6 +15,7 @@ vi.mock('../../contexts/AppData.jsx', () => ({
 describe('SystemSettings', () => {
     beforeEach(() => {
         providersHook.providers = [];
+        providersHook.refresh.mockReset();
         invalidateModelCache();
         refreshFeatures.mockReset();
         globalThis.fetch = vi.fn((url, init = {}) => {
@@ -26,6 +27,7 @@ describe('SystemSettings', () => {
                         default_agent: 'omnideck',
                         custom_apps_enabled: true,
                         custom_tools_enabled: true,
+                        aperture_enabled: true,
                     }),
                 });
             }
@@ -37,6 +39,7 @@ describe('SystemSettings', () => {
                         default_agent: 'omnideck',
                         custom_apps_enabled: false,
                         custom_tools_enabled: false,
+                        aperture_enabled: false,
                     }),
                 });
             }
@@ -77,6 +80,35 @@ describe('SystemSettings', () => {
             }),
         ));
         await waitFor(() => expect(refreshFeatures).toHaveBeenCalledOnce());
+        expect(toggle).toBeChecked();
+    });
+
+    it('persists Tailscale Aperture and refreshes features and providers', async () => {
+        await act(async () => {
+            render(
+                <OmnideckHostProvider host={null}>
+                    <SystemSettings />
+                </OmnideckHostProvider>,
+            );
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        });
+
+        const toggle = await screen.findByRole('switch', { name: 'Tailscale Aperture' });
+        expect(toggle).not.toBeChecked();
+        await act(async () => {
+            fireEvent.click(toggle);
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        });
+
+        await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledWith(
+            '/api/settings',
+            expect.objectContaining({
+                method: 'PUT',
+                body: JSON.stringify({ aperture_enabled: true }),
+            }),
+        ));
+        await waitFor(() => expect(refreshFeatures).toHaveBeenCalledOnce());
+        expect(providersHook.refresh).toHaveBeenCalledOnce();
         expect(toggle).toBeChecked();
     });
 
@@ -154,6 +186,7 @@ describe('SystemSettings', () => {
             compaction_options: {},
             title_provider: 'aperture',
             title_model: 'openai.gpt-5.6-luna',
+            role_output_caps: { vision: 512, compaction: 8192, title: 50 },
         };
         globalThis.fetch = vi.fn((url) => {
             if (url.startsWith('/api/models')) {
@@ -165,14 +198,14 @@ describe('SystemSettings', () => {
                         max_output_tokens: 128_000,
                         supports_images: true,
                         supports_thinking: true,
-                        upstream_provider: 'Amazon Bedrock',
                         wire_api: 'Responses',
                         inference_api: 'openai_responses',
                         inference_controls: [
-                            'temperature', 'top_p', 'context_window', 'num_predict',
+                            'temperature', 'top_p', 'num_predict',
                             'think', 'reasoning_effort', 'reasoning_summary',
                         ],
-                        reasoning_efforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+                        thinking_control: 'reasoning_effort',
+                        thinking_levels: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
                     }] }),
                 });
             }
@@ -194,7 +227,7 @@ describe('SystemSettings', () => {
             </OmnideckHostProvider>,
         );
 
-        expect(await screen.findAllByText(/Amazon Bedrock · Responses · 1.1M context/)).toHaveLength(3);
+        expect(await screen.findAllByText(/Responses · 1.1M context/)).toHaveLength(3);
         expect(screen.getByTestId('vision-model-detection')).toHaveTextContent('512-token role cap');
         expect(screen.getByTestId('compaction-model-detection')).toHaveTextContent('8K-token role cap');
         expect(screen.getByTestId('title-model-detection')).toHaveTextContent('50-token role cap');

@@ -249,13 +249,13 @@ class TestApplyLLMConfigToProfiles:
         assert updated.model == "claude-x"
         assert updated.provider == "anthropic"
 
-    def test_cloud_setup_does_not_persist_fixed_context_capacity(self):
+    def test_new_provider_replaces_an_old_context_size(self):
         save_agent_profile(_make_profile(id="a", name="A", model="", context_window=32_000))
 
         apply_llm_config_to_profiles(
             "bedrock/openai.gpt-5.6-sol",
             provider="aperture",
-            context_window=1_050_000,
+            context_window=None,
         )
 
         assert get_agent_profile("a").context_window is None

@@ -13,6 +13,7 @@ tests pass without actually exercising the wizard.
 import os
 
 import pytest
+from playwright.sync_api import expect
 
 BASE_URL = os.environ.get("OMNIDECK_URL", "http://localhost:8080")
 
@@ -74,6 +75,8 @@ def _complete_setup_wizard(browser, wizard_choices):
 
     # Step 1: Provider — pick Ollama with localhost URL (network=host)
     page.get_by_text("Choose your LLM provider").wait_for(state="visible")
+    # Aperture is experimental and stays hidden until it is turned on in Settings.
+    expect(page.get_by_text("Tailscale Aperture")).to_have_count(0)
     page.get_by_text("Ollama (local)").click()
     page.locator("#ollama-url").fill("http://localhost:11434")
     page.get_by_role("button", name="Connect").click()

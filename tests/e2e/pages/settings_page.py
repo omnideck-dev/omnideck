@@ -84,10 +84,6 @@ class SystemTab:
         self.page.get_by_test_id("vision-advanced-panel").wait_for(state="visible")
         return self
 
-    @property
-    def vision_think_toggle(self) -> Locator:
-        return self.page.get_by_test_id("vision-think-toggle")
-
     def vision_option(self, key: str) -> Locator:
         return self.page.get_by_test_id(f"vision-option-{key}")
 

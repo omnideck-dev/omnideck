@@ -18,6 +18,7 @@ from aiohttp import web
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from agents import apply_llm_config_to_profiles
+from agent_core.providers import find_model
 from artifacts import list_artifacts, reconcile
 from conversations import conversation_exists
 from migrations._welcome_constants import (
@@ -125,9 +126,12 @@ async def handle_complete(request: web.Request) -> web.Response:
 
     vision_think = False
     if spec.vision_model:
-        models = await configured_provider.list_models()
-        vision_info = next((model for model in models if model.name == spec.vision_model), None)
+        vision_info = await find_model(configured_provider, spec.vision_model)
         vision_think = bool(vision_info and vision_info.thinking_required)
+
+    # Profiles keep a context size only for a model that lets the user set one.
+    main_info = await find_model(configured_provider, spec.main_model)
+    configurable_context = main_info is not None and "context_window" in (main_info.inference_controls or ())
 
     save_settings({
         "default_agent": spec.default_agent,
@@ -148,7 +152,7 @@ async def handle_complete(request: web.Request) -> web.Response:
     apply_llm_config_to_profiles(
         spec.main_model,
         provider=spec.provider,
-        context_window=spec.context_window,
+        context_window=spec.context_window if configurable_context else None,
     )
 
     saved = save_settings({"setup_complete": True})

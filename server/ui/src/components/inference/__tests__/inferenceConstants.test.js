@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+    isAvailable,
     isSupported,
     resolveInferenceCapabilities,
     sanitizeInferenceOptions,
@@ -10,26 +11,23 @@ import {
 describe('resolveInferenceCapabilities', () => {
     it('uses discovered Responses controls for an Aperture GPT model', () => {
         const capabilities = resolveInferenceCapabilities('aperture', {
-            name: 'bedrock/openai.gpt-5.6-luna',
+            name: 'gpt-5.6-luna',
             wire_api: 'Responses',
             inference_api: 'openai_responses',
             inference_controls: [
-                'context_window', 'num_predict',
-                'max_iterations', 'compaction_threshold', 'think',
+                'num_predict', 'max_iterations', 'compaction_threshold', 'think',
                 'reasoning_effort', 'reasoning_summary',
             ],
-            reasoning_efforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
             supports_thinking: true,
+            thinking_control: 'reasoning_effort',
+            thinking_levels: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
             context_window: 1_050_000,
             max_output_tokens: 128_000,
-            upstream_provider: 'Amazon Bedrock',
         });
 
         expect(capabilities.api).toBe('openai_responses');
         expect(capabilities.detected).toBe(true);
-        expect(capabilities.reasoningEfforts).toEqual([
-            'none', 'low', 'medium', 'high', 'xhigh', 'max',
-        ]);
+        expect(isSupported('context_window', capabilities)).toBe(false);
         expect(capabilities.thinkingControl).toBe('reasoning_effort');
         expect(capabilities.thinkingLevels).toEqual([
             'none', 'low', 'medium', 'high', 'xhigh', 'max',
@@ -40,11 +38,11 @@ describe('resolveInferenceCapabilities', () => {
         expect(isSupported('thinking_budget', capabilities)).toBe(false);
     });
 
-    it('uses Anthropic controls for a Bedrock Claude model under the same provider', () => {
+    it('uses Anthropic controls for a Claude model under the same provider', () => {
         const capabilities = resolveInferenceCapabilities('aperture', {
-            name: 'bedrock/us.anthropic.claude-sonnet-4-6',
-            wire_api: 'Amazon Bedrock',
-            inference_api: 'bedrock_model_invoke',
+            name: 'claude-sonnet-4-6',
+            wire_api: 'Anthropic Messages',
+            inference_api: 'anthropic_messages',
             inference_controls: [
                 'context_window', 'num_predict', 'max_iterations', 'compaction_threshold',
                 'think', 'reasoning_effort',
@@ -78,13 +76,13 @@ describe('resolveInferenceCapabilities', () => {
         expect(isSupported('reasoning_effort', capabilities)).toBe(false);
     });
 
-    it('falls back to provider defaults when model metadata is unavailable', () => {
+    it('offers no model settings until the model details arrive', () => {
         const capabilities = resolveInferenceCapabilities('anthropic');
 
         expect(capabilities.detected).toBe(false);
-        expect(isSupported('top_k', capabilities)).toBe(true);
-        expect(isSupported('thinking_budget', capabilities)).toBe(true);
-        expect(isSupported('reasoning_summary', capabilities)).toBe(false);
+        expect(capabilities.controls).toEqual([]);
+        expect(isSupported('temperature', capabilities)).toBe(false);
+        expect(isSupported('think', capabilities)).toBe(false);
     });
 
     it('uses model-provided Ollama thinking levels and required-thinking metadata', () => {
@@ -105,7 +103,7 @@ describe('resolveInferenceCapabilities', () => {
         const capabilities = resolveInferenceCapabilities('aperture', {
             name: 'openai.gpt-5.6-luna',
             inference_api: 'openai_responses',
-            inference_controls: ['temperature', 'top_p', 'context_window', 'num_predict'],
+            inference_controls: ['temperature', 'top_p', 'num_predict'],
         });
 
         expect(sanitizeInferenceOptions({
@@ -121,13 +119,14 @@ describe('resolveInferenceCapabilities', () => {
 
     it('clears hidden model-specific profile values when switching to cloud', () => {
         const modelInfo = {
-            name: 'bedrock/openai.gpt-5.6-luna',
+            name: 'gpt-5.6-luna',
             inference_api: 'openai_responses',
             inference_controls: [
-                'temperature', 'top_p', 'context_window', 'num_predict',
+                'temperature', 'top_p', 'num_predict',
                 'max_iterations', 'compaction_threshold', 'think', 'reasoning_effort',
             ],
-            reasoning_efforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+            thinking_control: 'reasoning_effort',
+            thinking_levels: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
             context_window: 1_050_000,
         };
         const capabilities = resolveInferenceCapabilities('aperture', modelInfo);
@@ -156,5 +155,59 @@ describe('resolveInferenceCapabilities', () => {
         expect(sanitizeProfileForModel(
             { context_window: 32_000 }, capabilities,
         ).context_window).toBeNull();
+    });
+});
+
+describe('values the model refuses', () => {
+    const olderClaude = resolveInferenceCapabilities('anthropic', {
+        name: 'claude-sonnet-4-5',
+        inference_api: 'anthropic_messages',
+        inference_controls: ['temperature', 'top_p', 'top_k', 'think', 'thinking_budget'],
+        supports_thinking: true,
+        thinking_control: 'thinking_budget',
+        thinking_excluded_controls: ['temperature', 'top_k'],
+        exclusive_controls: [['temperature', 'top_p']],
+    });
+
+    it('hides fields that thinking turns off only while thinking', () => {
+        expect(isAvailable('temperature', olderClaude, false)).toBe(true);
+        expect(isAvailable('temperature', olderClaude, true)).toBe(false);
+        expect(isAvailable('top_p', olderClaude, true)).toBe(true);
+    });
+
+    it('takes refusal rules only from the model details', () => {
+        const capabilities = resolveInferenceCapabilities('openai', {
+            inference_api: 'openai_responses',
+            inference_controls: ['temperature', 'top_p', 'think', 'reasoning_effort'],
+        });
+
+        expect(capabilities.thinkingExcludedControls).toEqual([]);
+        expect(capabilities.exclusiveControls).toEqual([]);
+    });
+
+    it('clears refused values when a profile moves to the model', () => {
+        const next = sanitizeProfileForModel(
+            { think: false, temperature: 0.4, top_p: 0.9, top_k: 20 },
+            olderClaude,
+        );
+
+        expect(next).toMatchObject({ temperature: 0.4, top_p: null, top_k: 20 });
+    });
+
+    it('clears fields thinking turns off when the profile thinks', () => {
+        const next = sanitizeProfileForModel(
+            { think: true, temperature: 0.4, top_k: 20, top_p: 0.97 },
+            olderClaude,
+        );
+
+        expect(next).toMatchObject({ temperature: null, top_k: null, top_p: 0.97 });
+    });
+
+    it('drops refused option overrides for helper models', () => {
+        expect(sanitizeInferenceOptions(
+            { temperature: 0.4, top_p: 0.9, top_k: 20 },
+            olderClaude,
+            { think: true },
+        )).toEqual({ top_p: 0.9 });
     });
 });

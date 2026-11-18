@@ -13,7 +13,8 @@ def test_simple_agent_editor_discard_save_and_reload(page, width):
     profile_id = f"simple-editor-{width}"
     response = page.request.post("/api/profiles", data={
         "id": profile_id, "name": "Workday helper", "description": "Plan the day",
-        "model": "", "system_prompt": "Keep it brief.", "skills": [],
+        "provider": "ollama", "model": "kimi-k2.5:cloud",
+        "system_prompt": "Keep it brief.", "skills": [],
         "browser_profile_id": None, "allow_spawn": True, "allow_load_skills": True,
         "max_iterations": 25,
     })
@@ -52,11 +53,9 @@ def test_simple_agent_editor_discard_save_and_reload(page, width):
         detail.get_by_text("Delegate tasks to other agents", exact=True).click()
         detail.get_by_role("spinbutton", name="Tool steps per message").fill("12")
         tuning.locator("summary").click()
-        # Thinking owns a full row; inputs cannot overflow adjacent columns.
-        thinking = page.get_by_test_id("field-think")
-        grid_box = thinking.locator("..").bounding_box()
-        thinking_box = thinking.bounding_box()
-        assert abs(thinking_box["width"] - grid_box["width"]) < 1
+        # Model settings load from the model's details; inputs cannot
+        # overflow adjacent columns.
+        expect(page.get_by_test_id("field-thinking-level")).to_be_visible()
         for control in tuning.locator("input[type=number]").all():
             assert control.evaluate("el => el.getBoundingClientRect().right <= el.parentElement.getBoundingClientRect().right + 1")
         page.get_by_test_id("field-temperature").fill("0.4")

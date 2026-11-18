@@ -10,7 +10,7 @@ from tests.e2e.pages import AgentsPage
 def test_profile_ui_reflects_saved_state(page: Page):
     """Create a profile with specific settings via API, load it in the UI, verify all fields."""
     # Get the first available model to use
-    models = page.request.get("/api/models").json().get("models", [])
+    models = page.request.get("/api/models?provider=ollama").json().get("models", [])
     model_name = models[0]["name"] if models else ""
 
     # Create a profile with known values — use "code" preset (temperature=0.3, think=true)
@@ -19,6 +19,7 @@ def test_profile_ui_reflects_saved_state(page: Page):
         "id": profile_id,
         "name": "UI State Test",
         "description": "Verifies UI reflects saved state",
+        "provider": "ollama",
         "model": model_name,
         "system_prompt": "You are a test agent for UI verification.",
         "skills": ["coder", "routine_planner"],
@@ -71,7 +72,7 @@ def test_profile_ui_reflects_saved_state(page: Page):
         expect(page.get_by_test_id("compaction-threshold-select")).to_have_attribute("data-value", "0.75")
         expect(builder.field("num_predict")).to_have_value("2048")
         expect(builder.field("max_iterations")).to_have_value("10")
-        expect(builder.thinking_switch).to_be_checked()
+        expect(page.get_by_test_id("thinking-level-select")).to_have_attribute("data-value", "medium")
 
     finally:
         page.request.delete(f"/api/profiles/{profile_id}")

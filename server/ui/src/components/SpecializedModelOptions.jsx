@@ -1,7 +1,10 @@
 import ChevronRightIcon from './icons/ChevronRightIcon';
-import ToggleSwitch from './ToggleSwitch.jsx';
 import Select from './primitives/Select.jsx';
-import { isSupported, SPECIALIZED_ROLE_OUTPUT_CAPS } from './inference';
+import {
+    conflictingFields,
+    isAvailable,
+    isSupported,
+} from './inference';
 import styles from './SystemSettings.module.css';
 
 const EFFORT_LABELS = {
@@ -21,28 +24,30 @@ function formatTokens(tokens) {
     return String(tokens);
 }
 
-export function ModelDefaultsSummary({ capabilities, role, options = {} }) {
+export function ModelDefaultsSummary({ capabilities, role, outputCap = null, options = {} }) {
     if (!capabilities?.detected) return null;
     const details = [
-        capabilities.upstreamProvider,
         capabilities.apiLabel,
         capabilities.contextWindow && `${formatTokens(capabilities.contextWindow)} context`,
         capabilities.maxOutputTokens && `${formatTokens(capabilities.maxOutputTokens)} max output`,
     ].filter(Boolean);
-    const configuredCap = SPECIALIZED_ROLE_OUTPUT_CAPS[role];
-    const effectiveCap = capabilities.maxOutputTokens
-        ? Math.min(configuredCap, capabilities.maxOutputTokens)
-        : configuredCap;
+    const effectiveCap = outputCap && capabilities.maxOutputTokens
+        ? Math.min(outputCap, capabilities.maxOutputTokens)
+        : outputCap;
     const explicitOutput = options?.num_predict;
     const outputDetail = explicitOutput != null
         ? `${formatTokens(explicitOutput)} output override`
-        : `${formatTokens(effectiveCap)}-token role cap`;
+        : effectiveCap ? `${formatTokens(effectiveCap)}-token role cap` : null;
     const hasSamplingOverrides = ['temperature', 'top_k', 'top_p']
         .some((key) => options?.[key] != null);
     return (
         <div className={styles.modelDetection} data-testid={`${role}-model-detection`}>
             <i className="bi bi-stars" aria-hidden="true" />
-            <span>{details.join(' · ')} · {hasSamplingOverrides ? 'Custom sampling' : 'Auto sampling'} · {outputDetail}</span>
+            <span>{[
+                ...details,
+                hasSamplingOverrides ? 'Custom sampling' : 'Auto sampling',
+                outputDetail,
+            ].filter(Boolean).join(' · ')}</span>
         </div>
     );
 }
@@ -50,6 +55,7 @@ export function ModelDefaultsSummary({ capabilities, role, options = {} }) {
 export default function SpecializedModelOptions({
     role,
     capabilities,
+    outputCap = null,
     options,
     think = false,
     open,
@@ -57,19 +63,34 @@ export default function SpecializedModelOptions({
     onPatch,
 }) {
     const optionKey = `${role}_options`;
-    const setOption = (key, value) => onPatch({
-        [optionKey]: { ...(options || {}), [key]: value },
+    // Only the vision role can think; the other roles always run without it.
+    const thinking = role === 'vision' && (think || capabilities.thinkingRequired);
+    // Setting a field clears the values the model refuses alongside it.
+    const setOption = (key, value) => {
+        const cleared = value == null ? [] : conflictingFields(key, capabilities);
+        onPatch({
+            [optionKey]: {
+                ...(options || {}),
+                ...Object.fromEntries(cleared.map((other) => [other, null])),
+                [key]: value,
+            },
+        });
+    };
+    // Turning thinking on clears the fields thinking turns off.
+    const withoutThinkingExcluded = (next) => ({
+        ...next,
+        ...Object.fromEntries(
+            (capabilities.thinkingExcludedControls || [])
+                .filter((field) => next[field] != null)
+                .map((field) => [field, null]),
+        ),
     });
     const hasThinkingLevels = capabilities.thinkingLevels.length > 0;
     const thinkingOptionField = capabilities.thinkingControl;
     const defaultThinkingLevel = capabilities.thinkingDefault;
     const thinkingUsesAutomatic = capabilities.thinkingRequired
         || capabilities.api === 'openai_responses'
-        || capabilities.api === 'openai_chat'
-        || (capabilities.api === 'anthropic_messages'
-            && thinkingOptionField === 'reasoning_effort')
-        || (capabilities.api === 'bedrock_model_invoke'
-            && thinkingOptionField === 'reasoning_effort');
+        || capabilities.api === 'openai_chat';
     const idleThinkingValue = thinkingUsesAutomatic ? 'automatic' : 'off';
     const thinkingValue = think
         ? options?.[thinkingOptionField] || defaultThinkingLevel
@@ -77,34 +98,34 @@ export default function SpecializedModelOptions({
     const setThinkingLevel = (value) => {
         const enabled = value !== 'off'
             && (value !== 'automatic' || capabilities.thinkingRequired);
+        const next = {
+            ...(options || {}),
+            [thinkingOptionField]: value === 'off' || value === 'automatic' ? null : value,
+        };
         onPatch({
             vision_think: enabled,
-            [optionKey]: {
-                ...(options || {}),
-                [thinkingOptionField]: value === 'off' || value === 'automatic' ? null : value,
-            },
+            [optionKey]: enabled ? withoutThinkingExcluded(next) : next,
         });
     };
     const hasOverrides = Object.values(options || {}).some((value) => value != null) || (role === 'vision' && think);
-    const allowContext = capabilities.api === 'ollama';
     const fields = [
         { key: 'temperature', control: 'temperature', label: 'Temperature', step: 0.1, min: 0, max: 2 },
         { key: 'top_k', control: 'top_k', label: 'Top K', step: 1, min: 0 },
         { key: 'top_p', control: 'top_p', label: 'Top P', step: 0.05, min: 0, max: 1 },
-        ...(allowContext ? [{
+        {
             key: 'num_ctx', control: 'context_window',
             label: 'Runtime Context Window',
             step: 1, min: 1,
-        }] : []),
+        },
         {
             key: 'num_predict', control: 'num_predict', label: 'Max Output', step: 1, min: 1,
             max: capabilities.maxOutputTokens || undefined,
         },
-    ].filter(({ control }) => isSupported(control, capabilities));
+    ].filter(({ control }) => isAvailable(control, capabilities, thinking));
 
     return (
         <>
-            <ModelDefaultsSummary capabilities={capabilities} role={role} options={options} />
+            <ModelDefaultsSummary capabilities={capabilities} role={role} outputCap={outputCap} options={options} />
             <button
                 type="button"
                 className={`${styles.groupDisclosure} ${open ? styles.groupDisclosureOpen : ''}`}
@@ -140,19 +161,6 @@ export default function SpecializedModelOptions({
                             />
                         </div>
                     )}
-                    {role === 'vision' && isSupported('think', capabilities) && !hasThinkingLevels && (
-                        <label className={styles.groupRow} data-testid="vision-think-toggle">
-                            <div className={styles.settingInfo}>
-                                <span className={styles.settingTitle}>Thinking</span>
-                                <span className={styles.settingDesc}>Off by default for fast image analysis.</span>
-                            </div>
-                            <ToggleSwitch
-                                checked={think}
-                                onChange={(event) => onPatch({ vision_think: event.target.checked })}
-                                aria-label="Thinking"
-                            />
-                        </label>
-                    )}
                     {fields.map(({ key, label, control: _control, ...inputProps }) => (
                         <div key={key} className={styles.groupRow}>
                             <div className={styles.settingInfo}>
@@ -161,7 +169,9 @@ export default function SpecializedModelOptions({
                                     {key === 'num_ctx' && capabilities.contextWindow
                                         ? `Auto uses Ollama’s detected ${formatTokens(capabilities.contextWindow)} context.`
                                         : key === 'num_predict'
-                                            ? `Auto uses the ${SPECIALIZED_ROLE_OUTPUT_CAPS[role].toLocaleString()}-token role cap.`
+                                            ? outputCap
+                                                ? `Auto uses the ${outputCap.toLocaleString()}-token role cap.`
+                                                : 'Auto uses the role cap.'
                                             : 'Auto uses the selected model’s default.'}
                                 </span>
                             </div>

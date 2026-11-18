@@ -11,26 +11,13 @@ from typing import Any
 from agents import AgentProfile, get_agent_profile
 from agent_core.agent import Agent
 from agent_core.agent_capabilities import AgentCapabilities
-from agent_core.providers import Provider
+from agent_core.providers import Provider, accepted_options, find_model
 from providers import get_provider
 from integrations.connection_cache import ConnectionSnapshot
 from skills._tool_categories import ToolCategory, tool_categories
 from tools.memory import load_memory
 
 logger = logging.getLogger(__name__)
-
-_OPTION_CONTROLS = {
-    "num_ctx": "context_window",
-    "num_predict": "num_predict",
-    "temperature": "temperature",
-    "top_k": "top_k",
-    "top_p": "top_p",
-    "repeat_penalty": "repeat_penalty",
-    "reasoning_effort": "reasoning_effort",
-    "reasoning_summary": "reasoning_summary",
-    "thinking_budget": "thinking_budget",
-}
-
 
 @dataclass(frozen=True)
 class PreparedAgent:
@@ -163,9 +150,7 @@ class AgentFactory:
             raise RuntimeError(msg)
 
         raw_options: dict[str, Any] = {
-            # num_ctx allocates an Ollama runtime context. Cloud and gateway
-            # models have a fixed capacity that is resolved from model metadata.
-            "num_ctx": profile.context_window if profile.provider == "ollama" else None,
+            "num_ctx": profile.context_window,
             "num_predict": profile.num_predict,
             "temperature": profile.temperature,
             "top_k": profile.top_k,
@@ -199,49 +184,23 @@ class AgentFactory:
         those properties through the provider's cached model catalog for every
         root, child, and routine execution prepared by this factory.
         """
-        try:
-            models = await provider.list_models()
-        except Exception:
-            logger.debug(
-                "Could not resolve runtime metadata for %s/%s; using profile fallbacks",
-                agent.provider,
-                agent.model,
-                exc_info=True,
-            )
-            return agent
-
-        model_info = next((candidate for candidate in models if candidate.name == agent.model), None)
+        model_info = await find_model(provider, agent.model)
         if model_info is None:
-            logger.debug("Model metadata not found for %s/%s", agent.provider, agent.model)
+            logger.debug("Model details not found for %s/%s; using profile values", agent.provider, agent.model)
             return agent
 
+        think = model_info.thinking_required or (agent.think and model_info.supports_thinking)
+        # A model whose context size the user cannot set runs at its own size.
         context_window = agent.context_window
         if model_info.context_window and (
-            agent.provider != "ollama" or model_info.is_cloud or context_window <= 0
+            "context_window" not in (model_info.inference_controls or ()) or context_window <= 0
         ):
             context_window = model_info.context_window
 
-        options = dict(agent.options)
-        if model_info.inference_controls is not None:
-            supported = set(model_info.inference_controls)
-            options = {
-                key: value
-                for key, value in options.items()
-                if _OPTION_CONTROLS.get(key) in supported
-            }
-        if (
-            model_info.thinking_levels
-            and isinstance(options.get("reasoning_effort"), str)
-            and options["reasoning_effort"] not in model_info.thinking_levels
-        ):
-            options.pop("reasoning_effort")
-
         return agent.model_copy(update={
             "context_window": context_window,
-            "options": options,
-            "think": model_info.thinking_required or (
-                agent.think and model_info.supports_thinking
-            ),
+            "options": accepted_options(model_info, agent.options, think=think),
+            "think": think,
         })
 
 

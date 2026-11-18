@@ -48,3 +48,17 @@ def provider_profile(page: Page):
 
     for pid in created:
         page.request.delete(f"/api/profiles/{pid}")
+
+
+@pytest.fixture
+def save_profile(page: Page):
+    """Save the open editor through the UI and return the stored profile."""
+
+    def _save(agents, profile_id: str) -> dict:
+        with page.expect_response(lambda response: response.url.endswith(f"/api/profiles/{profile_id}")
+                                  and response.request.method == "PUT") as saved:
+            agents.builder.save()
+        assert saved.value.ok
+        return page.request.get(f"/api/profiles/{profile_id}").json()
+
+    return _save

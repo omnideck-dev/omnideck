@@ -29,7 +29,7 @@ const CATALOG = [
  * the underlying entry (settings.direct_providers or vault integration),
  * probes the new provider, and returns its model list.
  */
-export default function AddProviderModal({ existingNames = [], onClose, onAdded }) {
+export default function AddProviderModal({ existingNames = [], apertureEnabled = false, onClose, onAdded }) {
     const [step, setStep] = useState('catalog'); // 'catalog' | 'configure'
     const [picked, setPicked] = useState(null);
 
@@ -49,6 +49,7 @@ export default function AddProviderModal({ existingNames = [], onClose, onAdded 
             {step === 'catalog' && (
                 <CatalogStep
                     existingNames={existingNames}
+                    apertureEnabled={apertureEnabled}
                     onClose={onClose}
                     onPick={handlePickAndContinue}
                 />
@@ -68,9 +69,10 @@ export default function AddProviderModal({ existingNames = [], onClose, onAdded 
 
 /* ── Step 1: catalog ───────────────────────────────────────────────── */
 
-function CatalogStep({ existingNames, onClose, onPick }) {
+function CatalogStep({ existingNames, apertureEnabled, onClose, onPick }) {
     const [selected, setSelected] = useState(null);
-    const available = CATALOG.filter(c => !existingNames.includes(c.name));
+    const available = CATALOG.filter(c => !existingNames.includes(c.name)
+        && (c.name !== 'aperture' || apertureEnabled));
     return (
         <>
             <div className={styles.header}>
@@ -267,7 +269,7 @@ function ConfigureStep({ entry, onBack, onClose, onAdded }) {
                             {isOllama
                                 ? (ollamaHost ? 'Detected automatically.' : 'Enter the address of your Ollama server.')
                                 : isAperture
-                                    ? 'Use the gateway root. Omnideck adds /v1 or /bedrock automatically.'
+                                    ? 'Use the gateway root, like http://ai.your-tailnet.ts.net. Omnideck finds your models automatically.'
                                 : 'The OpenAI-compatible endpoint URL (include /v1 if your server uses it).'}
                         </div>
                     </div>

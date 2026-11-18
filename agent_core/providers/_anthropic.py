@@ -8,14 +8,11 @@ from collections.abc import AsyncGenerator, Callable
 from pathlib import Path
 from typing import Any
 
-from ._base import BaseAPIProvider
+from ._base import BaseAPIProvider, ModelDetails
 from ._model_metadata import (
+    build_model_info,
     discovered_metadata,
-    fallback_metadata,
-    inference_controls,
-    metadata_value,
-    thinking_configuration,
-    thinking_default,
+    request_sampling,
 )
 from ._models import ChatDelta, ChatMessage, ChatResponse, ModelInfo, ProviderError, TokenUsage, ToolCall, ToolCallFunction
 from agent_core.tools import callable_to_json_schema
@@ -38,6 +35,8 @@ _STOP_REASON_MAP: dict[str, str] = {
 class AnthropicProvider(BaseAPIProvider):
     """LLM provider backed by the Anthropic Messages API."""
 
+    inference_api = "anthropic_messages"
+
     def __init__(
         self,
         api_key: str | None = None,
@@ -45,8 +44,9 @@ class AnthropicProvider(BaseAPIProvider):
         *,
         proxy_socket: Path | None = None,
         send_authorization: bool = True,
+        model_details: ModelDetails | None = None,
     ) -> None:
-        super().__init__(api_key, base_url)
+        super().__init__(api_key, base_url, model_details=model_details)
         import anthropic
 
         if proxy_socket is not None:
@@ -83,7 +83,6 @@ class AnthropicProvider(BaseAPIProvider):
                 kwargs["base_url"] = base_url
             self._client = client_class(**kwargs)
 
-        self._model_cache: list[ModelInfo] | None = None
         self._model_cache_at: float = 0.0
 
     def _build_kwargs(
@@ -105,24 +104,25 @@ class AnthropicProvider(BaseAPIProvider):
         }
         if system_prompt:
             kwargs["system"] = system_prompt
-        if opts.get("temperature") is not None:
-            kwargs["temperature"] = opts["temperature"]
-        if opts.get("top_k") is not None:
-            kwargs["top_k"] = opts["top_k"]
-        if opts.get("top_p") is not None:
-            kwargs["top_p"] = opts["top_p"]
+        info = self._listed_model(model)
+        kwargs.update(request_sampling(info, opts, think=think))
 
         if tools:
             kwargs["tools"] = _convert_tools(tools)
 
-        if think:
-            kwargs["temperature"] = 1
-            effort = opts.get("reasoning_effort")
-            if effort:
-                # Claude 4.6+ uses adaptive thinking. Effort is a soft depth
-                # control and belongs in output_config, not thinking itself.
+        effort = opts.get("reasoning_effort")
+        if not think and info.thinking_control == "reasoning_effort" and not info.thinking_required:
+            # Newer Claude models think unless told not to. Leaving the field
+            # out would let a request the user set to "off" think anyway.
+            kwargs["thinking"] = {"type": "disabled"}
+        elif think:
+            if effort or info.thinking_control == "reasoning_effort":
+                # Newer Claude models only accept adaptive thinking and reject
+                # a token budget. Effort is a soft depth control and belongs in
+                # output_config. Without one the model uses its own default.
                 kwargs["thinking"] = {"type": "adaptive"}
-                kwargs["output_config"] = {"effort": effort}
+                if effort:
+                    kwargs["output_config"] = {"effort": effort}
             else:
                 # Manual extended thinking requires budget_tokens >= 1024 and
                 # strictly less than max_tokens.
@@ -204,49 +204,10 @@ class AnthropicProvider(BaseAPIProvider):
             return self._model_cache
         try:
             response = await self._client.models.list(limit=100)
-            results: list[ModelInfo] = []
-            for m in response.data:
-                discovered = discovered_metadata(m)
-                supports_images = bool(metadata_value(
-                    m.id, "supports_images", discovered.get("supports_images"),
-                ))
-                supports_thinking = bool(metadata_value(
-                    m.id, "supports_thinking", discovered.get("supports_thinking"),
-                ))
-                thinking_control, thinking_levels, thinking_required = thinking_configuration(
-                    "anthropic_messages", m.id, supports_thinking,
-                )
-                if discovered.get("thinking_control"):
-                    thinking_control = discovered["thinking_control"]
-                if discovered.get("thinking_levels"):
-                    thinking_levels = discovered["thinking_levels"]
-                if "thinking_required" in discovered:
-                    thinking_required = discovered["thinking_required"]
-                results.append(ModelInfo(
-                    name=m.id,
-                    context_window=metadata_value(
-                        m.id, "context_window", discovered.get("context_window"),
-                    ),
-                    max_output_tokens=metadata_value(
-                        m.id, "max_output_tokens", discovered.get("max_output_tokens"),
-                    ),
-                    supports_images=supports_images,
-                    supports_thinking=supports_thinking,
-                    inference_api="anthropic_messages",
-                    inference_controls=inference_controls(
-                        "anthropic_messages",
-                        supports_thinking,
-                        thinking_control,
-                        model_id=m.id,
-                        supported_parameters=discovered.get("supported_parameters"),
-                    ),
-                    thinking_control=thinking_control,
-                    thinking_levels=thinking_levels,
-                    thinking_default=discovered.get("thinking_default") or thinking_default(
-                        m.id, thinking_control, thinking_levels,
-                    ),
-                    thinking_required=thinking_required,
-                ))
+            results = [
+                build_model_info(m.id, "anthropic_messages", discovered_metadata(m))
+                for m in response.data
+            ]
             self._model_cache = results
             self._model_cache_at = now
             return self._model_cache
@@ -293,16 +254,6 @@ def _supported_message_kwargs(method: Callable[..., Any], kwargs: dict[str, Any]
             ", ".join(sorted(dropped)),
         )
     return filtered
-
-
-def _supports_images(model_id: str) -> bool:
-    """Return the catalog fallback for Claude image input."""
-    return bool(fallback_metadata(model_id).get("supports_images", False))
-
-
-def _supports_thinking(model_id: str) -> bool:
-    """Return the catalog fallback for Claude extended thinking."""
-    return bool(fallback_metadata(model_id).get("supports_thinking", False))
 
 
 def _convert_messages(
