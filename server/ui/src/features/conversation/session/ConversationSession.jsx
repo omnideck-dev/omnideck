@@ -14,6 +14,7 @@ import { useWorkspaceDispatch } from '../../workspace/WorkspaceState.jsx';
 import { getConversationRestorePlan } from '../events/conversationRestore.js';
 import { useAppEffectDispatch, useAppEffectSubscription } from '../../app/AppEffects.jsx';
 import { APP_EFFECT_TYPES } from '../../app/appEffectTypes.js';
+import { useAppSettings } from '../../app/AppSettings.jsx';
 
 const ConversationSessionStateContext = createContext(null);
 const ActiveConversationIdContext = createContext(undefined);
@@ -27,6 +28,7 @@ export function ConversationSessionProvider({ children }) {
     const { addStartedConversation } = useConversationCatalog();
     const { addToast } = useToast();
     const [conversationProfileId, setConversationProfileId] = useState(null);
+    const unsentPickRef = useRef(false);
     const isFreshConversationRef = useRef(true);
 
     const session = useConversationSessionController({
@@ -48,12 +50,14 @@ export function ConversationSessionProvider({ children }) {
         if (!message && !attachments?.length) return null;
         if (session.isOffline) return null;
         noteStartedConversation(message || '');
+        unsentPickRef.current = false;
         return session.sendMessage(message, attachments, profileId);
     }, [noteStartedConversation, session.isOffline, session.sendMessage]);
 
     const sendAnswers = useCallback((goalId, answers, profileId) => {
         if (session.isOffline) return null;
         noteStartedConversation('');
+        unsentPickRef.current = false;
         return session.sendAnswers(goalId, answers, profileId);
     }, [noteStartedConversation, session.isOffline, session.sendAnswers]);
 
@@ -93,6 +97,7 @@ export function ConversationSessionProvider({ children }) {
             });
         }
         const restore = getConversationRestorePlan(loaded);
+        unsentPickRef.current = false;
         setConversationProfileId(loaded.profileId || null);
         agentDispatch({ type: 'RESET' });
         workspaceDispatch({ type: 'RESET' });
@@ -125,6 +130,7 @@ export function ConversationSessionProvider({ children }) {
         }
         const result = session.newConversation(options);
         isFreshConversationRef.current = true;
+        unsentPickRef.current = false;
         setConversationProfileId(null);
         agentDispatch({ type: 'RESET' });
         workspaceDispatch({ type: 'RESET' });
@@ -191,7 +197,7 @@ export function ConversationSessionProvider({ children }) {
         const loaded = await session.refreshActiveConversation();
         if (loaded) {
             isFreshConversationRef.current = false;
-            if (loaded.profileId) setConversationProfileId(loaded.profileId);
+            if (loaded.profileId && !unsentPickRef.current) setConversationProfileId(loaded.profileId);
         }
         return loaded;
     }, [session.refreshActiveConversation]);
@@ -206,6 +212,11 @@ export function ConversationSessionProvider({ children }) {
     useAppEffectSubscription(APP_EFFECT_TYPES.RUNS_STARTED, followRuns);
     useAppEffectSubscription(APP_EFFECT_TYPES.RUNS_SNAPSHOT, followRuns);
 
+    const pickConversationProfile = useCallback((profileId) => {
+        unsentPickRef.current = true;
+        setConversationProfileId(profileId);
+    }, []);
+
     const commands = useMemo(() => ({
         sendMessage,
         sendAnswers,
@@ -217,7 +228,7 @@ export function ConversationSessionProvider({ children }) {
         newConversation,
         setDraft: session.setDraft,
         composeFromSource,
-        setConversationProfileId,
+        pickConversationProfile,
         refreshActiveConversation,
     }), [
         composeFromSource,
@@ -230,6 +241,7 @@ export function ConversationSessionProvider({ children }) {
         session.consumeReturnedMessages,
         session.setDraft,
         session.stopGeneration,
+        pickConversationProfile,
         refreshActiveConversation,
     ]);
 
@@ -282,4 +294,11 @@ export function useConversationSessionCommands() {
         throw new Error('useConversationSessionCommands must be used within ConversationSessionProvider');
     }
     return commands;
+}
+
+/** The agent the chat's next message goes to: the user's pick, the chat's saved agent, or the default. */
+export function useSelectedProfileId() {
+    const { conversationProfileId } = useConversationSessionState();
+    const { defaultProfileId } = useAppSettings();
+    return conversationProfileId ?? defaultProfileId;
 }

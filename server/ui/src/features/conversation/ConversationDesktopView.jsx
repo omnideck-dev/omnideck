@@ -5,7 +5,6 @@ import ChatPanel from '../../components/ChatPanel.jsx';
 import { useAppData } from '../../contexts/AppData.jsx';
 import AgentNetworkView from '../agent/AgentNetworkView.jsx';
 import useAgentNetworkCounts from '../agent/useAgentNetworkCounts.js';
-import { useAppSettings } from '../app/AppSettings.jsx';
 import {
     useArtifactDesktopActions,
 } from '../artifacts/ArtifactDesktopAdapter.jsx';
@@ -21,6 +20,7 @@ import {
 import {
     useConversationSessionCommands,
     useConversationSessionState,
+    useSelectedProfileId,
 } from './session/ConversationSession.jsx';
 import styles from '../../App.module.css';
 import { useGoalDesktopActions } from '../goals/GoalDesktopView.jsx';
@@ -36,7 +36,6 @@ export default function ConversationDesktopView({ view, tabGroupId }) {
         stopRequested,
         stalled,
         isStreaming,
-        conversationProfileId,
         queue,
         returned,
     } = useConversationSessionState();
@@ -48,12 +47,11 @@ export default function ConversationDesktopView({ view, tabGroupId }) {
         sendNudge,
         stopGeneration,
         setDraft,
-        setConversationProfileId,
+        pickConversationProfile,
     } = useConversationSessionCommands();
     const { profilesHook, features } = useAppData();
     const { goalsByConversation } = useGoals();
     const { openGoal } = useGoalDesktopActions();
-    const { defaultProfileId } = useAppSettings();
     const navigation = useDesktopNavigationCommands();
     const agentCounts = useAgentNetworkCounts();
     const artifacts = useArtifactDesktopActions();
@@ -61,7 +59,7 @@ export default function ConversationDesktopView({ view, tabGroupId }) {
         openAgentWorkspaceResource,
     } = useWorkspaceResourceDesktopActions();
 
-    const selectedProfileId = conversationProfileId ?? defaultProfileId;
+    const selectedProfileId = useSelectedProfileId();
     const navigationTarget = navigationTargetForView(view);
     const mode = navigationTarget?.kind || 'chat';
     const selectedAgentId = navigationTarget?.agentId || null;
@@ -140,7 +138,7 @@ export default function ConversationDesktopView({ view, tabGroupId }) {
                 )}
                 onSelectAgent={(agentId) => navigation.openAgent(agentId)}
                 selectedProfileId={selectedProfileId}
-                onProfileChange={setConversationProfileId}
+                onProfileChange={pickConversationProfile}
                 profileRefreshSignal={profilesHook.revision}
                 onPreview={artifacts.openFileOutput}
                 conversationId={activeConversationId}

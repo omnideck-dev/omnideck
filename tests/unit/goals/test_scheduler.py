@@ -299,3 +299,25 @@ async def test_admission_failure_sets_error(store, monkeypatch):
         assert current.claim is None
     finally:
         await runtime.close()
+
+
+async def test_wake_runs_use_the_chat_saved_profile_at_each_wake(store: GoalStore, monkeypatch) -> None:
+    saved = {"goal-chat": "first-agent"}
+    monkeypatch.setattr("goals._scheduling.load_conversation_profile", lambda conversation_id: saved[conversation_id])
+    goal = with_plan(store, create(store, "goal-chat"))
+    runner = GoalRunner()
+    runtime = AgentRuntime(runner, extensions=[GoalRunExtension(store, enabled=lambda: True)])
+    scheduler = make_scheduler(store, runtime)
+    try:
+        await scheduler.tick()
+        await runtime.active_for_conversation(goal.conversation_id).wait()
+        await asyncio.gather(*(entry.completion for entry in scheduler.active("goals")))
+        store.claim_for_turn(goal.id, "turn")
+        choose(store, goal, "turn", action="continue")
+        store.finish_run(goal.id, "turn", "run-turn", "success")
+        saved["goal-chat"] = "second-agent"
+        await scheduler.tick()
+        await runtime.active_for_conversation(goal.conversation_id).wait()
+        assert [request.profile_id for request in runner.requests] == ["first-agent", "second-agent"]
+    finally:
+        await runtime.close()

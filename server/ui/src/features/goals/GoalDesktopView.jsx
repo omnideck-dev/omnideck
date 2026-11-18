@@ -3,7 +3,7 @@ import { useDesktopViewCommands, useVisibleViewIds } from '../desktop/DesktopVie
 import { useDesktopNavigationCommands } from '../navigation/DesktopNavigation.jsx';
 import { CONVERSATION_VIEW_ID } from '../navigation/desktopNavigationViews.js';
 import { useConversationCatalog } from '../conversation/catalog/ConversationCatalog.jsx';
-import { useConversationSessionState } from '../conversation/session/ConversationSession.jsx';
+import { useConversationSessionState, useSelectedProfileId } from '../conversation/session/ConversationSession.jsx';
 import { label as conversationLabel } from '../../components/conversationSections.js';
 import GoalDialog from './GoalDialog.jsx';
 import GoalPanel from './GoalPanel.jsx';
@@ -51,6 +51,7 @@ export default function GoalDesktopView({ view }) {
 function GoalConversationView({ view, conversationId }) {
     const [dialog, setDialog] = useState(null);
     const { isOffline } = useConversationSessionState();
+    const selectedProfileId = useSelectedProfileId();
     const { goalsByConversation } = useGoals();
     const { items } = useConversationCatalog();
     const navigation = useDesktopNavigationCommands();
@@ -70,7 +71,7 @@ function GoalConversationView({ view, conversationId }) {
             onEdit={() => setDialog({ mode: 'edit' })}
             onStartGoal={() => setDialog({ mode: 'start' })}
             onOpenChat={chatVisible ? undefined : () => navigation.openConversation(conversationId)} />
-        {dialog && <GoalDialog conversationId={conversationId} profileId={goal?.profile_id}
+        {dialog && <GoalDialog conversationId={conversationId} profileId={selectedProfileId}
             onClose={() => setDialog(null)} />}
     </>;
 }

@@ -6,6 +6,7 @@ import IconButton from '../../components/primitives/IconButton.jsx';
 import Popover from '../../components/primitives/Popover.jsx';
 import { goalStatus, isGoalOpen, nextUpStep, reasonLine } from './goalStatus.js';
 import { useGoals } from './GoalsState.jsx';
+import { useSelectedProfileId } from '../conversation/session/ConversationSession.jsx';
 import GoalStatus from './GoalStatus.jsx';
 import GoalHistory from './GoalHistory.jsx';
 import GoalReopenDialog from './GoalReopenDialog.jsx';
@@ -90,6 +91,7 @@ function MoreActions({ ended, disabled, onOpenHistory, onCancel }) {
 
 export default function GoalPanel({ conversationId, isOffline = false, onEdit, onStartGoal, onOpenChat }) {
     const { goalsByConversation, detailsByConversation, loadGoal, mutateGoal } = useGoals();
+    const selectedProfileId = useSelectedProfileId();
     const goal = goalsByConversation[conversationId];
     const detail = detailsByConversation[conversationId];
     const [loaded, setLoaded] = useState(false);
@@ -204,7 +206,7 @@ export default function GoalPanel({ conversationId, isOffline = false, onEdit, o
                 </div>
             </div>
             {reopening && <GoalReopenDialog onClose={() => setReopening(false)}
-                onSubmit={(text) => act('reopen', { text })} />}
+                onSubmit={(text) => act('reopen', { text, profile_id: selectedProfileId })} />}
         </section>
     );
 }

@@ -12,6 +12,7 @@ const state = vi.hoisted(() => ({
 }));
 vi.mock('../../conversation/session/ConversationSession.jsx', () => ({
     useConversationSessionState: () => state.session,
+    useSelectedProfileId: () => 'household-planner',
 }));
 vi.mock('../../conversation/catalog/ConversationCatalog.jsx', () => ({
     useConversationCatalog: () => ({

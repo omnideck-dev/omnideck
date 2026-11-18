@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from multidict import CIMultiDict
@@ -577,3 +577,61 @@ class TestGenerateTitle:
         assert load_conversation_metadata("c1") == {}
 
 
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("handler", [delete_conversation_handler, archive_conversation_handler])
+async def test_delete_and_archive_with_a_goal_run_return_409_with_the_goal_sentence(_conv_dir: Path, handler) -> None:
+    _seed("c1")
+    manager = MagicMock()
+    manager.active_for_conversation.return_value = object()
+    request = _make_request("c1", None, active_run_manager=manager)
+    request.app[GOAL_STORE_KEY].create("c1", "Plan the reunion")
+    resp = await handler(request)
+    assert resp.status == 409
+    assert json.loads(resp.body) == {"error": "This chat's goal is working. Pause the goal first, then try again."}
+    assert conversation_exists("c1") is True
+
+
+@pytest.mark.unit
+async def test_delete_of_a_goal_chat_writes_no_goal_file_and_clears_memory(_conv_dir: Path) -> None:
+    _seed("c1")
+    request = _make_request("c1", None)
+    store = request.app[GOAL_STORE_KEY]
+    goal = store.create("c1", "Plan the reunion")
+    saved = (_conv_dir / "c1" / "goals" / goal.id / "goal.json").read_text()
+    original = _store.delete_conversation
+
+    def checked_delete(conversation_id: str) -> bool:
+        assert (_conv_dir / "c1" / "goals" / goal.id / "goal.json").read_text() == saved
+        return original(conversation_id)
+
+    with patch("server._conversation_routes.delete_conversation", checked_delete):
+        resp = await delete_conversation_handler(request)
+    assert resp.status == 204
+    assert store.current("c1") is None and store.due() == [] and store.latest_goals() == []
+    assert not (_conv_dir / "c1").exists()
+
+
+@pytest.mark.unit
+async def test_archive_then_restore_leaves_the_goal_paused_and_open(_conv_dir: Path) -> None:
+    _seed("c1")
+    request = _make_request("c1", None)
+    store = request.app[GOAL_STORE_KEY]
+    goal = store.create("c1", "Plan the reunion")
+    assert (await archive_conversation_handler(request)).status == 204
+    assert store.current("c1") is None
+    assert (await unarchive_conversation_handler(request)).status == 204
+    restored = store.current("c1")
+    assert restored is not None and restored.id == goal.id and restored.paused
+    assert store.due() == []
+
+
+@pytest.mark.unit
+def test_archived_chat_error_says_restore_first(_conv_dir: Path) -> None:
+    from conversations import archive_conversation, ensure_conversation
+
+    _seed("c1")
+    archive_conversation("c1")
+    with pytest.raises(ValueError, match="This conversation is archived. Restore it first."):
+        ensure_conversation("c1", title="Plan", profile_id="assistant")

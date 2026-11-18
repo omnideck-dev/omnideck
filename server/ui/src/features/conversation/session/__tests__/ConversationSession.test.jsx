@@ -345,4 +345,21 @@ describe('ConversationSessionProvider', () => {
             + 'Context from Text Lab:\n{\n  "selection": "example"\n}',
         );
     });
+
+    it('a refresh keeps an unsent agent pick', async () => {
+        harness.controller.refreshActiveConversation.mockResolvedValue({ profileId: 'saved-agent' });
+        const { getSession } = renderSession();
+        act(() => { getSession().pickConversationProfile('picked-agent'); });
+        await act(async () => { await getSession().refreshActiveConversation(); });
+        expect(getSession().conversationProfileId).toBe('picked-agent');
+    });
+
+    it('a refresh sets the saved agent when there is no unsent pick', async () => {
+        harness.controller.refreshActiveConversation.mockResolvedValue({ profileId: 'saved-agent' });
+        const { getSession } = renderSession();
+        act(() => { getSession().pickConversationProfile('picked-agent'); });
+        await act(async () => { await getSession().sendMessage('Go ahead', null, 'picked-agent'); });
+        await act(async () => { await getSession().refreshActiveConversation(); });
+        expect(getSession().conversationProfileId).toBe('saved-agent');
+    });
 });

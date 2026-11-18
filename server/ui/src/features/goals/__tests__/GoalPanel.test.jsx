@@ -5,6 +5,8 @@ import GoalPanel from '../GoalPanel.jsx';
 import { GoalsTestProvider } from './goalTestProviders.jsx';
 import { formatRunTime } from '../goalStatus.js';
 
+vi.mock('../../conversation/session/ConversationSession.jsx', () => ({ useSelectedProfileId: () => 'household-planner' }));
+
 const FUTURE = '2099-10-06T15:00:00Z';
 const PAST = '2020-10-06T15:00:00Z';
 const wake = (at = FUTURE, reason = 'planned') => ({ kind: 'wake', id: 'w1', at, reason });
@@ -232,7 +234,7 @@ describe('goal detail view', () => {
         expect(screen.getByRole('button', { name: 'Start a new goal…' })).toBeVisible();
     });
 
-    it('keeps Reopen and run off until the user says what still needs doing', async () => {
+    it('keeps Reopen and run off until the user says what still needs doing, and sends the dropdown agent', async () => {
         currentGoal.next = { kind: 'done', outcome: 'Calendar shared.' };
         setup();
         fireEvent.click(await screen.findByRole('button', { name: 'Reopen…' }));
@@ -246,7 +248,7 @@ describe('goal detail view', () => {
         expect(submit).toBeEnabled();
         fireEvent.click(submit);
         await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-        expect(posts()).toEqual([{ action: 'reopen', body: { goal_id: 'g1', text: 'Add the swim lessons too.' } }]);
+        expect(posts()).toEqual([{ action: 'reopen', body: { goal_id: 'g1', text: 'Add the swim lessons too.', profile_id: 'household-planner' } }]);
     });
 
     it('leaves the goal ended when the Reopen dialog is cancelled', async () => {

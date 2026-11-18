@@ -14,6 +14,39 @@ import SoftwareUpdateStatus from './SoftwareUpdateStatus.jsx';
 import Select from './primitives/Select.jsx';
 import { useIsHosted } from '../features/app/OmnideckHost.jsx';
 
+const EARLY_ACCESS_STORAGE_KEY = 'omnideck_early_access';
+const EARLY_ACCESS_CODE = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a'];
+const EARLY_ACCESS_ROWS = new Set(['goals_enabled']);
+
+function readEarlyAccess() {
+    try {
+        return localStorage.getItem(EARLY_ACCESS_STORAGE_KEY) === 'true';
+    } catch {
+        return false;
+    }
+}
+
+function useEarlyAccess() {
+    const [unlocked, setUnlocked] = useState(readEarlyAccess);
+    useEffect(() => {
+        let position = 0;
+        const onKeyDown = (event) => {
+            const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+            if (key === EARLY_ACCESS_CODE[position]) position += 1;
+            else position = key === EARLY_ACCESS_CODE[0] ? 1 : 0;
+            if (position < EARLY_ACCESS_CODE.length) return;
+            position = 0;
+            setUnlocked(true);
+            try {
+                localStorage.setItem(EARLY_ACCESS_STORAGE_KEY, 'true');
+            } catch { /* Storage can be unavailable. */ }
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, []);
+    return unlocked;
+}
+
 export default function SystemSettings() {
     const { providersHook, refreshFeatures } = useAppData();
     const { providers } = providersHook;
@@ -25,6 +58,8 @@ export default function SystemSettings() {
     // installer behind it: there is nothing for these settings to act on, and
     // updating is done with the command line tool instead.
     const hosted = useIsHosted();
+    const earlyAccess = useEarlyAccess();
+    const showsRow = (key) => !EARLY_ACCESS_ROWS.has(key) || earlyAccess || Boolean(settings[key]);
 
     useEffect(() => {
         async function init() {
@@ -176,14 +211,14 @@ export default function SystemSettings() {
                     />
                 </label>
 
-                <label className={styles.settingRow} data-testid="goals-toggle">
+                {showsRow('goals_enabled') && <label className={styles.settingRow} data-testid="goals-toggle">
                     <div className={styles.settingIcon}><i className="bi bi-bullseye" aria-hidden="true" /></div>
                     <div className={styles.settingInfo}>
                         <span className={styles.settingTitle}>Goals</span>
                         <span className={styles.settingDesc}>Let chats pursue goals with editable plans and scheduled returns. Turning Goals off stops all goal runs and alarms. Goals pick up where they left off when you turn it back on.</span>
                     </div>
                     <ToggleSwitch checked={!!settings.goals_enabled} onChange={(event) => updateSetting('goals_enabled', event.target.checked)} aria-label="Goals" />
-                </label>
+                </label>}
 
                 <div className={styles.groupFootnote}>
                     Experimental features are early access and may change, break, or be removed without notice. Backward compatibility is not guaranteed.
