@@ -174,5 +174,23 @@ async def test_a_failing_event_observer_does_not_break_the_run():
         await runtime.close()
 
 
+async def test_queued_message_keeps_its_model_text():
+    runner = WorkingRunner()
+    runtime = AgentRuntime(runner)
+    try:
+        handle = await runtime.send(request())
+        await runner.started.wait()
+        queued = await runtime.send(AgentRunRequest(
+            "chat", "Saturday", None, "assistant", model_text="[Answers to your goal questions]",
+        ))
+        assert isinstance(queued, QueuedMessage)
+        control = handle._session.root_context.control
+        assert control.model_texts[queued.nudge_id] == "[Answers to your goal questions]"
+        assert [message.content for message in control.nudges] == ["Saturday"]
+    finally:
+        runner.release.set()
+        await runtime.close()
+
+
 def test_user_message_nudge_id_defaults_to_none():
     assert UserMessagePayload(type="user_message", content="hi").nudge_id is None

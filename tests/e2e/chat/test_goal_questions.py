@@ -42,14 +42,14 @@ def test_goal_wakeup_instructions_stay_hidden_live_and_after_reload(goal_ui):
     assert len(wakeups) == 2
     users = page.get_by_test_id('message-user')
     expect(users).to_have_count(2)
-    expect(users.filter(has_text='[System activity')).to_have_count(0)
-    expect(view.dividers('run')).to_have_count(1)
+    expect(users.filter(has_text='[System notice')).to_have_count(0)
+    expect(view.dividers('run')).to_have_count(2)
     expect(page.get_by_test_id('goal-wakeup')).to_have_count(0)
     page.reload()
     expect(page.get_by_test_id('message-assistant').filter(has_text=answer)).to_be_visible()
     expect(users).to_have_count(2)
-    expect(users.filter(has_text='[System activity')).to_have_count(0)
-    expect(view.dividers('run')).to_have_count(1)
+    expect(users.filter(has_text='[System notice')).to_have_count(0)
+    expect(view.dividers('run')).to_have_count(2)
 
 
 def test_goal_question_carousel_submits_all_drafts_and_preserves_transcript(goal_ui, output_path: str) -> None:
@@ -133,7 +133,7 @@ def test_goal_question_carousel_submits_all_drafts_and_preserves_transcript(goal
     assert current['questions'][0]['answers'][0]['answer'] == 'Aetna Dental PPO'
     assert current['questions'][0]['status'] == 'open'
     assert current['questions'][1]['answers'][0]['answer'] == 'Within 10 miles'
-    expect(page.get_by_test_id('message-user').filter(has_text='[System activity')).to_have_count(0)
+    expect(page.get_by_test_id('message-user').filter(has_text='[System notice')).to_have_count(0)
     view.background(read_goal() + update_questions(
         {'id': 'insurance', 'status': 'resolved'}, {'id': 'travel', 'status': 'withdrawn'},
     ) + update_goal(summary='Insurance: Aetna Dental PPO. Search the local area.') + say('The plan is recorded.'))
@@ -255,7 +255,8 @@ def test_goal_layout_keeps_editor_actions_and_long_questions_within_viewport(goa
     view.close()
     page.get_by_role('button', name='Conversation details', exact=True).click()
     expect(page.get_by_role('region', name='Conversation details')).to_be_visible()
-    expect(page.get_by_role('region', name='Conversation details').get_by_role('button', name='Open conversation artifacts')).to_be_visible()
+    expect(page.get_by_role('region', name='Conversation details')).to_contain_text('Agent: ')
+    expect(page.get_by_role('button', name='Artifacts in this chat', exact=True)).to_be_visible()
 
 
 def test_goal_tab_follows_selected_chat_restores_and_keeps_chat_draft(goal_ui, output_path: str) -> None:
@@ -367,44 +368,6 @@ def test_goal_headline_shows_each_status_with_long_plan_text(goal_ui, output_pat
     check('paused', 'Paused')
 
 
-def test_goal_lifecycle_dividers_survive_reload_and_fit_narrow_chat(goal_ui, output_path: str) -> None:
-    view, page = goal_ui, goal_ui.page
-    objective = 'Keep our community calendar current, including school dates, library events, and neighborhood meetings'
-    assigned = page.request.post(view.base, data={'objective': objective, 'profile_id': view.profile_id})
-    assert assigned.ok
-    view.idle()
-    assert page.request.post(view.base + '/pause', data={}).ok
-    assert page.request.post(view.base + '/pause', data={}).status == 409
-    expect(view.dividers('started')).to_contain_text('Goal started', timeout=15000)
-    expect(view.dividers('paused')).to_have_count(1)
-    assert page.request.post(view.base + '/cancel', data={}).ok
-    expect(view.dividers('cancelled')).to_contain_text('Goal cancelled', timeout=15000)
-    labels = ['Goal started', 'Waiting for you', 'Paused', 'Goal cancelled']
-    expect(view.dividers()).to_have_count(len(labels))
-    for index, label in enumerate(labels):
-        expect(view.dividers().nth(index)).to_contain_text(label)
-    started = view.dividers('started')
-    time = started.locator('time')
-    expect(time).to_have_css('opacity', '0')
-    started.hover()
-    expect(time).to_have_css('opacity', '1')
-    page.mouse.move(0, 0)
-    before = view.dividers().all_text_contents()
-    page.screenshot(path=str(Path(output_path) / 'goal-lifecycle-desktop.png'))
-    page.reload()
-    expect(view.dividers()).to_have_count(len(labels))
-    assert view.dividers().all_text_contents() == before
-    page.set_viewport_size({'width': 390, 'height': 844})
-    collapse = page.get_by_role('button', name='Collapse sidebar', exact=True)
-    if collapse.is_visible():
-        collapse.click()
-    started.scroll_into_view_if_needed()
-    box = started.bounding_box()
-    assert box['x'] >= 0 and box['x'] + box['width'] <= 390
-    assert started.evaluate('(node) => node.scrollWidth <= node.clientWidth')
-    page.screenshot(path=str(Path(output_path) / 'goal-lifecycle-mobile.png'))
-
-
 def test_scheduled_return_uses_one_wake_record_live_and_after_reload(goal_ui) -> None:
     view, page = goal_ui, goal_ui.page
     view.assign('Keep the calendar current')
@@ -420,7 +383,7 @@ def test_scheduled_return_uses_one_wake_record_live_and_after_reload(goal_ui) ->
     expect(returned.last).to_contain_text(answer)
     wakes = [e for e in view.events() if e['type'] == 'goal' and e['data']['kind'] == 'wakeup' and e['data']['wake_id'] == wake_id]
     assert len(wakes) == 1 and wakes[0]['data']['reason'] == 'planned'
-    assert view.transitions() == ['started', 'run', 'waiting', 'scheduled', 'run', 'waiting']
+    assert view.transitions() == ['run', 'waiting', 'scheduled', 'run', 'waiting']
     page.reload()
     expect(returned).to_have_count(1)
     expect(page.get_by_test_id('message-assistant').filter(has_text=answer)).to_be_visible()

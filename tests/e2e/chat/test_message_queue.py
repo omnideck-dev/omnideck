@@ -5,6 +5,7 @@ from playwright.sync_api import Page, expect
 from tests.e2e._protocol import bash, say
 from tests.e2e._runtime import delete_conversation, resume
 from tests.e2e.pages import ChatView
+from tests.e2e.pages.goals_view import goal_conversation
 
 QUEUE_TITLE = "Queued for the agent's next step"
 
@@ -94,3 +95,24 @@ def test_stop_returns_queued_text_to_the_message_box(page: Page):
     finally:
         if captured:
             delete_conversation(captured["conversation_id"])
+
+
+def test_answers_return_to_the_card_when_stop_ends_the_run(page: Page):
+    with goal_conversation(page) as view:
+        view.assign()
+        view.ask()
+        view.composer.fill(bash("sleep 8") + say("Still checking."))
+        view.questions.get_by_role("button", name="Hide", exact=True).click()
+        page.get_by_role("button", name="Send message", exact=True).click()
+        expect(page.get_by_test_id("chat-stop-btn")).to_be_visible(timeout=8_000)
+        page.get_by_role("button", name="Show goal questions", exact=True).click()
+        page.get_by_role("button", name="Saturday", exact=True).click()
+        page.get_by_role("button", name="Send answer", exact=True).click()
+        strip = page.get_by_role("region", name=QUEUE_TITLE)
+        expect(strip).to_contain_text("Answers to 1 question")
+        expect(view.questions).not_to_contain_text("Which day works for you?")
+        page.get_by_test_id("chat-stop-btn").click()
+        expect(strip).to_have_count(0, timeout=20_000)
+        expect(view.questions).to_contain_text("Which day works for you?")
+        expect(page.get_by_role("button", name="Saturday", exact=True)).to_have_attribute("aria-pressed", "true")
+        assert all(not question["answers"] for question in view.current()["questions"])

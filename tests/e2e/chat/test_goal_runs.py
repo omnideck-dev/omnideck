@@ -3,8 +3,8 @@
 import pytest
 from playwright.sync_api import Page, expect
 
-from tests.e2e._protocol import provider_fail, say, slow
-from tests.e2e._runtime import delete_conversation, run_turn, update_conversation
+from tests.e2e._protocol import bash, provider_fail, say, slow
+from tests.e2e._runtime import agent_profile
 from tests.e2e.pages.goals_view import (
     choose, future, goal_conversation, read_goal, update_goal, update_questions, work_on,
 )
@@ -35,20 +35,7 @@ def test_unrelated_message_keeps_goal_waiting(goal_ui):
     expect(needs_you.get_by_test_id('recent-item')).to_have_count(1)
     expect(needs_you.get_by_test_id('recent-section-label')).to_contain_text('Needs you')
     expect(needs_you.get_by_role('button', name='Needs you')).to_have_count(0)
-    other = 'e2e-goal-filter-' + view.conversation_id
-    run_turn(other, say('Nothing to plan here.'))
-    update_conversation(other, title='A chat without a goal')
-    try:
-        page.reload()
-        items = sidebar.get_by_test_id('recent-item')
-        expect(items.filter(has_text='A chat without a goal')).to_have_count(1)
-        sidebar.get_by_test_id('recent-filter').click()
-        page.get_by_role('menuitemradio', name='With a goal').click()
-        expect(items.filter(has_text='A chat without a goal')).to_have_count(0)
-        expect(items).to_have_count(sidebar.get_by_test_id('goal-status').count())
-        sidebar.get_by_role('button', name='Clear Goals filter').click()
-    finally:
-        delete_conversation(other)
+    expect(sidebar.get_by_test_id('recent-filter')).to_have_count(0)
 
 
 def test_failed_goal_run_shows_error(goal_ui):
@@ -61,7 +48,7 @@ def test_failed_goal_run_shows_error(goal_ui):
     expect(view.header).to_contain_text('Stopped by an error')
     expect(view.dividers('error')).to_have_count(1)
     expect(view.dividers('error')).to_contain_text('Stopped by an error')
-    assert view.transitions() == ['started', 'run', 'waiting', 'run', 'error']
+    assert view.transitions() == ['run', 'waiting', 'run', 'error']
     expect(page.locator('[data-section="needs-you"]')).to_contain_text('Stopped by an error')
     view.open()
     error = view.details.get_by_test_id('goal-error')
@@ -82,7 +69,7 @@ def test_failed_goal_run_shows_error(goal_ui):
     expect(view.details.get_by_test_id('goal-error')).to_have_count(0)
     expect(view.dividers('error')).to_have_count(1)
     expect(view.dividers('run')).to_have_count(2)
-    assert view.transitions() == ['started', 'run', 'waiting', 'run', 'error', 'run', 'waiting']
+    assert view.transitions() == ['run', 'waiting', 'run', 'error', 'run', 'waiting']
 
 
 def test_stop_keeps_goal_schedule(goal_ui):
@@ -135,6 +122,7 @@ def test_pause_and_resume_keep_future_schedule(goal_ui):
     view, page = goal_ui, goal_ui.page
     view.assign()
     scheduled = view.schedule('Check the library calendar for new dates.', at=future(2 * 24 * 60))
+    before = view.transitions()
     view.open()
     expect(view.details.get_by_role('button', name='Run now', exact=True)).to_be_visible()
     view.details.get_by_role('button', name='Pause', exact=True).click()
@@ -150,9 +138,9 @@ def test_pause_and_resume_keep_future_schedule(goal_ui):
     expect(view.details.get_by_role('button', name='Run now', exact=True)).to_be_visible()
     page.wait_for_timeout(1500)
     assert view.current()['last_run_id'] == scheduled['last_run_id']
-    expect(view.dividers('paused')).to_have_count(1)
-    expect(view.dividers('resumed')).to_have_count(1)
-    assert view.transitions()[-2:] == ['paused', 'resumed']
+    assert view.transitions() == before
+    view.chat()
+    expect(view.dividers()).to_have_count(len(before))
 
 
 def test_run_now_runs_the_scheduled_step_now(goal_ui):
@@ -208,8 +196,7 @@ def test_reopen_done_goal_sends_text_and_runs_again(goal_ui):
     expect(dialog).to_have_count(0)
     view.chat()
     expect(page.get_by_test_id('message-user').filter(has_text=request)).to_have_count(1, timeout=10000)
-    expect(view.dividers('reopened')).to_have_count(1)
-    expect(view.dividers('reopened')).to_contain_text('Goal reopened')
+    expect(view.dividers('reopened')).to_have_count(0)
     expect(page.get_by_test_id('message-assistant').filter(has_text='I will book the band now.')).to_be_visible(timeout=15000)
     expect(page.get_by_test_id('message-assistant').filter(has_text='The band is booked.')).to_be_visible(timeout=15000)
     reopened = view.idle()
@@ -217,5 +204,68 @@ def test_reopen_done_goal_sends_text_and_runs_again(goal_ui):
     assert reopened['next'] == {'kind': 'wait', 'question_ids': []}
     assert [step['id'] for step in reopened['plan']] == ['pavilion', 'band']
     assert reopened['history_count'] > done['history_count']
-    assert view.transitions()[-4:] == ['completed', 'reopened', 'run', 'waiting']
+    assert view.transitions()[-3:] == ['completed', 'run', 'waiting']
     expect(view.header).to_contain_text('Waiting for you')
+
+
+def test_goal_run_uses_the_agent_last_sent_in_the_chat(goal_ui):
+    view, page = goal_ui, goal_ui.page
+    view.assign()
+    with agent_profile() as writer:
+        response = page.request.post('/api/chat', data={
+            'conversation_id': view.conversation_id, 'profile_id': writer['id'],
+            'message': read_goal() + work_on(say('Wake run reply.')) + choose('continue', 'Running the step next.')
+            + say('Switching agents.'),
+        })
+        assert response.ok, response.text()
+        view.until(lambda: view.transitions().count('run') == 2)
+        view.idle()
+        expect(page.get_by_test_id('message-assistant').filter(has_text='Wake run reply.')).to_be_visible(timeout=15000)
+        assert view.root_profiles()[-2:] == [writer['name'], writer['name']]
+
+
+def test_retry_works_after_picking_another_agent(goal_ui):
+    view, page = goal_ui, goal_ui.page
+    view.assign()
+    usual = view.root_profiles()[0]
+    with agent_profile() as writer:
+        response = page.request.post('/api/chat', data={
+            'conversation_id': view.conversation_id, 'profile_id': writer['id'],
+            'message': read_goal() + work_on(say('Booked the hall.')) + choose('schedule', 'Booking later.', at=future(60))
+            + say('I will book the hall later.'),
+        })
+        assert response.ok, response.text()
+    view.idle()
+    assert page.request.post(view.base + '/run', data={}).ok
+    failed = view.wait(lambda g: g['next']['kind'] == 'error')
+    assert failed['claim'] is None
+    page.reload()
+    page.get_by_role('combobox', name='Agent profile').click()
+    page.get_by_role('option', name=usual, exact=True).click()
+    view.send('', 'Using the usual agent now.')
+    view.open()
+    view.details.get_by_test_id('goal-error').get_by_role('button', name='Retry', exact=True).click()
+    expect(page.get_by_test_id('message-assistant').filter(has_text='Booked the hall.')).to_be_visible(timeout=15000)
+    retried = view.idle()
+    assert retried['next']['kind'] != 'error'
+    assert view.root_profiles()[-1] == usual
+
+
+def test_wake_due_during_a_chat_turn_runs_after_it(goal_ui):
+    view, page = goal_ui, goal_ui.page
+    view.assign()
+    view.send(read_goal() + work_on(say('Checked the calendar on schedule.'))
+              + choose('schedule', 'Checking soon.', at=future(4 / 60)), 'I will check in a moment.')
+    view.composer.fill(bash('sleep 8') + say('Finished the long reply.'))
+    page.get_by_role('button', name='Send message', exact=True).click()
+    expect(page.get_by_test_id('chat-stop-btn')).to_be_visible(timeout=8000)
+    page.wait_for_timeout(5000)
+    assert view.transitions().count('run') == 1
+    expect(page.get_by_test_id('message-assistant').filter(has_text='Finished the long reply.')).to_be_visible(timeout=20000)
+    expect(page.get_by_test_id('message-assistant').filter(has_text='Checked the calendar on schedule.')).to_be_visible(timeout=20000)
+    view.idle()
+    events = view.events()
+    finished = max(index for index, e in enumerate(events)
+                   if e['type'] == 'iteration' and 'Finished the long reply.' in (e.get('content') or ''))
+    wakes = [index for index, e in enumerate(events) if e['type'] == 'goal' and e['data']['kind'] == 'wakeup']
+    assert len(wakes) == 2 and wakes[-1] > finished

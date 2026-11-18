@@ -57,9 +57,9 @@ def goal_conversation(page: Page):
     finally:
         page.unroute_all(behavior='ignoreErrors')
         page.request.put('/api/settings', data={'goals_enabled': True})
-        page.request.post(view.base + '/cancel', data={})
+        page.request.post(view.base + '/pause', data={})
         page.request.post(f'/api/chat/stop?conversation_id={view.conversation_id}')
-        page.request.delete(f'/api/conversations/sessions/{view.conversation_id}')
+        view.delete_chat()
         page.request.put('/api/settings', data={'goals_enabled': settings.get('goals_enabled', False)})
 
 
@@ -80,8 +80,8 @@ class GoalsView:
 
     @property
     def header(self):
-        """The chat header's goal status button."""
-        return self.page.get_by_role('button', name='Open goal details', exact=True)
+        """The chat header's goal button."""
+        return self.page.get_by_test_id('goal-headline')
 
     @property
     def questions(self):
@@ -107,12 +107,31 @@ class GoalsView:
             assert time.monotonic() < deadline, f'Goal did not reach expected state: {goal}'
             self.page.wait_for_timeout(100)
 
+    def until(self, check, timeout=15):
+        """Poll ``check`` until it returns something true."""
+        deadline = time.monotonic() + timeout
+        while True:
+            result = check()
+            if result:
+                return result
+            assert time.monotonic() < deadline, 'Condition was not met in time.'
+            self.page.wait_for_timeout(100)
+
+    def set_goals(self, enabled: bool):
+        response = self.page.request.put('/api/settings', data={'goals_enabled': enabled})
+        assert response.ok, response.text()
+
+    def root_profiles(self):
+        """The agent profile of each root run in the chat, oldest first."""
+        return [e['profile_name'] for e in self.events()
+                if e['type'] == 'agent_started' and e.get('parent_agent_id') is None]
+
     def idle(self, timeout=15):
         """Wait until a run has happened and no run owns the goal or is due right now."""
         def settled(goal):
             due = goal['next']['kind'] == 'wake' and not goal['paused'] and (
                 datetime.fromisoformat(goal['next']['at']) <= datetime.now(timezone.utc))
-            return goal['last_run_id'] and not goal['running'] and goal['claim'] is None and not due
+            return goal['last_run_id'] and goal['claim'] is None and not due
         return self.wait(settled, timeout)
 
     def events(self):
@@ -121,9 +140,18 @@ class GoalsView:
         return response.json()['events']
 
     def transitions(self):
-        """Goal divider kinds in transcript order, with goal runs as 'run'."""
+        """Goal event kinds in transcript order, with goal runs as 'run'."""
         return [e['data']['kind'] if e['data']['kind'] != 'wakeup' else 'run'
-                for e in self.events() if e['type'] == 'goal' and e['data']['kind'] != 'state_notice']
+                for e in self.events() if e['type'] == 'goal']
+
+    def delete_chat(self):
+        """Delete the chat, retrying while a run that is ending still holds it."""
+        deadline = time.monotonic() + 15
+        while True:
+            response = self.page.request.delete(f'/api/conversations/sessions/{self.conversation_id}')
+            if response.ok or response.status == 404 or time.monotonic() > deadline:
+                return response
+            self.page.wait_for_timeout(200)
 
     def shown(self):
         """Goal divider kinds as drawn in the chat, top to bottom."""

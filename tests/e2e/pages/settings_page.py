@@ -123,6 +123,12 @@ class SettingsPage:
         self.page.locator("[class*='settingRow']").first.wait_for(state="visible")
         return self
 
+    def unlock_early_access(self) -> "SettingsPage":
+        """Type the early access code so early access rows show."""
+        for key in ("ArrowUp", "ArrowUp", "ArrowDown", "ArrowDown", "ArrowLeft", "ArrowRight", "ArrowLeft", "ArrowRight", "b", "a"):
+            self.page.keyboard.press(key)
+        return self
+
     def goto_integrations(self) -> "SettingsPage":
         """Open Settings and switch to the Integrations tab."""
         self.goto()

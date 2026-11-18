@@ -321,3 +321,28 @@ async def test_wake_runs_use_the_chat_saved_profile_at_each_wake(store: GoalStor
         assert [request.profile_id for request in runner.requests] == ["first-agent", "second-agent"]
     finally:
         await runtime.close()
+
+
+class MissingProfileRunner(GoalRunner):
+    async def run(self, request: AgentRunRequest, session: RunSession) -> ExecutionResult:
+        self.requests.append(request)
+        raise ValueError(f"Agent profile '{request.profile_id}' not found")
+
+
+async def test_wake_run_with_a_deleted_profile_sets_error(store: GoalStore, monkeypatch) -> None:
+    monkeypatch.setattr("goals._scheduling.load_conversation_profile", lambda _conversation_id: "deleted-agent")
+    goal = with_plan(store, create(store, "goal-chat"))
+    runner = MissingProfileRunner()
+    runtime = AgentRuntime(runner, extensions=[GoalRunExtension(store, enabled=lambda: True)])
+    try:
+        await make_scheduler(store, runtime).tick()
+        handle = runtime.active_for_conversation(goal.conversation_id)
+        if handle is not None:
+            await handle.wait()
+        current = store.get(goal.id)
+        assert [request.profile_id for request in runner.requests] == ["deleted-agent"]
+        assert current.next.kind == "error"
+        assert "deleted-agent" in current.next.message
+        assert current.claim is None
+    finally:
+        await runtime.close()

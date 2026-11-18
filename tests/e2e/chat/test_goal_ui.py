@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from playwright.sync_api import Page, expect
 
-from tests.e2e._protocol import say, slow
+from tests.e2e._protocol import bash, say, slow
 from tests.e2e.pages import SettingsPage
 from tests.e2e.pages.goals_view import (
     choose, goal_conversation, read_goal, update_goal, update_questions, work_on,
@@ -33,9 +33,10 @@ def test_create_goal_from_composer_entry_and_cancel_unsaved_dialog(goal_ui, entr
     view.assign(objective, entry)
     expect(view.header).to_contain_text('Waiting for you')
     expect(page.get_by_test_id('view-tab-goal')).to_have_count(0)
-    assert view.transitions() == ['started', 'run', 'waiting']
+    assert view.transitions() == ['run', 'waiting']
     assert not any(e['type'] == 'user_message' and e['content'].startswith('/goal') for e in view.events())
-    expect(view.dividers('started')).to_contain_text(objective)
+    expect(view.dividers('run')).to_have_count(1)
+    expect(view.dividers('started')).to_have_count(0)
     page.get_by_role('button', name='Add to chat', exact=True).click()
     expect(page.get_by_role('menuitem', name='Open goal /goal', exact=True)).to_be_visible()
     page.keyboard.press('Escape')
@@ -74,6 +75,12 @@ def test_goals_off_and_on_leaves_goals_unchanged(goal_ui):
     page.keyboard.press('Escape')
     expect(view.header).to_have_count(0)
     SettingsPage(page).goto_system()
+    page.evaluate("localStorage.removeItem('omnideck_early_access')")
+    page.reload()
+    SettingsPage(page).goto_system()
+    expect(page.get_by_test_id('goals-toggle')).to_have_count(0)
+    SettingsPage(page).unlock_early_access()
+    expect(page.get_by_test_id('goals-toggle')).to_be_visible()
     with page.expect_response(
         lambda response: response.url.endswith('/api/settings') and response.request.method == 'PUT'
     ) as enabled_response:
@@ -110,16 +117,15 @@ def test_goal_controls_pause_resume_and_confirm_cancel(goal_ui):
     expect(view.details.get_by_role('button', name='Reopen…', exact=True)).to_be_visible()
     expect(view.details.get_by_role('button', name='Start a new goal…', exact=True)).to_be_visible()
     expect(view.header).to_contain_text('Cancelled')
-    expected = ['started', 'run', 'waiting', 'paused', 'resumed', 'run', 'waiting', 'cancelled']
+    expected = ['run', 'waiting', 'run', 'waiting']
     assert view.transitions() == expected
-    shown = ['started', 'waiting', 'paused', 'resumed', 'run', 'waiting', 'cancelled']
     view.chat()
-    expect(view.dividers()).to_have_count(len(shown))
-    assert view.shown() == shown
+    expect(view.dividers()).to_have_count(len(expected))
+    assert view.shown() == expected
     page.reload()
-    expect(view.dividers()).to_have_count(len(shown))
-    assert view.shown() == shown
-    expect(view.dividers('cancelled')).to_contain_text('Goal cancelled')
+    expect(view.dividers()).to_have_count(len(expected))
+    assert view.shown() == expected
+    expect(view.header).to_contain_text('Cancelled')
 
 
 def test_goal_editor_saves_plan_and_recovers_real_revision_conflict(goal_ui):
@@ -147,29 +153,31 @@ def test_goal_editor_saves_plan_and_recovers_real_revision_conflict(goal_ui):
     expect(view.details).to_contain_text('Coordinate the spring picnic')
     view.details.get_by_role('button', name='Edit', exact=True).click()
     dialog.get_by_label('What would you like done?').fill('My unsaved picnic changes')
-    response = page.request.patch(view.base, data={'expected_revision': saved['revision'], 'objective': 'Picnic moved to June'})
-    assert response.ok
+    view.background(read_goal() + update_goal(plan=[{'id': step_ids[0], 'status': 'done'}, {'id': step_ids[1]}])
+                    + say('The park is booked.'))
+    assert view.current()['revision'] > saved['revision']
     dialog.get_by_role('button', name='Save changes', exact=True).click()
     expect(dialog).to_contain_text('Your changes are still here')
     expect(dialog.get_by_label('What would you like done?')).to_have_value('My unsaved picnic changes')
     expect(dialog.get_by_role('button', name='Save changes', exact=True)).to_be_disabled()
     dialog.get_by_role('button', name='Load latest version', exact=True).click()
-    expect(dialog.get_by_label('What would you like done?')).to_have_value('Picnic moved to June')
+    expect(dialog.get_by_label('What would you like done?')).to_have_value('Coordinate the spring picnic')
     dialog.get_by_label('What would you like done?').fill('Finalize the June picnic')
     dialog.get_by_role('button', name='Save changes', exact=True).click()
     expect(dialog).to_have_count(0)
-    assert [step['id'] for step in view.current()['plan']] == step_ids
-    assert view.current()['objective'] == 'Finalize the June picnic'
+    final = view.current()
+    assert [step['id'] for step in final['plan']] == step_ids
+    assert final['plan'][0]['status'] == 'done'
+    assert final['objective'] == 'Finalize the June picnic'
 
 
-def test_goal_dialog_retries_failed_load_and_failed_creation_without_losing_input(goal_ui):
+def test_goal_dialog_retries_failed_creation_without_losing_input(goal_ui):
     view, page = goal_ui, goal_ui.page
-    failures = {'GET': 1, 'POST': 1}
+    failures = {'POST': 1}
 
     def fail_once(route):
-        method = route.request.method
-        if failures.get(method, 0):
-            failures[method] -= 1
+        if failures.get(route.request.method, 0):
+            failures[route.request.method] -= 1
             route.fulfill(status=503, json={'error': 'Temporary goal service failure'})
         else:
             route.continue_()
@@ -177,10 +185,6 @@ def test_goal_dialog_retries_failed_load_and_failed_creation_without_losing_inpu
     page.route('**' + view.base, fail_once)
     page.get_by_role('button', name='Add to chat', exact=True).click()
     page.get_by_role('menuitem', name='Start a goal… /goal', exact=True).click()
-    failed = page.get_by_role('dialog', name='Start a goal', exact=True)
-    expect(failed).to_contain_text('Could not load')
-    expect(page.get_by_role('button', name='Start goal', exact=True)).to_have_count(0)
-    failed.get_by_role('button', name='Retry', exact=True).click()
     dialog = page.get_by_role('dialog', name='Start a goal', exact=True)
     dialog.get_by_label('What would you like done?').fill('Plan a neighborhood cleanup')
     dialog.get_by_role('button', name='Start goal', exact=True).click()
@@ -190,7 +194,7 @@ def test_goal_dialog_retries_failed_load_and_failed_creation_without_losing_inpu
     dialog.get_by_role('button', name='Start goal', exact=True).click()
     expect(dialog).to_have_count(0)
     view.idle()
-    assert view.transitions().count('started') == 1
+    assert view.transitions().count('run') == 1
 
 
 def test_goal_control_failure_can_be_retried_without_duplicate_transition(goal_ui):
@@ -204,7 +208,9 @@ def test_goal_control_failure_can_be_retried_without_duplicate_transition(goal_u
     view.details.get_by_role('button', name='Pause', exact=True).click()
     view.wait(lambda g: g['paused'])
     expect(view.details).not_to_contain_text('Pause temporarily unavailable')
-    assert view.transitions().count('paused') == 1
+    history = page.request.get(view.base + '/history', params={'goal_id': view.current()['id']}).json()['entries']
+    assert sum(entry['summary'] == 'Paused the goal.' for entry in history) == 1
+    assert 'paused' not in view.transitions()
 
 
 @pytest.mark.parametrize('paused', [False, True])
@@ -271,17 +277,21 @@ def test_answers_during_active_goal_are_delivered_to_the_same_run(goal_ui):
     page.get_by_role('button', name='Send message', exact=True).click()
     expect(view.questions).to_be_visible(timeout=10000)
     expect(page.get_by_test_id('chat-stop-btn')).to_be_visible()
+    expect(page.get_by_role('button', name='Send answer', exact=True)).to_have_count(0)
     running = view.current()['last_run_id']
     page.get_by_role('button', name='Saturday', exact=True).click()
+    expect(page.get_by_test_id('chat-stop-btn')).to_have_count(0)
     with page.expect_response(lambda r: r.request.method == 'POST' and r.url.endswith('/goal/answers')) as sent:
         page.get_by_role('button', name='Send answer', exact=True).click()
     assert sent.value.status == 202, sent.value.text()
     expect(page.get_by_role('region', name="Queued for the agent's next step")).to_contain_text('Answers to 1 question')
-    expect(view.questions).to_contain_text("Queued for the agent's next step")
+    expect(view.questions).to_have_count(0)
+    expect(page.get_by_role('button', name='Send answer', exact=True)).to_have_count(0)
+    expect(page.get_by_test_id('chat-stop-btn')).to_be_visible()
     expect(page.locator("[role='region'][aria-label='Notifications']")).not_to_contain_text('sent')
     expect(page.get_by_test_id('goal-question-answer').filter(has_text='Saturday')).to_be_visible(timeout=40000)
     expect(page.get_by_role('region', name="Queued for the agent's next step")).to_have_count(0)
-    view.wait(lambda g: not g['running'] and g['claim'] is None, timeout=25)
+    view.wait(lambda g: g['claim'] is None, timeout=25)
     answers = [e for e in view.events() if e['type'] == 'user_message' and e.get('context')]
     assert len(answers) == 1 and answers[0]['is_nudge'] is True and answers[0]['nudge_id']
     assert view.current()['last_run_id'] == running
@@ -312,18 +322,18 @@ def test_fake_provider_drives_goal_lifecycle_transcript_and_previous_goals(goal_
     expect(page.get_by_test_id('message-assistant').filter(has_text='I will return to verify the booking.')).to_be_visible()
     expect(view.dividers('scheduled')).to_have_count(1)
     expect(view.dividers('scheduled')).to_contain_text('Resumes')
-    view.wait(lambda g: g['next']['kind'] == 'done' and not g['running'], timeout=20)
+    view.wait(lambda g: g['next']['kind'] == 'done' and g['claim'] is None, timeout=20)
     expect(page.get_by_test_id('message-assistant').filter(has_text='The picnic booking is confirmed.')).to_be_visible(timeout=10000)
-    expected = ['started', 'run', 'waiting', 'waiting', 'scheduled', 'run', 'completed']
+    expected = ['run', 'waiting', 'waiting', 'scheduled', 'run', 'completed']
     assert view.transitions() == expected
     dividers = view.dividers()
-    labels = ['Goal started', 'Waiting for you', '1 question', 'Resumes', 'Goal run', 'Goal done']
+    labels = ['Goal run', 'Waiting for you', '1 question', 'Resumes', 'Goal run', 'Goal done']
     expect(dividers).to_have_count(len(labels))
     for index, label in enumerate(labels):
         expect(dividers.nth(index)).to_contain_text(label)
     events = view.events()
     assert len({e['id'] for e in events}) == len(events)
-    visible = [e for e in events if e['type'] == 'goal' and e['data']['kind'] != 'state_notice']
+    visible = [e for e in events if e['type'] == 'goal']
     assert [e['timestamp'] for e in visible] == sorted(e['timestamp'] for e in visible)
     calls = [c['name'] for e in events if e['type'] == 'iteration' for c in e.get('tool_calls', [])]
     assert {'read_goal', 'update_goal', 'update_goal_questions', 'choose_next_action'} <= set(calls)
@@ -339,13 +349,112 @@ def test_fake_provider_drives_goal_lifecycle_transcript_and_previous_goals(goal_
     dialog.get_by_label('What would you like done?').fill('Arrange the next community event')
     dialog.get_by_role('button', name='Start goal', exact=True).click()
     expect(dialog).to_have_count(0)
-    next_goal = view.wait(lambda g: g['id'] != first['id'] and g['last_run_id'] and not g['running'] and g['next']['kind'] == 'wait')
+    next_goal = view.wait(lambda g: g['id'] != first['id'] and g['last_run_id'] and g['claim'] is None and g['next']['kind'] == 'wait')
     view.details.locator('summary').filter(has_text='Previous goals').click()
     expect(view.details).to_contain_text(first['objective'])
     expect(view.details).to_contain_text('Riverside Park booking confirmed.')
     view.cancel()
     view.chat()
-    expect(dividers).to_have_count(len(labels) + 3)
+    expect(dividers).to_have_count(len(labels) + 2)
     assert next_goal['id'] != first['id']
     page.reload()
-    expect(dividers).to_have_count(len(labels) + 3)
+    expect(dividers).to_have_count(len(labels) + 2)
+
+
+def test_edit_is_off_while_a_run_holds_the_goal_and_pause_turns_it_on(goal_ui):
+    view, page = goal_ui, goal_ui.page
+    view.assign()
+    view.open()
+    edit = view.details.get_by_role('button', name='Edit', exact=True)
+    expect(edit).to_be_enabled()
+    view.composer.fill(read_goal() + bash('sleep 8') + say('Checked every venue.'))
+    page.get_by_role('button', name='Send message', exact=True).click()
+    expect(edit).to_be_disabled(timeout=8000)
+    expect(view.details).to_contain_text('The agent is working. Pause it to edit now.')
+    refused = page.request.patch(view.base, data={'expected_revision': view.current()['revision'], 'objective': 'Too early'})
+    assert refused.status == 409, refused.text()
+    view.details.get_by_role('button', name='Pause', exact=True).click()
+    view.wait(lambda g: g['paused'] and g['claim'] is None)
+    expect(edit).to_be_enabled(timeout=10000)
+    saved = page.request.patch(view.base, data={'expected_revision': view.current()['revision'], 'objective': 'Edited while paused'})
+    assert saved.ok, saved.text()
+
+
+def test_panel_edit_opens_the_next_run_with_an_edited_event(goal_ui):
+    view, page = goal_ui, goal_ui.page
+    view.assign()
+    view.open()
+    view.details.get_by_role('button', name='Edit', exact=True).click()
+    dialog = page.get_by_role('dialog', name='Edit', exact=True)
+    dialog.get_by_label('What would you like done?').fill('Keep the library calendar current')
+    dialog.get_by_role('button', name='Save changes', exact=True).click()
+    expect(dialog).to_have_count(0)
+    assert 'edited' not in view.transitions()
+    view.send('', 'Noted the change.')
+    events = view.events()
+    edited = [index for index, e in enumerate(events) if e['type'] == 'goal' and e['data']['kind'] == 'edited']
+    assert len(edited) == 1
+    reply = next(index for index, e in enumerate(events)
+                 if e['type'] == 'iteration' and 'Noted the change.' in (e.get('content') or ''))
+    assert edited[0] < reply
+    assert 'The user edited the goal' in events[edited[0]]['model_text']
+    view.chat()
+    expect(view.dividers('edited')).to_have_count(0)
+    users = page.get_by_test_id('message-user')
+    expect(users.filter(has_text='[System notice')).to_have_count(0)
+
+
+def test_goals_off_stops_a_goal_run_and_on_reruns_it(goal_ui):
+    view, page = goal_ui, goal_ui.page
+    view.assign()
+    view.composer.fill(read_goal() + work_on(bash('sleep 8') + say('Checked every venue.'))
+                       + choose('continue', 'Checking the venues next.') + say('Starting the venue check.'))
+    page.get_by_role('button', name='Send message', exact=True).click()
+    view.until(lambda: view.transitions().count('run') == 2 and view.current()['claim'] is not None)
+    view.set_goals(False)
+    stopped = view.wait(lambda g: g['claim'] is None and g['next']['kind'] == 'wake')
+    assert stopped['next']['reason'] == 'interrupted'
+    page.wait_for_timeout(1500)
+    assert view.transitions().count('run') == 2
+    view.set_goals(True)
+    view.until(lambda: view.transitions().count('run') == 3, timeout=5)
+    wakeups = [e for e in view.events() if e['type'] == 'goal' and e['data']['kind'] == 'wakeup']
+    assert wakeups[-1]['data']['reason'] == 'interrupted'
+
+
+def test_goals_off_returns_a_queued_message_to_the_composer(goal_ui):
+    view, page = goal_ui, goal_ui.page
+    view.assign()
+    view.composer.fill(read_goal() + bash('sleep 8') + say('Checked every venue.'))
+    page.get_by_role('button', name='Send message', exact=True).click()
+    expect(page.get_by_test_id('chat-stop-btn')).to_be_visible(timeout=8000)
+    expect(view.composer).to_have_attribute('placeholder', 'Message the agent while it works…', timeout=8000)
+    view.composer.fill('Also check the library hall')
+    page.get_by_role('button', name='Send message', exact=True).click()
+    strip = page.get_by_role('region', name="Queued for the agent's next step")
+    expect(strip).to_contain_text('Also check the library hall')
+    view.set_goals(False)
+    expect(strip).to_have_count(0, timeout=10000)
+    expect(view.composer).to_have_value('Also check the library hall')
+    assert not any(e['type'] == 'user_message' and e['content'] == 'Also check the library hall' for e in view.events())
+
+
+def test_goal_routes_refuse_after_goals_turn_off_in_another_tab(goal_ui):
+    view, page = goal_ui, goal_ui.page
+    view.assign()
+    view.open()
+    other = page.context.new_page()
+    try:
+        SettingsPage(other).goto_system()
+        SettingsPage(other).unlock_early_access()
+        other.get_by_test_id('goals-toggle').click()
+        expect(other.get_by_role('switch', name='Goals', exact=True)).not_to_be_checked()
+    finally:
+        other.close()
+    view.details.get_by_role('button', name='Pause', exact=True).click()
+    expect(view.details).to_contain_text('Goals are turned off.')
+    refused = page.request.post(view.base + '/pause', data={})
+    assert refused.status == 403
+    assert refused.json()['error'] == 'Goals are turned off.'
+    view.set_goals(True)
+    assert view.current()['paused'] is False

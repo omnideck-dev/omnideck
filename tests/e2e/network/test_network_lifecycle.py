@@ -9,6 +9,7 @@ agent-lifecycle events.
   - code_expert:    runs two bash commands → "2 tools" badge.
 """
 
+import re
 import pytest
 from playwright.sync_api import Page, expect
 
@@ -34,14 +35,14 @@ def network_after_turn(page: Page):
 
 
 def test_indicator_shows_agent_count(page: Page, network_after_turn):
-    """Indicator badge shows total agent count."""
-    expect(network_after_turn.indicator).to_contain_text("3 agents")
+    """Indicator shows the agent count as a number and in its name."""
+    expect(network_after_turn.indicator).to_have_text("3")
+    expect(network_after_turn.indicator).to_have_accessible_name("Open sub-agents (3)")
 
 
-def test_indicator_complete_status(page: Page, network_after_turn):
-    """Indicator dot shows 'complete' when all agents finish."""
-    dot = network_after_turn.indicator.locator("[class*='complete']")
-    expect(dot).to_be_visible()
+def test_indicator_names_no_running_agents_once_all_finish(page: Page, network_after_turn):
+    """The indicator's name stops counting running agents when all agents finish."""
+    expect(network_after_turn.indicator).not_to_have_accessible_name(re.compile("running"))
 
 
 def test_indicator_clears_on_new_conversation(page: Page, network_after_turn):

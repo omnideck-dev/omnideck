@@ -22,7 +22,7 @@ def test_cards_persist_across_turns(page: Page):
 
     network = NetworkView(page)
     expect(network.indicator).to_be_visible(timeout=5000)
-    expect(network.indicator).to_contain_text("2 agents")
+    expect(network.indicator).to_have_text("2")
 
     # Turn 2: root + code_expert + creative_writer.
     chat.send(
@@ -31,7 +31,8 @@ def test_cards_persist_across_turns(page: Page):
     ).wait_streaming()
 
     # Both turns' trees stay visible: turn 1 (root + 1) + turn 2 (root + 2).
-    expect(network.indicator).to_contain_text("5 agents")
+    expect(network.indicator).to_have_text("5")
+    expect(network.indicator).to_have_accessible_name("Open sub-agents (5)")
 
     network.open()
     expect(network.agent_cards.first).to_be_visible(timeout=5000)

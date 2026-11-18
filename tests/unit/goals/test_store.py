@@ -6,8 +6,9 @@ import json
 import shutil
 
 import pytest
+from pydantic import ValidationError
 
-from goals import GoalConflictError, GoalRevisionError, GoalStateError, GoalStep, GoalStepChange, GoalStore
+from goals import Goal, GoalConflictError, GoalRevisionError, GoalStateError, GoalStep, GoalStepChange, GoalStore
 
 from tests.unit.goals.support import claim_wake, completed, create, failed, future, scheduled, waiting, with_plan
 
@@ -194,3 +195,8 @@ def test_user_edit_is_refused_while_a_run_holds_the_goal(store):
     store.pause(goal.id)
     edited = store.update(goal.id, store.get(goal.id).revision, summary="Budget is $500.")
     assert edited.summary == "Budget is $500."
+
+
+def test_goal_refuses_a_profile_id_field():
+    with pytest.raises(ValidationError):
+        Goal.model_validate({"conversation_id": "chat", "objective": "Plan the trip", "profile_id": "writer"})

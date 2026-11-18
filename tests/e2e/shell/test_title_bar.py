@@ -10,8 +10,11 @@ def test_conversation_details_opens_from_header(page: Page):
     """Conversation metadata stays available without crowding the header."""
     ChatView(page).goto()
     expect(page.get_by_test_id("chat-title-bar")).to_be_visible()
-    page.get_by_role("button", name="Conversation details", exact=True).click()
     expect(page.get_by_test_id("chat-title")).to_be_visible()
+    details = page.get_by_role("button", name="Conversation details", exact=True)
+    expect(details.locator("i.bi-info-circle")).to_have_count(1)
+    details.click()
+    expect(page.get_by_role("region", name="Conversation details")).to_contain_text("Agent: ")
 
 
 def test_turn_count_appears_after_a_turn(page: Page):
