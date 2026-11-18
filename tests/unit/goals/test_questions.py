@@ -74,7 +74,7 @@ def test_uncertain_answer_can_be_reviewed_and_withdrawn_question_keeps_history(o
     choose(store, goal, action="wait_for_input", question_ids=["insurance"])
     goal = change(store, goal, GoalQuestionChange(id="insurance", status="withdrawn"))
     restored = GoalStore(store._base).get(goal.id)
-    assert restored.questions == []
+    assert [(item.id, item.status) for item in restored.questions] == [("insurance", "withdrawn")]
     assert restored.next.question_ids == []
     assert store.question(goal.id, "insurance").status == "withdrawn"
     assert any(entry["data"].get("answer") == "Not sure" for entry in store.read_history(goal.id)["entries"])

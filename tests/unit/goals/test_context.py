@@ -106,3 +106,12 @@ def test_view_keeps_full_plan_and_marks_new_answers():
     assert question["answers"][0] == {"answer": "Afternoons only"}
     assert question["answers"][1:] == [{"answer": f"Correction {i}", "new": True} for i in range(3)]
     assert "revision" not in question and "reviewed_answer_count" not in question
+
+
+def test_view_lists_open_questions_only():
+    item = goal(questions=[
+        GoalQuestion(id="day", question="Which Saturday?", status="resolved"),
+        GoalQuestion(id="budget", question="What is the budget?", status="open"),
+        GoalQuestion(id="venue", question="Indoor or outdoor?", status="withdrawn"),
+    ])
+    assert [question["id"] for question in goal_context(item)["questions"]] == ["budget"]

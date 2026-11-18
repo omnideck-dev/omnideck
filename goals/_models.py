@@ -299,7 +299,7 @@ class GoalAnswerSubmission(BaseModel):
 
 
 class GoalQuestion(BaseModel):
-    """A question's current wording, pending answers and recent reviewed answers."""
+    """A question's current wording, status and every answer it has received."""
 
     model_config = ConfigDict(extra="forbid")
     id: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_.-]+$")

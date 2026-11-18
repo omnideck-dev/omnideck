@@ -3,12 +3,13 @@
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import json
+import shutil
 
 import pytest
 
 from goals import GoalConflictError, GoalRevisionError, GoalStateError, GoalStep, GoalStepChange, GoalStore
 
-from tests.unit.goals.support import completed, create, failed, future, scheduled, waiting, with_plan
+from tests.unit.goals.support import claim_wake, completed, create, failed, future, scheduled, waiting, with_plan
 
 
 @pytest.fixture
@@ -26,7 +27,7 @@ def test_constructor_initializes_file_store_without_creating_goals(tmp_path):
 
 def test_new_goal_is_saved_with_a_planned_wake_due_now(store):
     goal = create(store)
-    saved = json.loads((store._base / goal.id / "goal.json").read_text())
+    saved = json.loads((store._base / "chat" / "goals" / goal.id / "goal.json").read_text())
     assert saved["next"]["kind"] == "wake"
     assert saved["next"]["reason"] == "planned"
     assert saved["paused"] is False and saved["claim"] is None and saved["note"] == ""
@@ -74,13 +75,12 @@ def test_revision_error_is_a_conflict_error():
     assert issubclass(GoalRevisionError, GoalConflictError)
 
 
-def test_revision_conflict_is_atomic_between_store_instances(store):
+def test_two_saves_on_one_store_conflict_once(store):
     goal = create(store)
-    second = GoalStore(store._base)
 
     def update(index):
         try:
-            return (store if index == 0 else second).update(goal.id, goal.revision, objective=f"Goal {index}")
+            return store.update(goal.id, goal.revision, objective=f"Goal {index}")
         except GoalConflictError:
             return None
 
@@ -140,11 +140,13 @@ def test_deleting_a_conversation_removes_only_its_goals(store):
     store.cancel(goal.id)
     create(store)
     unrelated = create(store, "other")
-    store.delete_for_conversation("chat")
+    found = store.delete_conversation("chat", lambda: shutil.rmtree(store._base / "chat") is None)
+    assert found
     assert store.history("chat") == []
     assert store.list() == [unrelated]
     assert store.current("chat") is None
     assert [item.id for item in store.wakes()] == [unrelated.id]
+    assert [item.id for item in store.latest_goals()] == [unrelated.id]
 
 
 def test_due_and_wakes_list_only_unpaused_unclaimed_wakes(store):
@@ -175,7 +177,6 @@ def test_due_does_not_read_ended_goals(store, monkeypatch):
 
     monkeypatch.setattr(Path, "read_text", counted)
     fresh.load()
-    # Startup reads each saved goal once to find the unfinished ones.
     assert len(reads) == 6
     reads.clear()
     for _ in range(20):
@@ -184,10 +185,12 @@ def test_due_does_not_read_ended_goals(store, monkeypatch):
     assert reads == []
 
 
-def test_index_follows_changes_from_another_store_on_the_same_folder(store):
-    goal = create(store)
-    other = GoalStore(store._base)
-    other.pause(goal.id)
-    assert store.due() == []
-    other.resume(goal.id)
-    assert [item.id for item in store.due()] == [goal.id]
+def test_user_edit_is_refused_while_a_run_holds_the_goal(store):
+    goal = claim_wake(store, create(store))
+    with pytest.raises(GoalStateError, match="Pause it to edit now"):
+        store.update(goal.id, goal.revision, summary="Budget is $500.")
+    agent = store.update(goal.id, goal.revision, summary="Found two venues.", actor="agent", claim_id="claim")
+    assert agent.summary == "Found two venues."
+    store.pause(goal.id)
+    edited = store.update(goal.id, store.get(goal.id).revision, summary="Budget is $500.")
+    assert edited.summary == "Budget is $500."

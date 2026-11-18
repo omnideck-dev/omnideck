@@ -50,9 +50,10 @@ def test_user_edit_records_user_actor_without_a_run(store):
     assert entry["actor"] == "user" and entry["claim_id"] is None
 
 
-def test_user_edit_during_a_run_is_not_tagged_with_that_run(store):
+def test_user_edit_after_pausing_a_run_is_not_tagged_with_that_run(store):
     goal = create(store)
     claim_wake(store, goal)
+    store.pause(goal.id)
     store.update(goal.id, store.get(goal.id).revision, summary="Budget is $500.")
     entry = newest(store, goal)
     assert entry["actor"] == "user" and entry["claim_id"] is None

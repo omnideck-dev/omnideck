@@ -6,6 +6,7 @@ import builtins
 import logging
 import re
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import RLock
@@ -24,8 +25,8 @@ from ._files import GoalFiles
 
 logger = logging.getLogger(__name__)
 
-GOALS_SUBDIR = "session-goals"
 NO_OPEN_STEP = "Mark the step the next run should work on as in progress, or add one."
+WORKING = "The agent is working on this goal. Pause it to edit now, or wait for it to finish."
 
 
 def validation_message(exc: ValidationError) -> str:
@@ -50,15 +51,23 @@ class GoalStateError(ValueError):
     """The requested action is unavailable in the goal's current state."""
 
 
-class GoalStore:
-    """Persist current state and historical events as readable files.
+@dataclass
+class _Memory:
+    open: dict[str, Goal] = field(default_factory=dict)
+    chats: dict[str, str] = field(default_factory=dict)
+    latest: dict[str, Goal] = field(default_factory=dict)
 
-    Unfinished goals are also kept in memory, shared by every store on the same
-    folder, so the scheduler can find due wakes without reading every file.
+
+class GoalStore:
+    """Persist goals as readable files inside their chats' folders.
+
+    Active chats' goals are also kept in memory, shared by every store on the
+    same folder: unfinished goals, which chat each goal belongs to, and each
+    chat's newest goal. The scheduler and live updates read memory, not files.
     """
 
     _locks: ClassVar[dict[Path, RLock]] = {}
-    _open_goals: ClassVar[dict[Path, dict[str, Goal]]] = {}
+    _memories: ClassVar[dict[Path, _Memory]] = {}
     _locks_guard: ClassVar[RLock] = RLock()
 
     def __init__(self, base_dir: Path) -> None:
@@ -75,22 +84,42 @@ class GoalStore:
         return lambda: self._observers.remove(observer)
 
     def load(self) -> None:
-        """Read every saved goal once to find the unfinished ones."""
+        """Read every active chat's goals once to fill memory."""
         with self._lock:
-            self._open_goals[self._base] = {goal.id: goal for goal in self._files.list() if not goal.ended}
+            memory = _Memory()
+            for goal in self._files.active():
+                self._index(memory, goal)
+            self._memories[self._base] = memory
+
+    def _memory(self) -> _Memory:
+        with self._lock:
+            if self._base not in self._memories:
+                self.load()
+            return self._memories[self._base]
 
     def _open(self) -> dict[str, Goal]:
-        with self._lock:
-            if self._base not in self._open_goals:
-                self.load()
-            return self._open_goals[self._base]
+        return self._memory().open
+
+    @staticmethod
+    def _index(memory: _Memory, goal: Goal) -> None:
+        memory.chats[goal.id] = goal.conversation_id
+        newest = memory.latest.get(goal.conversation_id)
+        if newest is None or newest.id == goal.id or goal.created_at > newest.created_at:
+            memory.latest[goal.conversation_id] = goal.model_copy(deep=True)
+        if goal.ended:
+            memory.open.pop(goal.id, None)
+        else:
+            memory.open[goal.id] = goal.model_copy(deep=True)
 
     def _remember(self, goal: Goal) -> None:
-        index = self._open()
-        if goal.ended:
-            index.pop(goal.id, None)
-        else:
-            index[goal.id] = goal.model_copy(deep=True)
+        self._index(self._memory(), goal)
+
+    def _forget_chat(self, conversation_id: str) -> None:
+        memory = self._memory()
+        for goal_id in [goal_id for goal_id, chat in memory.chats.items() if chat == conversation_id]:
+            del memory.chats[goal_id]
+            memory.open.pop(goal_id, None)
+        memory.latest.pop(conversation_id, None)
 
     def _notify(self, goal: Goal, entries: builtins.list[GoalHistoryEntry]) -> None:
         for observer in tuple(self._observers):
@@ -119,7 +148,8 @@ class GoalStore:
         if not re.fullmatch(r"[a-f0-9]{32}", goal_id):
             raise ValueError("Invalid goal ID")
         with self._lock:
-            return self._files.get(goal_id)
+            conversation_id = self._memory().chats.get(goal_id)
+            return self._files.get(conversation_id, goal_id) if conversation_id is not None else None
 
     def list(self) -> builtins.list[Goal]:
         with self._lock:
@@ -127,16 +157,22 @@ class GoalStore:
 
     def read_history(self, goal_id: str, query: str = "", before: int | None = None) -> dict:
         with self._lock:
-            self._require(goal_id)
-            return self._files.read_history(goal_id, query.strip(), before)
+            return self._files.read_history(self._require(goal_id), query.strip(), before)
 
     def question(self, goal_id: str, question_id: str) -> GoalQuestion | None:
         with self._lock:
-            self._require(goal_id)
-            return self._files.question(goal_id, question_id)
+            goal = self._require(goal_id)
+            return next((question for question in goal.questions if question.id == question_id), None)
 
     def history(self, conversation_id: str) -> builtins.list[Goal]:
-        return [goal for goal in self.list() if goal.conversation_id == conversation_id]
+        """A chat's goals, newest first, read from that chat's folder only."""
+        with self._lock:
+            return self._files.chat_goals(conversation_id)
+
+    def latest_goals(self) -> builtins.list[Goal]:
+        """The newest goal of each active chat, from memory."""
+        with self._lock:
+            return [goal.model_copy(deep=True) for goal in self._memory().latest.values()]
 
     def current(self, conversation_id: str) -> Goal | None:
         with self._lock:
@@ -172,7 +208,6 @@ class GoalStore:
                 raise GoalStateError("This goal has ended")
             if claim_id is not None and (goal.claim is None or goal.claim.id != claim_id):
                 raise GoalConflictError("This run no longer owns the goal")
-            # The app's own changes during a run belong to that run's history group.
             held = goal.claim.id if goal.claim is not None and actor == "system" else None
             change(goal)
             goal.revision += 1
@@ -191,6 +226,8 @@ class GoalStore:
             raise ValueError("Send either a whole plan or step changes")
 
         def change(goal: Goal) -> None:
+            if actor == "user" and goal.claim is not None:
+                raise GoalStateError(WORKING)
             fields: dict[str, object] = {}
             if objective is not None:
                 fields["objective"] = objective
@@ -212,24 +249,22 @@ class GoalStore:
 
         return self._mutate(goal_id, change, actor=actor, expected_revision=expected_revision, claim_id=claim_id)
 
-    def pause(self, goal_id: str, *, expected_revision: int | None = None) -> Goal:
+    def pause(self, goal_id: str) -> Goal:
         def change(goal: Goal) -> None:
             if goal.paused:
                 raise GoalStateError("This goal is already paused")
             goal.paused = True
             self._interrupt_claim(goal)
-        return self._mutate(goal_id, change, actor="user", expected_revision=expected_revision)
+        return self._mutate(goal_id, change, actor="user")
 
-    def resume(self, goal_id: str, *, expected_revision: int | None = None) -> Goal:
+    def resume(self, goal_id: str) -> Goal:
         def change(goal: Goal) -> None:
             if not goal.paused:
                 raise GoalStateError("This goal is not paused")
-            # Resume only turns the pause off. A wake whose time passed runs on
-            # the scheduler's next check; a wait or an error stays as it is.
             goal.paused = False
-        return self._mutate(goal_id, change, actor="user", expected_revision=expected_revision)
+        return self._mutate(goal_id, change, actor="user")
 
-    def run(self, goal_id: str, *, expected_revision: int | None = None) -> Goal:
+    def run(self, goal_id: str) -> Goal:
         """Run now from a planned wake, or retry after an error."""
         def change(goal: Goal) -> None:
             if goal.paused:
@@ -242,14 +277,14 @@ class GoalStore:
                 goal.next = GoalWake(at=utc_now(), reason="retry")
             else:
                 raise GoalStateError("This goal is waiting for you. Send a message instead.")
-        return self._mutate(goal_id, change, actor="user", expected_revision=expected_revision)
+        return self._mutate(goal_id, change, actor="user")
 
-    def cancel(self, goal_id: str, *, expected_revision: int | None = None) -> Goal:
+    def cancel(self, goal_id: str) -> Goal:
         def change(goal: Goal) -> None:
             goal.next = GoalCancelled()
             goal.paused = False
             goal.claim = None
-        return self._mutate(goal_id, change, actor="user", expected_revision=expected_revision)
+        return self._mutate(goal_id, change, actor="user")
 
     def reopen(self, goal_id: str) -> Goal:
         """Make an ended goal unfinished again; the user's message starts its next turn."""
@@ -313,10 +348,6 @@ class GoalStore:
             for item in changes:
                 previous = next((question for question in goal.questions if question.id == item.id), None)
                 if previous is None:
-                    previous = self._files.question(goal_id, item.id)
-                    if previous is not None:
-                        goal.questions.append(previous)
-                if previous is None:
                     if item.question is None:
                         raise ValueError(f"New question '{item.id}' needs its text")
                     goal.questions.append(GoalQuestion(
@@ -325,8 +356,6 @@ class GoalStore:
                     continue
                 given = item.model_dump(exclude_unset=True, exclude={"id"})
                 given = {name: value for name, value in given.items() if value is not None}
-                # Only a change the user can see gives the question a new version;
-                # an answer typed against the old version still sends.
                 if any(getattr(previous, name) != value for name, value in given.items()):
                     for name, value in given.items():
                         setattr(previous, name, value)
@@ -463,7 +492,7 @@ class GoalStore:
             return self._mutate(goal_id, self._interrupt_claim, actor="system")
 
     def recover_claims(self) -> builtins.list[Goal]:
-        """After a restart, release every claim and queue interrupted wake runs again."""
+        """Release every claim, as after a restart; a held wake runs again, marked interrupted."""
         recovered = []
         with self._lock:
             for goal_id in [goal.id for goal in self._open().values() if goal.claim is not None]:
@@ -495,9 +524,30 @@ class GoalStore:
                 return self._mutate(goal_id, change, actor="user", claim_id=claim.id, reason="Stopped the run.")
             return self._mutate(goal_id, change, actor="system", claim_id=claim.id)
 
-    def delete_for_conversation(self, conversation_id: str) -> None:
+    def delete_conversation(self, conversation_id: str, delete: Callable[[], bool]) -> bool:
+        """Delete a chat folder, with its goals, while no goal save can run."""
         with self._lock:
-            self._files.delete_for_conversation(conversation_id)
-            index = self._open()
-            for goal_id in [goal.id for goal in index.values() if goal.conversation_id == conversation_id]:
-                del index[goal_id]
+            found = delete()
+            self._forget_chat(conversation_id)
+            return found
+
+    def archive_conversation(self, conversation_id: str, archive: Callable[[], bool]) -> bool:
+        """Pause the chat's goal, then move the chat folder to the archive."""
+        with self._lock:
+            goal = self.current(conversation_id)
+            if goal is not None and not goal.paused:
+                self.pause(goal.id)
+            found = archive()
+            if found:
+                self._forget_chat(conversation_id)
+            return found
+
+    def unarchive_conversation(self, conversation_id: str, unarchive: Callable[[], bool]) -> bool:
+        """Move a chat folder back from the archive. Its goals return as they were."""
+        with self._lock:
+            found = unarchive()
+            if found:
+                memory = self._memory()
+                for goal in self._files.chat_goals(conversation_id):
+                    self._index(memory, goal)
+            return found

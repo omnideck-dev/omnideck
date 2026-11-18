@@ -42,7 +42,7 @@ beforeEach(() => {
     currentGoal = structuredClone(baseGoal);
     previousGoals = [];
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, options = {}) => {
-        if (url.includes('/goal/history?')) return response({ entries: [{ id: 1, actor: 'agent', claim_id: null, created_at: '2026-10-04T15:00:00Z', summary: 'Working summary updated', kind: 'summary', data: { after: { summary: 'Collected the school schedule.' } } }], next_before: null });
+        if (url.includes('/goal/history?')) return response({ entries: [{ id: 1, actor: 'agent', claim_id: null, created_at: '2026-10-04T15:00:00Z', summary: 'Working summary updated', kind: 'summary', data: { summary: 'Collected the school schedule.' } }], next_before: null });
         if (url === '/api/goals') return response({ goals: currentGoal ? [currentGoal] : [] });
         if (url === '/api/conversations/sessions' || url.endsWith('/folders')) return response([]);
         if (options.method === 'POST') {

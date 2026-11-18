@@ -37,10 +37,9 @@ class GoalEdit(BaseModel):
 
 
 class GoalControl(BaseModel):
-    """An optional revision precondition for a user control."""
+    """A user control, optionally naming the goal the user saw."""
 
     model_config = ConfigDict(extra="forbid")
-    expected_revision: int | None = Field(default=None, ge=1)
     goal_id: str | None = None
 
 
@@ -228,18 +227,18 @@ async def control_goal_handler(request: web.Request) -> web.Response:
             return web.json_response({"error": "Restore this conversation before resuming its goal."}, status=409)
         handle = request.app[AGENT_RUNTIME_KEY].active_for_conversation(conversation_id)
         if action == "resume":
-            store.resume(goal.id, expected_revision=payload.expected_revision)
+            store.resume(goal.id)
         elif action == "run":
             if handle is not None:
                 return web.json_response({"error": "Wait for the current response to finish before running the goal."}, status=409)
-            store.run(goal.id, expected_revision=payload.expected_revision)
+            store.run(goal.id)
         elif action == "pause":
             # Pause first: it releases the run's claim and keeps its wake for after Resume.
-            store.pause(goal.id, expected_revision=payload.expected_revision)
+            store.pause(goal.id)
             if handle is not None:
                 handle.stop()
         elif action == "cancel":
-            store.cancel(goal.id, expected_revision=payload.expected_revision)
+            store.cancel(goal.id)
             if handle is not None:
                 handle.stop()
         else:

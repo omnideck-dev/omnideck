@@ -25,7 +25,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 from agent_runtime import AgentRuntime
 from config import load_config
-from goals import GOALS_SUBDIR, GoalStore
+from goals import GoalStore
 from goals._scheduling import GoalWorkSource
 from scheduling import Scheduler
 from server._scheduling import SCHEDULER_KEY
@@ -117,7 +117,7 @@ def create_app(
     """
     from browser.runtime import BrowserRuntime
     from server._browser_runtime import BROWSER_RUNTIME_KEY
-    from conversations import ConversationStore
+    from conversations import ConversationStore, conversations_dir
     from integrations.connection_cache import IntegrationConnectionCache
     from integrations.service import integration_service
     from server._integration_cache import INTEGRATION_CACHE_KEY
@@ -128,7 +128,7 @@ def create_app(
     app[BROWSER_RUNTIME_KEY] = browser_runtime
     integration_cache = IntegrationConnectionCache(integration_service)
     app[INTEGRATION_CACHE_KEY] = integration_cache
-    goal_store = GoalStore(Path(load_config().settings.home_dir) / GOALS_SUBDIR)
+    goal_store = GoalStore(conversations_dir())
     app[GOAL_STORE_KEY] = goal_store
     app[SELECTION_MUTATION_LOCK] = asyncio.Lock()
     app[AGENT_RUNTIME_KEY] = AgentRuntime(

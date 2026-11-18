@@ -47,7 +47,7 @@ def goal_context(goal: Goal, *, held_wake_id: str | None = None) -> dict:
         "objective": goal.objective,
         "now": _now(),
         "plan": [step.model_dump(mode="json", exclude_defaults=True) for step in goal.plan],
-        "questions": [_question(question) for question in goal.questions],
+        "questions": [_question(question) for question in goal.questions if question.status == "open"],
     }
     if goal.summary:
         view["summary"] = goal.summary

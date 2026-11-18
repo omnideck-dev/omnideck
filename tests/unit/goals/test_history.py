@@ -40,9 +40,9 @@ def test_long_history_stays_retrievable_without_growing_working_state(tmp_path):
     assert restored.summary == goal.summary
     entries = pages(store, goal.id, 'Campaign')
     assert len(entries) == len({entry['id'] for entry in entries}) == 1000
-    assert entries[-1]['data']['after']['summary'] == 'Campaign 0: result 0'
-    assert store.read_history(goal.id, 'Campaign 17:')['entries'][0]['data']['after']['summary'] == 'Campaign 17: result 17'
-    assert store.read_history(goal.id, '%')['entries'] == []  # literal search
+    assert entries[-1]['data']['summary'] == 'Campaign 0: result 0'
+    assert store.read_history(goal.id, 'Campaign 17:')['entries'][0]['data']['summary'] == 'Campaign 17: result 17'
+    assert store.read_history(goal.id, '%')['entries'] == []
 
 
 def test_history_cursor_is_stable_when_new_entries_arrive(tmp_path):
@@ -58,22 +58,35 @@ def test_history_cursor_is_stable_when_new_entries_arrive(tmp_path):
     assert second['next_before'] is None
 
 
-def test_plan_entries_show_change_lines_and_keep_full_plans_on_disk(tmp_path):
+def test_plan_entry_stores_only_change_lines(tmp_path):
     store = GoalStore(tmp_path)
     goal = store.create('chat', 'Goal', 'assistant')
     goal = store.update(goal.id, goal.revision, plan=[GoalStep(id='ads', title='Try paid ads')])
     goal = store.update(goal.id, goal.revision, plan=[GoalStep(id='referrals', title='Ask for referrals')])
+    on_disk = [entry for entry in store._files.entries(goal, 0) if entry['kind'] == 'plan']
+    assert on_disk[0]['data'] == {'changes': ['Removed "Try paid ads".', 'Added "Ask for referrals".']}
+    assert on_disk[1]['data'] == {'changes': ['Added "Try paid ads".']}
+
+
+def test_summary_entry_stores_only_the_summary(tmp_path):
+    store = GoalStore(tmp_path)
+    goal = store.create('chat', 'Goal', 'assistant')
     goal = store.update(goal.id, goal.revision, summary='Paid ads failed. Try referrals next.')
     goal = store.update(goal.id, goal.revision, summary='Referrals are working. Expand the program.')
-    on_disk = [entry for entry in store._files.entries(goal, 0) if entry['kind'] == 'plan']
-    assert on_disk[0]['data']['before']['plan'][0]['id'] == 'ads'
-    assert on_disk[0]['data']['after']['plan'][0]['id'] == 'referrals'
-    shown = [entry for entry in pages(store, goal.id) if entry['kind'] == 'plan']
-    assert shown[0]['data'] == {'changes': ['Removed "Try paid ads".', 'Added "Ask for referrals".']}
     checkpoints = store.read_history(goal.id, 'Paid ads failed')['entries']
-    assert len(checkpoints) == 1
-    assert checkpoints[0]['data'] == {'after': {'summary': 'Paid ads failed. Try referrals next.'}}
+    assert [entry['data'] for entry in checkpoints] == [{'summary': 'Paid ads failed. Try referrals next.'}]
     assert goal.summary == 'Referrals are working. Expand the program.'
+
+
+def test_history_search_finds_a_word_in_a_plan_change_line(tmp_path):
+    store = GoalStore(tmp_path)
+    goal = store.create('chat', 'Goal', 'assistant')
+    goal = store.update(goal.id, goal.revision, plan=[GoalStep(id='call', title='Call the parks office')])
+    store.update(goal.id, goal.revision, plan=[
+        GoalStep(id='call', title='Call the parks office', status='done', notes='Pavilion reserved'),
+    ])
+    found = store.read_history(goal.id, 'pavilion')['entries']
+    assert [entry['kind'] for entry in found] == ['plan']
 
 
 def test_plan_change_lines_describe_each_step_change(tmp_path):
@@ -95,7 +108,7 @@ def test_plan_change_lines_describe_each_step_change(tmp_path):
     ]
 
 
-def test_reviewed_answers_are_compacted_but_all_answers_and_wording_remain(tmp_path):
+def test_question_keeps_every_answer(tmp_path):
     store = GoalStore(tmp_path)
     goal = store.create('chat', 'Goal', 'assistant')
     claim_wake(store, goal)
@@ -106,16 +119,37 @@ def test_reviewed_answers_are_compacted_but_all_answers_and_wording_remain(tmp_p
             'question_id': 'q', 'question_revision': goal.questions[0].revision, 'answer': f'Plan {index}',
         }]))
         goal = change_question(store, goal.id, question)
-    assert len(goal.questions[0].answers) == goal.questions[0].reviewed_answer_count == 2
-    assert goal.questions[0].revision == 1
-    goal = change_question(store, goal.id, GoalQuestionChange(id='q', status='resolved'))
-    assert not goal.questions
+    assert [answer.answer for answer in goal.questions[0].answers] == [f'Plan {index}' for index in range(8)]
+    assert goal.questions[0].reviewed_answer_count == 8
     answers = [entry for entry in pages(store, goal.id) if entry['kind'] == 'answer']
     assert len(answers) == 8 and answers[-1]['data']['answer'] == 'Plan 0'
     assert all(entry['actor'] == 'user' and entry['claim_id'] is None for entry in answers)
+
+
+def test_resolved_question_stays_in_goal_json_and_can_be_reopened(tmp_path):
+    store = GoalStore(tmp_path)
+    goal = store.create('chat', 'Goal', 'assistant')
+    claim_wake(store, goal)
+    goal = change_question(store, goal.id, GoalQuestionChange(id='q', question='Which plan?'))
+    goal = change_question(store, goal.id, GoalQuestionChange(id='q', status='resolved'))
+    saved = json.loads((store._files.goal_dir('chat', goal.id) / 'goal.json').read_text())
+    assert [(item['id'], item['status']) for item in saved['questions']] == [('q', 'resolved')]
     goal = change_question(store, goal.id, GoalQuestionChange(id='q', status='open'))
     assert goal.questions[0].revision == 3
     assert goal.questions[0].question == 'Which plan?'
+
+
+def test_new_question_id_reads_no_history_files(tmp_path, monkeypatch):
+    store = GoalStore(tmp_path)
+    goal = store.create('chat', 'Goal', 'assistant')
+    claim_wake(store, goal)
+
+    def reject_history(*args):
+        raise AssertionError('A new question must not read history')
+
+    monkeypatch.setattr(store._files, '_batches', reject_history)
+    goal = change_question(store, goal.id, GoalQuestionChange(id='new', question='Which venue?'))
+    assert [item.id for item in goal.questions] == ['new']
 
 
 @pytest.mark.parametrize('failed_file', ['history', 'goal.json'])
@@ -141,31 +175,16 @@ def test_failed_save_keeps_previous_state_and_history_visible(tmp_path, monkeypa
     assert len(restored.read_history(goal.id, 'Retry succeeds')['entries']) == 1
 
 
-def test_deleting_conversation_removes_its_journal_and_questions_only(tmp_path):
-    store = GoalStore(tmp_path)
-    goal = store.create('chat', 'Goal', 'assistant')
-    claim_wake(store, goal)
-    ask(store, goal)
-    save_summary(store, goal.id, 'Checked options')
-    other = store.create('other-chat', 'Keep me', 'assistant')
-    store.delete_for_conversation('chat')
-    assert store.get(goal.id) is None
-    assert store.get(other.id) is not None
-    assert store.read_history(other.id)['entries']
-    assert not (tmp_path / goal.id).exists()
-    assert (tmp_path / other.id / 'goal.json').exists()
-
-
 def test_goal_files_are_readable_and_current_reads_do_not_load_history(tmp_path, monkeypatch):
     store = GoalStore(tmp_path)
     goal = store.create('chat', 'Grow the neighborhood newsletter', 'assistant')
     save_summary(store, goal.id, 'Library confirmed our announcement')
-    directory = tmp_path / goal.id
+    directory = tmp_path / 'chat' / 'goals' / goal.id
     state = json.loads((directory / 'goal.json').read_text())
     assert state['objective'] == goal.objective
     assert state['summary'] == 'Library confirmed our announcement'
     batches = [json.loads(path.read_text()) for path in sorted((directory / 'history').glob('*.json'))]
-    assert batches[-1]['entries'][-1]['data']['after']['summary'] == 'Library confirmed our announcement'
+    assert batches[-1]['entries'][-1]['data']['summary'] == 'Library confirmed our announcement'
 
     def reject_history(*args):
         raise AssertionError('Current goal reads must not load history')

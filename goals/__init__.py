@@ -5,12 +5,12 @@ from ._models import (
 )
 from ._answers import GoalAnswerRecorder, answer_message
 from ._store import (
-    GOALS_SUBDIR, GoalConflictError, GoalNotFoundError, GoalRevisionError, GoalStateError, GoalStore,
+    GoalConflictError, GoalNotFoundError, GoalRevisionError, GoalStateError, GoalStore,
 )
 from ._tools import GoalRevisionTracker, make_goal_tools
 
 __all__ = [
-    "ENDED_KINDS", "GOALS_SUBDIR", "Goal", "GoalAnswerRecorder", "GoalAnswerSubmission", "GoalConflictError", "GoalNext",
+    "ENDED_KINDS", "Goal", "GoalAnswerRecorder", "GoalAnswerSubmission", "GoalConflictError", "GoalNext",
     "GoalNotFoundError", "GoalQuestionChange", "GoalRevisionError", "GoalRevisionTracker", "GoalStateError",
     "GoalStep", "GoalStepChange", "GoalStore", "answer_message", "make_goal_tools", "next_step",
 ]

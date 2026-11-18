@@ -14,7 +14,7 @@ function entryDetail(entry) {
     if (entry.kind === 'question') {
         return ({ withdrawn: 'Withdrawn.', resolved: 'Resolved.' })[data.status] || 'Asked.';
     }
-    if (entry.kind === 'summary') return data.after?.summary;
+    if (entry.kind === 'summary') return data.summary;
     if (entry.kind === 'plan') return (data.changes || []).join(' ');
     if (entry.kind === 'goal') return data.after?.objective || data.objective;
     if (entry.kind === 'state') {

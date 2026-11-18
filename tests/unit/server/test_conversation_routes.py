@@ -69,7 +69,7 @@ def _make_request(
     manager.conversations = ConversationStore()
     req.app = {
         AGENT_RUNTIME_KEY: manager,
-        GOAL_STORE_KEY: GoalStore(_store._get_conversations_dir().parent / "session-goals"),
+        GOAL_STORE_KEY: GoalStore(_store._get_conversations_dir()),
     }
     return req
 

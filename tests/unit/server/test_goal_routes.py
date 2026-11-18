@@ -9,7 +9,7 @@ import pytest
 from aiohttp import web
 
 from agents import AgentProfile
-from conversations import ConversationStore, conversation_exists, list_conversations
+from conversations import ConversationStore, conversations_dir, conversation_exists, list_conversations
 from goals import GoalStep, GoalStore
 from server._agent_runtime import AGENT_RUNTIME_KEY
 from server._agent_run_routes import register_agent_run_routes
@@ -33,7 +33,7 @@ async def goal_client(tmp_path, monkeypatch, aiohttp_client):
     profile = AgentProfile(id="test", name="Test", provider="fake", model="fake")
     monkeypatch.setattr("server._goal_routes.get_agent_profile", lambda _id: profile)
     monkeypatch.setattr("server._goal_routes.get_default_profile", lambda: profile)
-    store = GoalStore(tmp_path / "session-goals")
+    store = GoalStore(conversations_dir())
     runtime = MagicMock()
     runtime.active_for_conversation.return_value = None
     runtime.start = AsyncMock()
@@ -206,13 +206,12 @@ async def test_archive_pauses_and_restore_does_not_restart_goal(goal_client):
     client, store, _, _ = goal_client
     await assign(client)
     assert (await client.post("/api/conversations/sessions/chat-1/archive")).status == 204
-    _assert_paused(store)
-    assert (await (await client.get("/api/goals")).json())["goals"] == []
-    assert (await client.post(BASE + "/resume", json={})).status == 409
-    assert (await client.post(BASE + "/run", json={})).status == 409
-    assert (await assign(client)).status == 409
+    assert store.current("chat-1") is None and store.due() == []
+    assert [goal.paused for goal in store.list()] == [True]
+    assert (await assign(client)).status == 400
     assert (await client.post("/api/conversations/sessions/chat-1/unarchive")).status == 204
     _assert_paused(store)
+    assert store.due() == []
 
 
 async def test_delete_removes_goal_and_wake(goal_client):
@@ -264,26 +263,37 @@ async def test_goal_run_is_shown_as_running(goal_client):
     assert body["goal"]["run_id"] == "run-7"
 
 
-@pytest.mark.parametrize("action", ["archive", "delete"])
-async def test_conversation_removal_disarms_wake_before_files_change(goal_client, monkeypatch, action):
+async def test_archive_pauses_the_goal_before_the_folder_moves(goal_client, monkeypatch):
     client, store, _, _ = goal_client
     await assign(client)
     from server import _conversation_routes
 
-    original = getattr(_conversation_routes, f"{action}_conversation")
+    original = _conversation_routes.archive_conversation
 
-    def checked_remove(conversation_id):
+    def checked_archive(conversation_id):
         assert store.due() == []
-        latest = store.latest(conversation_id)
-        assert latest.paused or latest.next.kind == "cancelled"
+        assert store.latest(conversation_id).paused
         return original(conversation_id)
 
-    monkeypatch.setattr(_conversation_routes, f"{action}_conversation", checked_remove)
-    if action == "archive":
-        response = await client.post("/api/conversations/sessions/chat-1/archive")
-    else:
-        response = await client.delete("/api/conversations/sessions/chat-1")
-    assert response.status == 204
+    monkeypatch.setattr(_conversation_routes, "archive_conversation", checked_archive)
+    assert (await client.post("/api/conversations/sessions/chat-1/archive")).status == 204
+
+
+async def test_delete_writes_no_goal_file_before_the_folder_is_removed(goal_client, monkeypatch):
+    client, store, _, _ = goal_client
+    await assign(client)
+    goal = store.current("chat-1")
+    from server import _conversation_routes
+
+    original = _conversation_routes.delete_conversation
+
+    def checked_delete(conversation_id):
+        assert store.latest(conversation_id) == goal
+        return original(conversation_id)
+
+    monkeypatch.setattr(_conversation_routes, "delete_conversation", checked_delete)
+    assert (await client.delete("/api/conversations/sessions/chat-1")).status == 204
+    assert store.current("chat-1") is None and store.latest_goals() == []
 
 
 async def test_pause_by_goal_identity_wins_over_new_progress(goal_client):
@@ -306,12 +316,12 @@ async def test_old_control_cannot_pause_a_replacement_goal(goal_client):
     assert store.current("chat-1").paused is False
 
 
-async def test_controls_check_the_expected_revision(goal_client):
+async def test_control_with_an_expected_revision_is_refused_as_unknown(goal_client):
     client, store, _, _ = goal_client
     await assign(client)
     goal = store.current("chat-1")
-    response = await client.post(BASE + "/pause", json={"expected_revision": goal.revision + 1})
-    assert response.status == 409
+    response = await client.post(BASE + "/pause", json={"expected_revision": goal.revision})
+    assert response.status == 400
     assert store.current("chat-1").paused is False
 
 
@@ -492,7 +502,7 @@ async def test_history_is_lazy_searchable_paged_and_scoped_to_its_conversation(g
     assert not {e['id'] for e in first['entries']} & {e['id'] for e in second['entries']}
     assert {e['actor'] for e in first['entries']} == {'user'}
     match = await (await client.get(url, params={'goal_id': goal.id, 'q': 'Progress 0'})).json()
-    assert match['entries'][0]['data']['after']['summary'] == 'Progress 0'
+    assert match['entries'][0]['data']['summary'] == 'Progress 0'
     other = store.create('other-chat', 'Private goal', 'assistant')
     assert (await client.get(url, params={'goal_id': other.id})).status == 404
     assert (await client.get(url, params={'goal_id': goal.id, 'before': '-1'})).status == 400

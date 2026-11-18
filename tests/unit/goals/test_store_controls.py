@@ -153,12 +153,6 @@ def test_run_refused_while_waiting_and_on_ended_goal(store):
         store.run(done.id)
 
 
-def test_run_checks_the_expected_revision(store):
-    goal = scheduled(store, create(store))
-    with pytest.raises(GoalConflictError):
-        store.run(goal.id, expected_revision=goal.revision - 1)
-
-
 def test_cancel_ends_the_goal_and_clears_pause_and_claim(store):
     goal = create(store)
     claim_wake(store, goal)

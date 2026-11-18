@@ -83,7 +83,7 @@ describe('goal history', () => {
         vi.spyOn(globalThis, 'fetch').mockResolvedValue(response([
             entry(5, 'Called the parks office. Booked 11 AM to 4 PM.', { kind: 'note', claim_id: 'run-2' }),
             entry(4, 'Plan updated', { kind: 'plan', claim_id: 'run-2', data: { changes: ['Book the pavilion: done.'] } }),
-            entry(3, 'Summary updated', { claim_id: 'run-2', data: { after: { summary: 'Pavilion booked for Saturday.' } } }),
+            entry(3, 'Summary updated', { claim_id: 'run-2', data: { summary: 'Pavilion booked for Saturday.' } }),
             entry(2, 'Old change without a run', { kind: 'goal', actor: 'user', data: { after: { objective: 'Book the pavilion' } } }),
         ]));
         render(<History startOpen />);

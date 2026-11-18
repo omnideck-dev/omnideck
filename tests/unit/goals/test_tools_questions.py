@@ -53,7 +53,7 @@ async def test_question_status_change_keeps_text_and_choices(owned):
     assert resolved.status == "resolved"
     assert resolved.question == "Which Saturday works?"
     assert resolved.choices == ["June 14", "June 21"]
-    assert [item.id for item in store.get(goal.id).questions] == ["budget"]
+    assert [(item.id, item.status) for item in store.get(goal.id).questions] == [("day", "resolved"), ("budget", "open")]
 
 
 async def test_new_question_requires_text(owned):
