@@ -17,6 +17,8 @@ _update_lock = threading.Lock()
 
 _GROUP_KIND: dict[str, SettingKind] = {"light": "color", "dark": "color", "fonts": "font"}
 _KIND_GROUP: dict[SettingKind, str] = {"color": "'light' or 'dark'", "font": "'fonts'"}
+# Typed so each element is a SettingKind rather than a bare str when iterated.
+_KIND_ORDER: tuple[SettingKind, ...] = ("color", "font")
 
 
 def _view(default: str, override: str | None) -> dict[str, str | None]:
@@ -83,7 +85,7 @@ def _unknown_setting_message(group: str, key: object, kind: SettingKind) -> tupl
 
 def _valid_settings_message(kinds: set[SettingKind]) -> str:
     """Name every valid id of the given kinds, so a caller's retry does not have to guess again."""
-    listed = [f"valid {kind} settings: {', '.join(settings_for(kind))}" for kind in ("color", "font") if kind in kinds]
+    listed = [f"valid {kind} settings: {', '.join(settings_for(kind))}" for kind in _KIND_ORDER if kind in kinds]
     return "; ".join(listed) + " (get_theme describes each one)"
 
 
