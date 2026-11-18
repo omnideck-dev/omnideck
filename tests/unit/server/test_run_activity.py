@@ -259,6 +259,35 @@ async def test_nothing_goal_related_is_sent_while_goals_are_off(goal_feed) -> No
         await runtime.close()
 
 
+async def test_turning_goals_on_sends_open_streams_the_goals(goal_feed) -> None:
+    store, goals, enabled = goal_feed
+    goal = store.create('chat', 'Plan the reunion')
+    enabled['value'] = False
+    runtime = AgentRuntime(Runner())
+    feed = activity_events(runtime, [goals])
+    try:
+        assert (await message(feed))['type'] == 'run_snapshot'
+        enabled['value'] = True
+        goals.resend_snapshot()
+        snapshot = await asyncio.wait_for(message(feed), 2)
+        assert snapshot['type'] == 'goal_snapshot'
+        assert [item['id'] for item in snapshot['goals']] == [goal.id]
+    finally:
+        await feed.aclose()
+        await runtime.close()
+
+
+def test_resend_reaches_no_stream_after_it_unsubscribes(goal_feed) -> None:
+    store, goals, _enabled = goal_feed
+    store.create('chat', 'Plan the reunion')
+    sent = []
+    unsubscribe = goals.subscribe(lambda item: sent.append(item) or True)
+    goals.resend_snapshot()
+    unsubscribe()
+    goals.resend_snapshot()
+    assert [item.type for item in sent] == ['goal_snapshot']
+
+
 async def test_disconnect_unsubscribes_the_goal_feed(goal_feed) -> None:
     store, goals, _enabled = goal_feed
     runtime = AgentRuntime(Runner())

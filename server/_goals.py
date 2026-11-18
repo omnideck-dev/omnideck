@@ -27,17 +27,35 @@ class GoalActivityFeed:
     def __init__(self, store: GoalStore, enabled: Callable[[], bool]) -> None:
         self._store = store
         self._enabled = enabled
+        self._subscribers: list[Callable[[ActivityMessage], bool]] = []
 
     def subscribe(self, send: Callable[[ActivityMessage], bool]) -> Callable[[], None]:
         def changed(goal: Goal, _entries: object) -> None:
             if self._enabled():
                 send(GoalChangedMessage(type="goal_changed", conversation_id=goal.conversation_id, goal=goal))
-        return self._store.subscribe(changed)
+        stop_observing = self._store.subscribe(changed)
+        self._subscribers.append(send)
+
+        def unsubscribe() -> None:
+            stop_observing()
+            if send in self._subscribers:
+                self._subscribers.remove(send)
+        return unsubscribe
+
+    def resend_snapshot(self) -> None:
+        """Send every open stream the goals, for a stream that connected while Goals was off."""
+        snapshot = self.snapshot()
+        if snapshot is not None:
+            for send in list(self._subscribers):
+                send(snapshot)
 
     def snapshot(self) -> ActivityMessage | None:
         if not self._enabled():
             return None
         return GoalSnapshotMessage(type="goal_snapshot", goals=self._store.latest_goals())
+
+
+GOAL_FEED_KEY: web.AppKey[GoalActivityFeed] = web.AppKey("goal_feed", GoalActivityFeed)
 
 
 def create_goal_store(app: web.Application) -> GoalRunExtension:
@@ -53,7 +71,9 @@ def setup_goals(app: web.Application, scheduler: Scheduler) -> None:
     runtime = app[AGENT_RUNTIME_KEY]
     scheduler.register(GoalWorkSource(store, runtime, enabled=goals_enabled, on_change=scheduler.wake))
     runtime.observe_events(GoalAnswerRecorder(store, goals_enabled).handle_event)
-    app[ACTIVITY_FEEDS_KEY].append(GoalActivityFeed(store, goals_enabled))
+    feed = GoalActivityFeed(store, goals_enabled)
+    app[GOAL_FEED_KEY] = feed
+    app[ACTIVITY_FEEDS_KEY].append(feed)
 
 
 async def start_goals(app: web.Application) -> None:
@@ -67,3 +87,8 @@ async def start_goals(app: web.Application) -> None:
 def disable_goals(app: web.Application) -> None:
     """Stop goal runs when the experiment is turned off, leaving every goal as it was."""
     stop_goal_runs(app[GOAL_STORE_KEY], app[AGENT_RUNTIME_KEY])
+
+
+def enable_goals(app: web.Application) -> None:
+    """Show goals on every open stream when the experiment is turned on."""
+    app[GOAL_FEED_KEY].resend_snapshot()

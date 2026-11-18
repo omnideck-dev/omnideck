@@ -101,8 +101,8 @@ def test_answers_return_to_the_card_when_stop_ends_the_run(page: Page):
     with goal_conversation(page) as view:
         view.assign()
         view.ask()
-        view.composer.fill(bash("sleep 8") + say("Still checking."))
         view.questions.get_by_role("button", name="Hide", exact=True).click()
+        view.composer.fill(bash("sleep 8") + say("Still checking."))
         page.get_by_role("button", name="Send message", exact=True).click()
         expect(page.get_by_test_id("chat-stop-btn")).to_be_visible(timeout=8_000)
         page.get_by_role("button", name="Show goal questions", exact=True).click()
@@ -113,6 +113,8 @@ def test_answers_return_to_the_card_when_stop_ends_the_run(page: Page):
         expect(view.questions).not_to_contain_text("Which day works for you?")
         page.get_by_test_id("chat-stop-btn").click()
         expect(strip).to_have_count(0, timeout=20_000)
+        expect(view.questions).to_contain_text("of 2")
+        view.questions.get_by_role("button", name="Question 1, answer drafted", exact=True).click()
         expect(view.questions).to_contain_text("Which day works for you?")
         expect(page.get_by_role("button", name="Saturday", exact=True)).to_have_attribute("aria-pressed", "true")
         assert all(not question["answers"] for question in view.current()["questions"])

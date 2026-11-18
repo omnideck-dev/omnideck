@@ -68,8 +68,8 @@ def test_failed_goal_run_shows_error(goal_ui):
     assert retried['next'] == {'kind': 'wait', 'question_ids': []}
     expect(view.details.get_by_test_id('goal-error')).to_have_count(0)
     expect(view.dividers('error')).to_have_count(1)
-    expect(view.dividers('run')).to_have_count(2)
-    assert view.transitions() == ['run', 'waiting', 'run', 'error', 'run', 'waiting']
+    expect(view.dividers('run')).to_have_count(3)
+    assert view.transitions() == ['run', 'waiting', 'run', 'error', 'edited', 'run', 'waiting']
 
 
 def test_stop_keeps_goal_schedule(goal_ui):
@@ -156,7 +156,7 @@ def test_run_now_runs_the_scheduled_step_now(goal_ui):
     assert ran['last_run_id'] != scheduled['last_run_id']
     assert ran['next'] == {'kind': 'wait', 'question_ids': []}
     run = view.dividers('run')
-    expect(run).to_have_count(1)
+    expect(run).to_have_count(2)
     expect(run.last).to_contain_text('Goal run')
     expect(run.last).to_contain_text('Checked the library calendar early.')
     wakeups = [e for e in view.events() if e['type'] == 'goal' and e['data']['kind'] == 'wakeup']

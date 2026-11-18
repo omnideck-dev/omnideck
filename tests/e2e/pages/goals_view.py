@@ -117,6 +117,11 @@ class GoalsView:
             assert time.monotonic() < deadline, 'Condition was not met in time.'
             self.page.wait_for_timeout(100)
 
+    def active_run(self):
+        response = self.page.request.post(f'/api/conversations/sessions/{self.conversation_id}/resume')
+        assert response.ok, response.text()
+        return response.json().get('active_run')
+
     def set_goals(self, enabled: bool):
         response = self.page.request.put('/api/settings', data={'goals_enabled': enabled})
         assert response.ok, response.text()

@@ -15,7 +15,7 @@ from server._agent_runtime import AGENT_RUNTIME_KEY
 from server._agent_run_routes import register_agent_run_routes
 from server._conversation_routes import register_conversation_routes
 from server._goal_routes import register_goal_routes
-from server._goals import GOAL_STORE_KEY
+from server._goals import GOAL_FEED_KEY, GOAL_STORE_KEY, GoalActivityFeed
 from server._settings_routes import register_settings_routes
 from server.aiohttp_app import cors_and_error_middleware
 
@@ -40,6 +40,7 @@ async def goal_client(tmp_path, monkeypatch, aiohttp_client):
     runtime.conversations = ConversationStore()
     app = web.Application(middlewares=[cors_and_error_middleware])
     app[GOAL_STORE_KEY] = store
+    app[GOAL_FEED_KEY] = GoalActivityFeed(store, lambda: enabled["value"])
     app[AGENT_RUNTIME_KEY] = runtime
     register_goal_routes(app)
     register_conversation_routes(app)

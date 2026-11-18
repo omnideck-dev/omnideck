@@ -125,6 +125,7 @@ class SettingsPage:
 
     def unlock_early_access(self) -> "SettingsPage":
         """Type the early access code so early access rows show."""
+        self.page.evaluate("document.activeElement && document.activeElement.blur()")
         for key in ("ArrowUp", "ArrowUp", "ArrowDown", "ArrowDown", "ArrowLeft", "ArrowRight", "ArrowLeft", "ArrowRight", "b", "a"):
             self.page.keyboard.press(key)
         return self

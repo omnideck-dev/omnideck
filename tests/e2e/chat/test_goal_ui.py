@@ -65,7 +65,7 @@ def test_goals_off_and_on_leaves_goals_unchanged(goal_ui):
     ) as disabled_response:
         page.get_by_test_id('goals-toggle').click()
     assert disabled_response.value.ok
-    expect(toggle).not_to_be_checked()
+    expect(page.get_by_test_id('goals-toggle')).to_have_count(0)
     assert page.request.get('/api/settings').json()['goals_enabled'] is False
     view.chat()
     page.get_by_role('button', name='Add to chat', exact=True).click()
@@ -412,14 +412,15 @@ def test_goals_off_stops_a_goal_run_and_on_reruns_it(goal_ui):
     page.get_by_role('button', name='Send message', exact=True).click()
     view.until(lambda: view.transitions().count('run') == 2 and view.current()['claim'] is not None)
     view.set_goals(False)
-    stopped = view.wait(lambda g: g['claim'] is None and g['next']['kind'] == 'wake')
-    assert stopped['next']['reason'] == 'interrupted'
+    view.until(lambda: view.active_run() is None)
     page.wait_for_timeout(1500)
     assert view.transitions().count('run') == 2
+    assert view.active_run() is None
     view.set_goals(True)
     view.until(lambda: view.transitions().count('run') == 3, timeout=5)
     wakeups = [e for e in view.events() if e['type'] == 'goal' and e['data']['kind'] == 'wakeup']
     assert wakeups[-1]['data']['reason'] == 'interrupted'
+    assert wakeups[-1]['data']['wake_id'] == wakeups[-2]['data']['wake_id']
 
 
 def test_goals_off_returns_a_queued_message_to_the_composer(goal_ui):

@@ -12,7 +12,7 @@ from agent_runtime import AgentRunRequest, AgentRuntime, RunSession
 from goals import GoalRunExtension, GoalStore
 from server._agent_runtime import AGENT_RUNTIME_KEY
 from server._agent_run_routes import register_agent_run_routes
-from server._goals import GOAL_STORE_KEY
+from server._goals import GOAL_FEED_KEY, GOAL_STORE_KEY, GoalActivityFeed
 from server._settings_routes import register_settings_routes
 from server.aiohttp_app import cors_and_error_middleware
 from settings import goals_enabled, save_settings
@@ -43,6 +43,7 @@ async def app_client(tmp_path, monkeypatch, aiohttp_client):
     runtime = AgentRuntime(runner, extensions=[GoalRunExtension(store, enabled=goals_enabled)])
     app = web.Application(middlewares=[cors_and_error_middleware])
     app[GOAL_STORE_KEY] = store
+    app[GOAL_FEED_KEY] = GoalActivityFeed(store, goals_enabled)
     app[AGENT_RUNTIME_KEY] = runtime
     register_agent_run_routes(app)
     register_settings_routes(app)

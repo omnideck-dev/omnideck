@@ -379,11 +379,11 @@ def test_scheduled_return_uses_one_wake_record_live_and_after_reload(goal_ui) ->
     expect(page.get_by_test_id('message-assistant').filter(has_text=answer)).to_be_visible(timeout=20000)
     view.idle()
     returned = view.dividers('run')
-    expect(returned).to_have_count(1)
+    expect(returned).to_have_count(2)
     expect(returned.last).to_contain_text(answer)
     wakes = [e for e in view.events() if e['type'] == 'goal' and e['data']['kind'] == 'wakeup' and e['data']['wake_id'] == wake_id]
     assert len(wakes) == 1 and wakes[0]['data']['reason'] == 'planned'
     assert view.transitions() == ['run', 'waiting', 'scheduled', 'run', 'waiting']
     page.reload()
-    expect(returned).to_have_count(1)
+    expect(returned).to_have_count(2)
     expect(page.get_by_test_id('message-assistant').filter(has_text=answer)).to_be_visible()

@@ -3,7 +3,8 @@
 import pytest
 from playwright.sync_api import Page, expect
 
-from tests.e2e.pages.goals_view import goal_conversation
+from tests.e2e._protocol import say
+from tests.e2e.pages.goals_view import choose, future, goal_conversation, read_goal, work_on
 
 
 @pytest.fixture
@@ -38,17 +39,21 @@ def test_start_a_goal_from_the_goals_page(goal_ui):
         other.delete_chat()
 
 
-def test_waiting_goal_raises_the_sidebar_count_until_answers_are_sent(goal_ui):
+def test_waiting_goal_raises_the_sidebar_count_until_the_agent_moves_on(goal_ui):
     view, page = goal_ui, goal_ui.page
     view.assign()
     goals_row = page.get_by_test_id('sidebar-nav-goals')
-    expect(goals_row).to_have_accessible_name('Goals')
     view.ask()
     expect(goals_row).to_have_accessible_name('Goals, 1 needs you')
+    expect(goals_row).to_have_attribute('title', '1 goal needs you')
     expect(goals_row.get_by_test_id('sidebar-goals-needs-you')).to_have_text('1')
     page.get_by_role('button', name='Saturday', exact=True).click()
     view.composer.fill('The library')
     page.get_by_role('button', name='Send 2 answers', exact=True).click()
     view.idle()
+    expect(goals_row).to_have_accessible_name('Goals, 1 needs you')
+    view.background(read_goal() + work_on('Book the library') + choose('schedule', 'Booking the library.', at=future(24 * 60))
+                    + say('Booking it.'))
+    assert view.current()['next']['kind'] == 'wake'
     expect(goals_row).to_have_accessible_name('Goals')
     expect(goals_row.get_by_test_id('sidebar-goals-needs-you')).to_have_count(0)
