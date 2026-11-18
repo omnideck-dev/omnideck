@@ -3,11 +3,12 @@ import Button from '../../components/primitives/Button.jsx';
 import { isGoalOpen, plural, unansweredQuestions } from './goalStatus.js';
 import styles from './GoalQuestions.module.css';
 
-function draftKey(conversationId, goalId) {
-    return `omnideck_goal_answers:${conversationId}:${goalId || ''}`;
+export const DRAFT_PREFIX = 'omnideck_goal_answers:';
+
+export function draftKey(conversationId, goalId) {
+    return `${DRAFT_PREFIX}${conversationId}:${goalId || ''}`;
 }
 
-/** Saved drafts, without those whose question closed or changed since they were typed. */
 function readDrafts(key, questions) {
     let drafts;
     try { drafts = JSON.parse(localStorage.getItem(key) || '{}'); } catch { return {}; }
@@ -19,17 +20,19 @@ function draftAnswer(draft) {
     return (draft?.text?.trim() || draft?.choice || '').trim();
 }
 
-export function useGoalQuestionDrafts(goal, conversationId) {
+const NO_IDS = new Set();
+
+export function useGoalQuestionDrafts(goal, conversationId, leftOut = NO_IDS) {
     const key = draftKey(conversationId, goal?.id);
-    const questions = isGoalOpen(goal) ? unansweredQuestions(goal) : [];
-    const [saved, setSaved] = useState(() => ({ key, drafts: readDrafts(key, questions) }));
+    const openQuestions = isGoalOpen(goal) ? unansweredQuestions(goal) : [];
+    const questions = openQuestions.filter((question) => !leftOut.has(question.id));
+    const [saved, setSaved] = useState(() => ({ key, drafts: readDrafts(key, openQuestions) }));
     const [selected, setSelected] = useState(null);
-    const drafts = saved.key === key ? saved.drafts : readDrafts(key, questions);
+    const drafts = saved.key === key ? saved.drafts : readDrafts(key, openQuestions);
     const current = questions.find((q) => q.id === selected) || questions[0];
     const draft = current && drafts[current.id];
     const stale = Boolean(draftAnswer(draft) && draft.revision !== current?.revision);
     const write = (id, value) => setSaved({ key, drafts: { ...drafts, [id]: value } });
-    // Typing replaces a picked choice.
     const setAnswer = (text) => {
         if (current) write(current.id, { text, choice: '', revision: current.revision });
     };
@@ -38,7 +41,6 @@ export function useGoalQuestionDrafts(goal, conversationId) {
         const rest = [...questions.slice(index + 1), ...questions.slice(0, index)];
         return rest.find((q) => !draftAnswer(withDrafts[q.id]));
     };
-    // A choice marks the answer and moves on to the next question with no answer yet.
     const pickChoice = (choice) => {
         if (!current) return;
         const next = { ...drafts, [current.id]: { text: '', choice, revision: current.revision } };
@@ -46,7 +48,6 @@ export function useGoalQuestionDrafts(goal, conversationId) {
         const following = nextUnanswered(current.id, next);
         if (following) setSelected(following.id);
     };
-    // Skipping leaves the question open and moves to the next one.
     const skip = () => {
         if (!current || questions.length < 2) return;
         const index = questions.findIndex((q) => q.id === current.id);
@@ -70,12 +71,11 @@ export function useGoalQuestionDrafts(goal, conversationId) {
         }
         return { key, drafts: remaining };
     });
-    // Answers the agent never read come back as drafts for the same question version.
     const restoreAnswers = (items) => setSaved((previous) => {
         const next = { ...(previous.key === key ? previous.drafts : drafts) };
         for (const item of items || []) {
             if (item?.type !== 'goal_question' || item.goal_id !== goal?.id) continue;
-            const question = questions.find((q) => q.id === item.question_id);
+            const question = (goal?.questions || []).find((q) => q.id === item.question_id);
             if (!question || question.revision !== item.question_revision) continue;
             next[item.question_id] = question.choices?.includes(item.answer)
                 ? { text: '', choice: item.answer, revision: item.question_revision }
@@ -89,7 +89,7 @@ export function useGoalQuestionDrafts(goal, conversationId) {
     };
 }
 
-export default function GoalQuestions({ state, disabled, queued = false, paused, visible, onHide, onShow }) {
+export default function GoalQuestions({ state, disabled, paused, visible, onHide, onShow }) {
     const { current, questions, selected, select, pickChoice, skip, choice, drafted, stale, staleQuestions, answers } = state;
     if (!current) return null;
     const draftCount = answers.length ? ` · ${answers.length} ${answers.length === 1 ? 'answer' : 'answers'} drafted` : '';
@@ -117,7 +117,6 @@ export default function GoalQuestions({ state, disabled, queued = false, paused,
         {current.choices.length > 0 && <div className={styles.choices}>{current.choices.map((option) => <Button key={option} wrap
             variant={choice === option ? 'filled' : 'outline'} disabled={disabled} aria-pressed={choice === option}
             onClick={() => pickChoice(option)}>{option}</Button>)}</div>}
-        {queued && <p className={styles.notice} role="status">Queued for the agent's next step</p>}
         {stale && <p className={styles.notice} role="status">The question changed. Edit your draft or pick a choice to confirm your answer.</p>}
         {!stale && staleQuestions.length > 0 && <div className={styles.review}>
             <p className={styles.notice} role="status">Another drafted answer needs review because its question changed.</p>

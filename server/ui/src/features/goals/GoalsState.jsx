@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useMemo, useRef, useState } fro
 import { useAppEffectSubscription } from '../app/AppEffects.jsx';
 import { APP_EFFECT_TYPES } from '../app/appEffectTypes.js';
 import { isGoalOpen } from './goalStatus.js';
+import { DRAFT_PREFIX, draftKey } from './GoalQuestions.jsx';
 
 const GoalsContext = createContext(null);
 
@@ -14,11 +15,9 @@ function newestGoal(current, incoming) {
 
 export { goalNeedsAnswer, goalStatus, isGoalOpen } from './goalStatus.js';
 
-const DRAFT_PREFIX = 'omnideck_goal_answers:';
-
 function pruneAnswerDrafts(goals) {
     try {
-        const keep = new Set(goals.filter(isGoalOpen).map((goal) => `${DRAFT_PREFIX}${goal.conversation_id}:${goal.id}`));
+        const keep = new Set(goals.filter(isGoalOpen).map((goal) => draftKey(goal.conversation_id, goal.id)));
         for (let index = localStorage.length - 1; index >= 0; index -= 1) {
             const key = localStorage.key(index);
             if (key?.startsWith(DRAFT_PREFIX) && !keep.has(key)) localStorage.removeItem(key);

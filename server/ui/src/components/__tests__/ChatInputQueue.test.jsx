@@ -74,26 +74,75 @@ it('puts returned text back in the message box, one per line', async () => {
     expect(onReturnedConsumed).toHaveBeenCalledWith(['n1', 'n2']);
 });
 
-it('locks the question card while its answers are queued', () => {
-    render(<ChatInput onSend={vi.fn()} onSendAnswers={vi.fn()} onStop={vi.fn()} isStreaming goal={goal} conversationId="chat"
+it('renders the queue strip outside the message form', () => {
+    render(<ChatInput onSend={vi.fn()} isStreaming queue={[{ id: 'n1', content: 'Later', context: [] }]} />);
+    const strip = screen.getByTestId('queue-strip');
+    expect(strip.closest('form')).toBeNull();
+    expect(strip.nextElementSibling?.tagName).toBe('FORM');
+});
+
+it("takes a queued answer's question out of the card and keeps the other answerable", async () => {
+    const user = userEvent.setup();
+    const twoQuestions = { ...goal, questions: [question('day', 'Which day works?'), question('place', 'Which park?')] };
+    render(<ChatInput onSend={vi.fn()} onSendAnswers={vi.fn()} onStop={vi.fn()} isStreaming goal={twoQuestions} conversationId="chat"
         queue={[{ id: 'n1', content: '', context: [answer('Tuesday')] }]} />);
-    const card = screen.getByRole('region', { name: 'Goal questions' });
-    expect(within(card).getByRole('status')).toHaveTextContent("Queued for the agent's next step");
-    expect(screen.getByRole('textbox')).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Send answer' })).toBeDisabled();
+    expect(screen.queryByText('Which day works?')).not.toBeInTheDocument();
+    expect(screen.getByText('Which park?')).toBeVisible();
+    expect(screen.getByText('Answers to 1 question')).toBeVisible();
+    await user.type(screen.getByRole('textbox'), 'Zilker');
+    expect(screen.getByRole('button', { name: 'Send answer' })).toBeEnabled();
+});
+
+it('removes the card when every question is queued, so typing goes to the message box', async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn();
+    render(<ChatInput onSend={onSend} onSendAnswers={vi.fn()} onStop={vi.fn()} isStreaming goal={goal} conversationId="chat"
+        queue={[{ id: 'n1', content: '', context: [answer('Tuesday')] }]} />);
+    expect(screen.queryByRole('region', { name: 'Goal questions' })).not.toBeInTheDocument();
+    await user.type(screen.getByRole('textbox'), 'Also check Thursday{Enter}');
+    expect(onSend).toHaveBeenCalledWith('Also check Thursday', null);
 });
 
 it('puts returned answers back into the question card as drafts', async () => {
     const onReturnedConsumed = vi.fn();
     const queued = { id: 'n1', content: '', context: [answer('Tuesday')] };
     const view = render(<ChatInput onSend={vi.fn()} onSendAnswers={vi.fn()} isStreaming goal={goal} conversationId="chat" queue={[queued]} />);
-    expect(screen.getByRole('textbox')).toBeDisabled();
+    expect(screen.queryByRole('region', { name: 'Goal questions' })).not.toBeInTheDocument();
     view.rerender(<ChatInput onSend={vi.fn()} onSendAnswers={vi.fn()} isStreaming={false} goal={goal} conversationId="chat"
         returned={[queued]} onReturnedConsumed={onReturnedConsumed} />);
-    expect(screen.getByRole('textbox')).toBeEnabled();
     expect(screen.getByRole('textbox')).toHaveValue('Tuesday');
     expect(screen.getByRole('button', { name: 'Send answer' })).toBeEnabled();
     expect(onReturnedConsumed).toHaveBeenCalledWith(['n1']);
+});
+
+it('shows only Stop while the agent works and the box is empty, and Send once it has text', async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn();
+    render(<ChatInput onSend={onSend} onStop={vi.fn()} isStreaming />);
+    expect(screen.getByTestId('chat-stop-btn')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Send message' })).not.toBeInTheDocument();
+    await user.type(screen.getByRole('textbox'), 'Also');
+    expect(screen.queryByTestId('chat-stop-btn')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled();
+    await user.clear(screen.getByRole('textbox'));
+    expect(screen.getByTestId('chat-stop-btn')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Send message' })).not.toBeInTheDocument();
+});
+
+it('swaps Stop for Send answer when an answer is picked during a run', async () => {
+    const user = userEvent.setup();
+    const withChoices = { ...goal, questions: [{ ...question('day', 'Which day works?'), choices: ['Tuesday', 'Friday'] }] };
+    render(<ChatInput onSend={vi.fn()} onSendAnswers={vi.fn()} onStop={vi.fn()} isStreaming goal={withChoices} conversationId="chat" />);
+    expect(screen.getByTestId('chat-stop-btn')).toBeVisible();
+    expect(screen.getByRole('textbox')).toHaveAttribute('placeholder', 'Or type your own answer…');
+    await user.click(screen.getByRole('button', { name: 'Tuesday' }));
+    expect(screen.queryByTestId('chat-stop-btn')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Send answer' })).toBeEnabled();
+});
+
+it('sets the answer placeholder from the question', () => {
+    render(<ChatInput onSend={vi.fn()} onSendAnswers={vi.fn()} goal={goal} conversationId="chat" />);
+    expect(screen.getByRole('textbox')).toHaveAttribute('placeholder', 'Type your answer…');
 });
 
 it('sends a message while the agent works and keeps attaching off', async () => {

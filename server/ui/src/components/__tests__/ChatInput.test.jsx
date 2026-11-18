@@ -799,25 +799,19 @@ describe('ChatInput goal entry points', () => {
         expect(screen.getByRole('menuitem', { name: 'Attach file' })).toBeEnabled();
     });
 
-    it('keeps Send off after a successful send until the goal shows the saved answer', async () => {
+    it('takes the question out of the card while its answer is sent, then keeps the other answerable', async () => {
         const user = userEvent.setup();
-        const onSend = vi.fn().mockResolvedValue(undefined);
+        let finish;
+        const onSend = vi.fn(() => new Promise((resolve) => { finish = resolve; }));
         const goal = goalWith({ next: { kind: 'wait', question_ids: ['day', 'place'] },
             questions: [openQuestion('day', 'Which day works?'), openQuestion('place', 'Which park?')] });
-        const view = render(<ChatInput onSendAnswers={onSend} isStreaming={false} goal={goal} conversationId="chat" />);
+        render(<ChatInput onSendAnswers={onSend} isStreaming={false} goal={goal} conversationId="chat" />);
         await user.type(screen.getByRole('textbox'), 'Tuesday');
         await user.click(screen.getByRole('button', { name: 'Send answer' }));
-        await waitFor(() => expect(onSend).toHaveBeenCalledOnce());
-        const sending = screen.getByRole('button', { name: 'Sending…' });
-        expect(sending).toBeDisabled();
-        await user.click(sending);
         expect(onSend).toHaveBeenCalledOnce();
-        const saved = structuredClone(goal);
-        saved.revision = 4;
-        saved.questions[0].answers.push({ answer: 'Tuesday', question_revision: 1 });
-        view.rerender(<ChatInput onSendAnswers={onSend} isStreaming={false} goal={saved} conversationId="chat" />);
-        expect(screen.queryByRole('button', { name: 'Sending…' })).not.toBeInTheDocument();
+        expect(screen.queryByText('Which day works?')).not.toBeInTheDocument();
         expect(screen.getByText('Which park?')).toBeVisible();
+        await act(async () => finish({}));
         await user.type(screen.getByRole('textbox'), 'Zilker');
         expect(screen.getByRole('button', { name: 'Send answer' })).toBeEnabled();
     });

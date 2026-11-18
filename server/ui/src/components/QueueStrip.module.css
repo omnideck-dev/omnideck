@@ -1,8 +1,12 @@
 .strip {
-    margin: 0 0 var(--sp-1);
+    box-sizing: border-box;
+    width: calc(100% - 36px);
+    max-width: calc(var(--composer-max-width, 100%) - 36px);
+    margin: 0 auto;
     padding: var(--sp-2) var(--sp-2) var(--sp-1) var(--sp-3);
     border: 1px solid var(--border);
-    border-radius: var(--radius-md);
+    border-bottom: none;
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
     background: var(--accent-muted);
     font-size: var(--font-size-small);
 }

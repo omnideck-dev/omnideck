@@ -8,9 +8,10 @@ import ProfileSelector from './ProfileSelector.jsx';
 import AttachmentChip from './AttachmentChip.jsx';
 import Popover from './primitives/Popover.jsx';
 import Button from './primitives/Button.jsx';
-import SlashHint from './primitives/SlashHint.jsx';
-import QueueStrip, { answeredQuestionCount } from './primitives/QueueStrip.jsx';
-import GoalQuestions, { useGoalQuestionDrafts } from '../features/goals/GoalQuestions.jsx';
+import SlashHint from './SlashHint.jsx';
+import QueueStrip from './QueueStrip.jsx';
+import GoalQuestions from '../features/goals/GoalQuestions.jsx';
+import useGoalAnswering, { isAnswerMessage, queueRows } from '../features/goals/useGoalAnswering.js';
 import { formatRunTime, isGoalOpen } from '../features/goals/goalStatus.js';
 import { loadChatDraft, saveChatDraft } from '../utils/chatDraftStorage.js';
 
@@ -20,15 +21,6 @@ const PADDING_V_PX = 12;
 const MIN_HEIGHT_PX = 44;
 const MAX_AUTO_HEIGHT_PX = 8 * LINE_HEIGHT_PX + PADDING_V_PX; // 172px — 8 visible rows
 const GOAL_COMMAND = '/goal';
-
-function answersSaved(goal, answers) {
-    return answers.every((answer) => {
-        const question = goal.questions.find((q) => q.id === answer.question_id);
-        // Resolved/withdrawn questions have moved out of the working snapshot.
-        return !question || question.answers.some((saved) =>
-            saved.question_revision === answer.question_revision && saved.answer === answer.answer);
-    });
-}
 
 /** Stop ends this run only; say what the goal does afterwards. */
 function stopTitle(goal) {
@@ -50,24 +42,10 @@ const NO_MESSAGES = [];
 
 function ChatInput({ onSend, onSendAnswers, queue = NO_MESSAGES, returned = NO_MESSAGES, onRemoveQueued, onReturnedConsumed, onStop, isStreaming, isOffline = false, stopRequested = false, attachment, draft, onDraftConsumed, selectedProfileId, onProfileChange, profileRefreshSignal, conversationId, onRequestGoal, goal }) {
     const [chatMessage, setChatMessage] = useState(() => loadChatDraft(conversationId));
-    const questions = useGoalQuestionDrafts(goal, conversationId);
-    const [hiddenQuestions, setHiddenQuestions] = useState('');
-    const questionSet = `${goal?.id}:${questions.questions.map((question) => `${question.id}:${question.revision}`).join(',')}`;
-    const answering = Boolean(questions.current) && hiddenQuestions !== questionSet;
-    const message = answering ? questions.text : chatMessage;
-    const setMessage = answering ? questions.setAnswer : setChatMessage;
-    const [sendingAnswers, setSendingAnswers] = useState(false);
-    // The card locks while its answers wait in the queue.
-    const answersQueued = Boolean(goal) && queue.some((item) => (item.context || [])
-        .some((entry) => entry?.type === 'goal_question' && entry.goal_id === goal.id));
-    const submittedAnswers = useRef([]);
-    useEffect(() => {
-        if (goal && submittedAnswers.current.length && answersSaved(goal, submittedAnswers.current)) {
-            questions.clearSubmitted(submittedAnswers.current);
-            setSendingAnswers(false);
-            submittedAnswers.current = [];
-        }
-    }, [goal]);
+    const goalAnswering = useGoalAnswering({ goal, conversationId, queue, onSendAnswers });
+    const answering = goalAnswering.answering;
+    const message = answering ? goalAnswering.text : chatMessage;
+    const setMessage = answering ? goalAnswering.setText : setChatMessage;
     const [selectedProfile, setSelectedProfile] = useState(null);
     const [expanded, setExpanded] = useState(false);
     const [isGrown, setIsGrown] = useState(false);
@@ -133,6 +111,8 @@ function ChatInput({ onSend, onSendAnswers, queue = NO_MESSAGES, returned = NO_M
     const profileName = selectedProfile?.name;
     const placeholder = stopRequested
         ? 'Stopping…'
+        : answering
+        ? goalAnswering.placeholder
         : isStreaming
         ? 'Message the agent while it works…'
         : `Message ${profileName || 'Omnideck'}…`;
@@ -243,32 +223,7 @@ function ChatInput({ onSend, onSendAnswers, queue = NO_MESSAGES, returned = NO_M
         e.preventDefault();
         if (stopRequested || isOffline) return;
         if (answering) {
-            if (!questions.answers.length || questions.staleQuestions.length || sendingAnswers || answersQueued) return;
-            const answers = questions.answers;
-            submittedAnswers.current = answers;
-            setSendingAnswers(true);
-            // Send stays off after success until the goal shows the saved answers,
-            // so the same answers cannot go out twice. Queued answers lock the
-            // card through the queue instead.
-            Promise.resolve(onSendAnswers(goal.id, answers.map((answer) => ({
-                question_id: answer.question_id, question_revision: answer.question_revision,
-                question: questions.questions.find((question) => question.id === answer.question_id).question,
-                answer: answer.answer,
-            })))).then((result) => {
-                if (result?.queued) {
-                    setSendingAnswers(false);
-                    return;
-                }
-                if (!result?.goal || answersSaved(result.goal, answers)) {
-                    questions.clearSubmitted(answers);
-                    return;
-                }
-                submittedAnswers.current = [];
-                setSendingAnswers(false);
-            }, () => {
-                submittedAnswers.current = [];
-                setSendingAnswers(false);
-            });
+            goalAnswering.submit();
             setExpanded(false);
             return;
         }
@@ -290,20 +245,18 @@ function ChatInput({ onSend, onSendAnswers, queue = NO_MESSAGES, returned = NO_M
     // text to the message box, one per line, and answers to the question card.
     useEffect(() => {
         if (!returned.length) return;
-        const texts = returned.filter((item) => !answeredQuestionCount(item)).map((item) => item.content).filter(Boolean);
+        const texts = returned.filter((item) => !isAnswerMessage(item)).map((item) => item.content).filter(Boolean);
         if (texts.length) setChatMessage((current) => [current, ...texts].filter(Boolean).join('\n'));
-        for (const item of returned) {
-            if (answeredQuestionCount(item)) questions.restoreAnswers(item.context);
-        }
+        goalAnswering.restoreReturned(returned);
         onReturnedConsumed?.(returned.map((item) => item.id));
     }, [returned]);
 
-    const removeQueued = (item) => onRemoveQueued?.(item.id);
-    // Editing takes the message out of the queue and back into the box.
-    const editQueued = async (item) => {
-        const result = await onRemoveQueued?.(item.id);
-        if (!result?.ok) return;
-        setHiddenQuestions(questionSet);
+    const removeQueued = (id) => onRemoveQueued?.(id);
+    const editQueued = async (id) => {
+        const item = queue.find((queued) => queued.id === id);
+        const result = await onRemoveQueued?.(id);
+        if (!item || !result?.ok) return;
+        goalAnswering.hide();
         setChatMessage((current) => [current, item.content].filter(Boolean).join('\n'));
         textareaRef.current?.focus();
     };
@@ -367,12 +320,13 @@ function ChatInput({ onSend, onSendAnswers, queue = NO_MESSAGES, returned = NO_M
         },
         onPaste: handlePaste,
         placeholder,
-        disabled: stopRequested || (answering && answersQueued),
+        disabled: stopRequested,
     };
 
     // The corner expand/collapse control appears once the textarea has grown
     // past one row, or whenever the composer is expanded.
     const showCornerBtn = isGrown || expanded;
+    const hasSomethingToSend = answering ? goalAnswering.hasSomethingToSend : message.trim().length > 0;
 
     return (
         <div className={[
@@ -385,12 +339,12 @@ function ChatInput({ onSend, onSendAnswers, queue = NO_MESSAGES, returned = NO_M
                     description="Messages and controls are unavailable."
                 />
             )}
+            <QueueStrip rows={queueRows(queue)} onRemove={removeQueued} onEdit={editQueued} disabled={isOffline} />
             <form className={styles.inputArea} onSubmit={handleSubmit}>
-                <GoalQuestions state={questions} disabled={controlsDisabled || sendingAnswers || answersQueued} queued={answersQueued} paused={Boolean(goal?.paused)} visible={answering}
-                    onHide={() => { setHiddenQuestions(questionSet); textareaRef.current?.focus(); }}
-                    onShow={() => { setHiddenQuestions(''); textareaRef.current?.focus(); }} />
+                <GoalQuestions state={goalAnswering.questions} disabled={controlsDisabled || goalAnswering.sending} paused={Boolean(goal?.paused)} visible={answering}
+                    onHide={() => { goalAnswering.hide(); textareaRef.current?.focus(); }}
+                    onShow={() => { goalAnswering.show(); textareaRef.current?.focus(); }} />
                 {showSlashHint && <SlashHint id={hintId} command={GOAL_COMMAND} description={goalCommandLabel} onPick={pickSlashCommand} />}
-                <QueueStrip messages={queue} onRemove={removeQueued} onEdit={editQueued} disabled={isOffline} />
                 {attachBlocked && attachments.length > 0 && <p className={styles.composerNote}>Files can be sent after the agent finishes.</p>}
                 {attachments.length > 0 && (
                     <div className={styles.tray}>
@@ -522,7 +476,7 @@ function ChatInput({ onSend, onSendAnswers, queue = NO_MESSAGES, returned = NO_M
                     </div>
                     <div className={styles.actionButtons}>
                         <div className={styles.sendActions}>
-                            {isStreaming ? (
+                            {isStreaming && (!hasSomethingToSend || stopRequested) ? (
                                 <button
                                     type="button"
                                     className={`${styles.sendButton} ${styles.stopButton}`}
@@ -534,24 +488,23 @@ function ChatInput({ onSend, onSendAnswers, queue = NO_MESSAGES, returned = NO_M
                                 >
                                     <StopIcon />
                                 </button>
-                            ) : null}
-                            {answering ? (
+                            ) : answering ? (
                                 <Button
                                     type="submit"
                                     variant="filled"
-                                    loading={sendingAnswers}
+                                    loading={goalAnswering.sending && !goalAnswering.hasSomethingToSend}
                                     loadingLabel="Sending…"
-                                    disabled={isOffline || stopRequested || answersQueued || questions.staleQuestions.length > 0 || !questions.answers.length}
+                                    disabled={isOffline || stopRequested || !goalAnswering.canSend}
                                 >
-                                    {questions.answers.length > 1 ? `Send ${questions.answers.length} answers` : 'Send answer'}
+                                    {goalAnswering.sendLabel}
                                 </Button>
-                            ) : !isStreaming && (
+                            ) : (
                                 <button
                                     type="submit"
                                     className={styles.sendButton}
                                     title="Send message"
                                     aria-label="Send message"
-                                    disabled={isOffline || stopRequested || (!message.trim() && !attachments.length)}
+                                    disabled={isOffline || stopRequested || (!message.trim() && (isStreaming || !attachments.length))}
                                 >
                                     <SendIcon />
                                 </button>
