@@ -6,7 +6,6 @@ import {
 } from './eventTypes.js';
 import { addDayHeaders, goalDividerItem } from './goalTranscript.js';
 
-/** Display rules applied after the events become items, in this order. */
 const TRANSCRIPT_PASSES = [placeCompactions, addDayHeaders];
 
 /**
@@ -28,9 +27,6 @@ const TRANSCRIPT_PASSES = [placeCompactions, addDayHeaders];
  * the agent network/activity view. The root transcript can still contain the
  * `spawn_requested` item that links to that sub-agent.
  *
- * The loop below only turns events into items, in the order they happened.
- * Display rules that move, hide or add items run afterwards as separate
- * passes, in the order listed in TRANSCRIPT_PASSES.
  *
  * @param {Array<import('./conversationEvents.generated').ConversationEvent>|null|undefined} events
  * @returns {Array<import('./frontendTypes').ConversationTurn>}

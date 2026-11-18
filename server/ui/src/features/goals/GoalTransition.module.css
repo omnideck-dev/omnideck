@@ -22,8 +22,6 @@
     max-width: 80%;
     white-space: nowrap;
 }
-/* An invisible copy of the time on the left balances the time on the right,
-   so the label stays centered while the time is hidden. */
 .content::before {
     content: attr(data-time);
     flex-shrink: 0;
@@ -40,11 +38,5 @@
 .success { color: var(--success); }
 .warning { color: var(--warning); }
 .danger { color: var(--danger); }
-.day {
-    margin: var(--sp-6) 0 var(--sp-2);
-    text-align: center;
-    color: var(--text-tertiary);
-    font-size: var(--font-size-caption);
-    font-weight: 600;
-}
+@media (hover: none) { .time { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .time { transition: none; } }

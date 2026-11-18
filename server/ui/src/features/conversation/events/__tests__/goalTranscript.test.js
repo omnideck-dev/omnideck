@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { addDayHeaders, goalDividerItem, isShownGoalEvent } from '../goalTranscript.js';
 
-// Small hand-made turns. Each pass is tested on its own.
 const divider = (id, transition, timestamp = '2026-10-23T09:00:00') => ({
     kind: 'goal_transition', id, transition, step: '', questionCount: 0, timestamp, resumeAt: null,
 });

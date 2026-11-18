@@ -157,14 +157,11 @@ class AgentRuntime:
             session = self._active_by_conversation.get(request.conversation_id)
             if session is None:
                 return await self.start(request)
-            # Check and queue with no await between them, so the agent cannot
-            # finish in between and drop the message.
             if session.accepts_root_messages():
                 if request.attachments:
                     raise AttachmentsWhileRunningError("Files can be sent after the agent finishes.")
                 nudge_id = session.queue_root_message(request.message, request.context, request.model_text)
                 return QueuedMessage(nudge_id, session.run_id)
-            # The run is ending. Start a new one once it has finished.
             assert session.task is not None  # start() creates the task before returning.
             await asyncio.wait({session.task})
 

@@ -4,7 +4,6 @@ import useConversationSessionController from '../useConversationSessionControlle
 
 const encoder = new TextEncoder();
 
-/** A streamed response whose records the test pushes one batch at a time. */
 function liveStream() {
     const waiting = [];
     const chunks = [];
@@ -71,7 +70,6 @@ it('follows the run after a 202 and builds the queue from its events', async () 
     });
     await flush();
 
-    // The message waits in the queue, not as an optimistic chat turn.
     expect(result.current.turns).toEqual([]);
     run.push([
         envelope('start', { type: 'agent_started', agent_id: 'root-1', agent_name: 'Root', parent_agent_id: null }),
@@ -129,7 +127,6 @@ it('posts a message while the agent works and keeps the one run connection', asy
     expect(queued).toEqual({ ok: true, queued: true });
     expect(requests).toEqual([['/api/chat', 'POST'], ['/api/chat', 'POST']]);
 
-    // Files cannot wait in the queue.
     let withFiles;
     await act(async () => {
         withFiles = await result.current.sendMessage('notes', [{ filename: 'a.txt', content_type: 'text/plain', base64: 'YQ==' }]);

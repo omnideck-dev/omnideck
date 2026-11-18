@@ -6,11 +6,6 @@ function goalAnswers(message) {
     return (message.context || []).filter((item) => item?.type === 'goal_question');
 }
 
-/**
- * Answering a goal's open questions from the composer. Questions whose answers
- * are queued, or still being sent, leave the card. A failed send or a queue
- * that hands answers back returns them to the card with their drafts.
- */
 export default function useGoalAnswering({ goal, conversationId, queue, onSendAnswers }) {
     const [inFlight, setInFlight] = useState([]);
     const queuedIds = useMemo(() => queue.flatMap((message) => goalAnswers(message)

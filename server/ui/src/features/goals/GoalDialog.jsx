@@ -3,7 +3,6 @@ import { useConversationCatalog } from '../conversation/catalog/ConversationCata
 import GoalEditor from './GoalEditor.jsx';
 import { isGoalOpen, useGoals } from './GoalsState.jsx';
 
-/** Shared entry point for the composer menu, /goal, and editing a saved goal. */
 export default function GoalDialog({ conversationId, profileId, initialObjective = '', onStarted, onClose }) {
     const { mutateGoal, goalsByConversation } = useGoals();
     const { refetch: refreshConversations } = useConversationCatalog();

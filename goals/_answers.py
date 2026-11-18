@@ -47,5 +47,4 @@ class GoalAnswerRecorder:
             try:
                 self._store.save_answers(conversation_id, GoalAnswerSubmission(goal_id=goal_id, answers=answers))
             except Exception as exc:
-                # The agent still reads the message and can update the question itself.
                 logger.warning("Goal answers for goal %s were not saved: %s", goal_id, exc)

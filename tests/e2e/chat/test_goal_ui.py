@@ -32,7 +32,6 @@ def test_create_goal_from_composer_entry_and_cancel_unsaved_dialog(goal_ui, entr
     assert view.current() is None
     view.assign(objective, entry)
     expect(view.header).to_contain_text('Waiting for you')
-    # Starting a goal does not open its details.
     expect(page.get_by_test_id('view-tab-goal')).to_have_count(0)
     assert view.transitions() == ['started', 'run', 'waiting']
     assert not any(e['type'] == 'user_message' and e['content'].startswith('/goal') for e in view.events())
@@ -113,7 +112,6 @@ def test_goal_controls_pause_resume_and_confirm_cancel(goal_ui):
     expect(view.header).to_contain_text('Cancelled')
     expected = ['started', 'run', 'waiting', 'paused', 'resumed', 'run', 'waiting', 'cancelled']
     assert view.transitions() == expected
-    # The first run starts with the goal, so the chat shows no run divider for it.
     shown = ['started', 'waiting', 'paused', 'resumed', 'run', 'waiting', 'cancelled']
     view.chat()
     expect(view.dividers()).to_have_count(len(shown))
@@ -133,7 +131,6 @@ def test_goal_editor_saves_plan_and_recovers_real_revision_conflict(goal_ui):
     dialog = page.get_by_role('dialog', name='Edit', exact=True)
     dialog.get_by_label('What would you like done?').fill('Coordinate the spring picnic')
     dialog.locator('summary').filter(has_text='Plan').first.click()
-    # Step progress belongs to the agent: the editor has no status picker.
     expect(dialog.get_by_role('combobox')).to_have_count(0)
     dialog.get_by_role('button', name='Add step', exact=True).click()
     dialog.get_by_label('Step 2 title').fill('Send the invitations')
@@ -150,7 +147,6 @@ def test_goal_editor_saves_plan_and_recovers_real_revision_conflict(goal_ui):
     expect(view.details).to_contain_text('Coordinate the spring picnic')
     view.details.get_by_role('button', name='Edit', exact=True).click()
     dialog.get_by_label('What would you like done?').fill('My unsaved picnic changes')
-    # A competing editor commits through the real API while this dialog stays open.
     response = page.request.patch(view.base, data={'expected_revision': saved['revision'], 'objective': 'Picnic moved to June'})
     assert response.ok
     dialog.get_by_role('button', name='Save changes', exact=True).click()
@@ -223,7 +219,6 @@ def test_partial_goal_answers_leave_blank_questions_open_and_respect_pause(goal_
         view.wait(lambda g: g['paused'])
         view.chat()
         expect(view.questions).to_contain_text('The goal stays paused')
-    # Picking a choice marks it and moves to the next unanswered question.
     page.get_by_role('button', name='Saturday', exact=True).click()
     expect(view.questions).to_contain_text('Where should we meet?')
     expect(view.composer).to_have_value('')
@@ -281,11 +276,9 @@ def test_answers_during_active_goal_are_delivered_to_the_same_run(goal_ui):
     with page.expect_response(lambda r: r.request.method == 'POST' and r.url.endswith('/goal/answers')) as sent:
         page.get_by_role('button', name='Send answer', exact=True).click()
     assert sent.value.status == 202, sent.value.text()
-    # The answer waits in the strip and the card locks until the agent reads it.
     expect(page.get_by_role('region', name="Queued for the agent's next step")).to_contain_text('Answers to 1 question')
     expect(view.questions).to_contain_text("Queued for the agent's next step")
     expect(page.locator("[role='region'][aria-label='Notifications']")).not_to_contain_text('sent')
-    # The agent reads it after the long reply that is streaming now.
     expect(page.get_by_test_id('goal-question-answer').filter(has_text='Saturday')).to_be_visible(timeout=40000)
     expect(page.get_by_role('region', name="Queued for the agent's next step")).to_have_count(0)
     view.wait(lambda g: not g['running'] and g['claim'] is None, timeout=25)
@@ -308,7 +301,6 @@ def test_fake_provider_drives_goal_lifecycle_transcript_and_previous_goals(goal_
     page.get_by_role('button', name='Send answer', exact=True).click()
     expect(page.get_by_test_id('message-user').last).to_contain_text('Which picnic location should I reserve?')
     view.idle()
-    # The step in progress scripts the scheduled run: it confirms the booking and completes the goal.
     completion = (read_goal() + choose('complete', 'Confirmed the booking.', outcome='Riverside Park booking confirmed.')
                   + say('The picnic booking is confirmed.'))
     follow_up = (datetime.now(timezone.utc) + timedelta(seconds=6)).isoformat()
@@ -322,7 +314,6 @@ def test_fake_provider_drives_goal_lifecycle_transcript_and_previous_goals(goal_
     expect(view.dividers('scheduled')).to_contain_text('Resumes')
     view.wait(lambda g: g['next']['kind'] == 'done' and not g['running'], timeout=20)
     expect(page.get_by_test_id('message-assistant').filter(has_text='The picnic booking is confirmed.')).to_be_visible(timeout=10000)
-    # The first run chose nothing; asking a question later announces the new wait.
     expected = ['started', 'run', 'waiting', 'waiting', 'scheduled', 'run', 'completed']
     assert view.transitions() == expected
     dividers = view.dividers()
@@ -354,7 +345,6 @@ def test_fake_provider_drives_goal_lifecycle_transcript_and_previous_goals(goal_
     expect(view.details).to_contain_text('Riverside Park booking confirmed.')
     view.cancel()
     view.chat()
-    # The second goal adds started, waiting and cancelled. Its first run has no divider of its own.
     expect(dividers).to_have_count(len(labels) + 3)
     assert next_goal['id'] != first['id']
     page.reload()

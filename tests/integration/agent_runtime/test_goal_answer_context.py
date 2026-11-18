@@ -129,8 +129,6 @@ async def test_goal_reply_context_reaches_provider_and_persisted_history(harness
         "type": "goal_question", "goal_id": goal.id, "question_id": question.id,
         "question_revision": 1, "question": question.question, "answer": answer.answer,
     } for question, answer in zip(questions, submission.answers, strict=True)]
-    # The live stream omits defaults. Its nested discriminators must still
-    # identify question references, just like persisted conversation events.
     wire = AgentEvent(payload=UserMessagePayload(
         type="user_message", content=answer_text, context=answers[0]["context"],
     )).model_dump(mode="json", exclude_none=True, exclude_defaults=True)

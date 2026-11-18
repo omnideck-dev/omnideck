@@ -42,7 +42,7 @@ export default function ConversationSectionHeader({ section, collapsed, collapsi
                 {section.kind === 'pinned' && <i className="bi bi-pin-angle-fill" />}
                 {isFolder && <i className={`bi ${section.folder.icon || DEFAULT_FOLDER_ICON} ${styles.folderInlineIcon}`} />}
                 <span className={styles.sectionName}>{section.label}</span>
-            </button> : <span className={styles.sectionToggle} data-testid="recent-section-label">
+            </button> : <span className={styles.sectionLabel} data-testid="recent-section-label">
                 <span className={styles.sectionName}>{section.label}</span>
             </span>}
             {isFolder && (

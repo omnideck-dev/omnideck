@@ -198,8 +198,6 @@ async def stop_handler(request: Request) -> Response:
             status=400,
         )
     handle = request.app[AGENT_RUNTIME_KEY].active_for_conversation(conversation_id)
-    # Stop ends this run only. The goal keeps its schedule; a wake run that
-    # chose nothing waits for the user when it finishes.
     if handle is not None:
         handle.stop()
     return web.json_response({"ok": True})

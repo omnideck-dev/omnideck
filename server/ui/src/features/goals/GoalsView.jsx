@@ -52,7 +52,6 @@ function PlanCell({ goal }) {
     </span>;
 }
 
-/** Every chat's latest goal. Picking one opens its chat and Goal tab. */
 export default function GoalsView({ onOpenGoal, onStartGoal }) {
     const { goalsByConversation } = useGoals();
     const { items, loading } = useConversationCatalog();

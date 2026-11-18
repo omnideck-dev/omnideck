@@ -12,7 +12,6 @@ function buildTurnRequest(request, conversationId) {
             url: `/api/conversations/sessions/${encodeURIComponent(conversationId)}/goal/answers`,
             body: {
                 goal_id: request.goalId,
-                // The question text is for the optimistic chat turn only.
                 answers: request.answers.map(({ question_id, question_revision, answer }) => ({
                     question_id, question_revision, answer,
                 })),
@@ -80,11 +79,6 @@ async function* streamJsonLines(response) {
     }
 }
 
-/**
- * Send one user turn. The server either starts a run and streams it, or,
- * while the agent works, queues the turn and replies 202 with
- * `{nudge: {id, run_id}}`.
- */
 export async function openChatTurn({ request, conversationId, signal }) {
     const { url, body } = buildTurnRequest(request, conversationId);
     return fetch(url, {
@@ -95,7 +89,6 @@ export async function openChatTurn({ request, conversationId, signal }) {
     });
 }
 
-/** Read the queued-message reply, or null when the server started a run. */
 export async function readQueuedReply(response) {
     if (response.status !== 202) return null;
     const body = await response.json().catch(() => ({}));
@@ -120,7 +113,6 @@ export async function* streamChatTurn({ request, conversationId, signal }) {
     yield* streamJsonLines(response);
 }
 
-/** Remove a queued message before the agent reads it. */
 export async function removeQueuedTurn({ nudgeId, conversationId }) {
     const response = await fetch(
         `/api/chat/nudges/${encodeURIComponent(nudgeId)}?conversation_id=${encodeURIComponent(conversationId)}`,

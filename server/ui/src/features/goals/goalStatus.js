@@ -1,19 +1,19 @@
-/** One status for a goal everywhere: header, conversation list, details and dividers. */
-
 export function isGoalOpen(goal) {
     return Boolean(goal && !['done', 'cancelled'].includes(goal.next?.kind));
 }
 
-/** Open questions the user has not answered yet. */
 export function unansweredQuestions(goal) {
     return (goal?.questions || []).filter((q) => q.status === 'open' && q.answers.length <= q.reviewed_answer_count);
 }
 
-/** Open questions the goal waits on, for "N questions for you". */
 function blockingQuestionCount(goal) {
     if (goal?.next?.kind !== 'wait') return 0;
     const open = new Set(unansweredQuestions(goal).map((q) => q.id));
     return goal.next.question_ids.filter((id) => open.has(id)).length;
+}
+
+export function formatClockTime(value) {
+    return new Date(value).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 }
 
 export function formatRunTime(value) {
@@ -41,10 +41,6 @@ export function statusTone(key) {
     return TONES[key] || TONES.waiting;
 }
 
-/**
- * Derive the status the user sees, checked in the order of the requirements table.
- * Returns { key, label, shortLabel, icon, tone, extraQuestions }.
- */
 export function goalStatus(goal, now = Date.now()) {
     if (!goal) return null;
     const next = goal.next || {};
@@ -67,7 +63,6 @@ export function goalStatus(goal, now = Date.now()) {
         label = `Resumes ${formatRunTime(next.at)}`;
         shortLabel = formatRunTime(next.at);
     } else { key = 'starting'; label = 'Starting'; }
-    // Open questions that do not block work add a count; they never change the status.
     const extraQuestions = ['done', 'cancelled', 'questions'].includes(key) ? 0 : unansweredQuestions(goal).length;
     if (extraQuestions) {
         label = `${label} · ${plural(extraQuestions, 'question')}`;
@@ -75,12 +70,10 @@ export function goalStatus(goal, now = Date.now()) {
     return { key, label, shortLabel: shortLabel || label.split(' · ')[0], extraQuestions, ...statusTone(key) };
 }
 
-/** Chats that wait for the user or stopped on an error belong in Needs you. */
 export function goalNeedsAnswer(goal) {
     return ['questions', 'waiting', 'error'].includes(goalStatus(goal)?.key);
 }
 
-/** The step the next run works on: the one in progress, else the first ready pending step. */
 export function nextStep(plan = []) {
     const inProgress = plan.find((step) => step.status === 'in_progress');
     if (inProgress) return inProgress;
@@ -89,24 +82,20 @@ export function nextStep(plan = []) {
         && (step.depends_on || []).every((id) => finished.has(id))) || null;
 }
 
-/** Done and skipped steps out of all plan steps. */
 export function planProgress(goal) {
     const plan = goal?.plan || [];
     return { done: plan.filter((step) => step.status === 'done' || step.status === 'skipped').length, total: plan.length };
 }
 
-/** The plan step the agent is working on, if any. */
 export function stepInProgress(goal) {
     return (goal?.plan || []).find((step) => step.status === 'in_progress') || null;
 }
 
-/** The title of the step the next run works on, shown only when a run is coming. */
 export function nextUpStep(goal) {
     if (!isGoalOpen(goal) || goal.next?.kind !== 'wake') return '';
     return nextStep(goal.plan)?.title || '';
 }
 
-/** The paused reason line: what Resume will do. */
 export function pausedReason(goal, now = Date.now()) {
     const next = goal?.next;
     if (next?.kind === 'wake') {
@@ -119,7 +108,6 @@ export function pausedReason(goal, now = Date.now()) {
     return '';
 }
 
-/** The reason line under the status in goal details. */
 export function reasonLine(goal, now = Date.now()) {
     const status = goalStatus(goal, now);
     if (!status) return '';

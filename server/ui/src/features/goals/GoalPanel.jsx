@@ -1,91 +1,34 @@
 import { useEffect, useRef, useState } from 'react';
 import Button from '../../components/primitives/Button.jsx';
 import Callout from '../../components/primitives/Callout.jsx';
-import ConfirmButton from '../../components/primitives/ConfirmButton.jsx';
 import IconButton from '../../components/primitives/IconButton.jsx';
-import Popover from '../../components/primitives/Popover.jsx';
+import Menu from '../../components/primitives/Menu.jsx';
 import { goalStatus, isGoalOpen, nextUpStep, reasonLine } from './goalStatus.js';
 import { useGoals } from './GoalsState.jsx';
 import { useSelectedProfileId } from '../conversation/session/ConversationSession.jsx';
 import GoalStatus from './GoalStatus.jsx';
+import GoalPlan from './GoalPlan.jsx';
 import GoalHistory from './GoalHistory.jsx';
 import GoalReopenDialog from './GoalReopenDialog.jsx';
 import styles from './GoalPanel.module.css';
 
-const STEP_ICONS = {
-    done: 'bi-check-circle',
-    skipped: 'bi-dash-circle',
-    in_progress: 'bi-record-circle',
-    blocked: 'bi-exclamation-circle',
-    pending: 'bi-circle',
-};
-
-function stepTitles(plan) {
-    return Object.fromEntries(plan.map((step) => [step.id, step.title]));
-}
-
-export function GoalPlan({ plan }) {
-    if (!plan.length) return <p className={styles.description}>The agent will build its plan as it works.</p>;
-    const finished = plan.filter((step) => ['done', 'skipped'].includes(step.status)).length;
-    const titles = stepTitles(plan);
-    return <section className={styles.block} aria-label="Plan">
-        <div className={styles.progressRow}>
-            <h3 className={styles.label}>Plan</h3>
-            <span className={styles.bar} role="progressbar" aria-label="Plan progress" aria-valuemin={0} aria-valuemax={plan.length} aria-valuenow={finished}>
-                <span className={styles.barFill} style={{ width: `${Math.round((finished / plan.length) * 100)}%` }} />
-            </span>
-            <span className={styles.progressCount}>{finished} of {plan.length}</span>
-        </div>
-        <ol className={styles.plan}>{plan.map((step) => <li key={step.id} className={`${styles.planItem} ${styles[step.status] || ''}`}>
-            <i className={`bi ${STEP_ICONS[step.status] || 'bi-circle'}`} aria-hidden="true" />
-            <div>
-                <span>{step.title}</span>
-                {step.status === 'in_progress' && <span className={styles.nowTag}>Now</span>}
-                {step.status === 'blocked' && <span className={styles.stepState}>Blocked</span>}
-                {step.status === 'skipped' && <span className={styles.stepState}>Skipped</span>}
-                {step.depends_on?.length > 0 && <span className={styles.stepNote}>Depends on: {step.depends_on.map((id) => titles[id] || id).join(', ')}</span>}
-                {step.notes && <span className={styles.stepNote}>{step.notes}</span>}
-            </div>
-        </li>)}</ol>
-    </section>;
-}
-
 function MoreActions({ ended, disabled, onOpenHistory, onCancel }) {
     const [open, setOpen] = useState(false);
-    const anchorRef = useRef(null);
-    const contentRef = useRef(null);
-    const trigger = () => anchorRef.current?.querySelector('button');
-    const close = () => { setOpen(false); trigger()?.focus(); };
-    const focusFirst = () => contentRef.current?.querySelector('[role="menuitem"]:not(:disabled)')?.focus();
-    const handleKeyDown = (event) => {
-        if (event.key === 'Escape') { event.preventDefault(); close(); return; }
-        if (event.key === 'Tab') { setOpen(false); return; }
-        if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
-        event.preventDefault();
-        const items = Array.from(contentRef.current.querySelectorAll('[role="menuitem"]:not(:disabled)'));
-        const current = items.indexOf(document.activeElement);
-        const next = { ArrowDown: (current + 1) % items.length, ArrowUp: (current - 1 + items.length) % items.length, Home: 0, End: items.length - 1 }[event.key];
-        items[next]?.focus();
-    };
+    const triggerRef = useRef(null);
+    const close = () => setOpen(false);
+    const items = [
+        { id: 'history', label: 'Open goal history', icon: 'bi-clock-history', onSelect: onOpenHistory },
+        ...(ended ? [] : [{
+            id: 'cancel', label: 'Cancel goal…', icon: 'bi-x-circle', separatorBefore: true, confirm: {
+                'aria-label': 'Cancel goal', confirmLabel: 'Cancel this goal?', busyLabel: 'Cancelling…',
+                onConfirm: async () => { await onCancel(); close(); },
+            },
+        }]),
+    ];
     return <>
-        <span ref={anchorRef}>
-            <IconButton size="md" aria-label="More goal actions" aria-haspopup="menu" aria-expanded={open} disabled={disabled}
-                onClick={() => setOpen((value) => !value)}><i className="bi bi-three-dots" aria-hidden="true" /></IconButton>
-        </span>
-        {open && <Popover anchorRef={anchorRef} returnFocusRef={{ current: trigger() }} onClose={close} onOpen={focusFirst}
-            width={200} align="end" role="menu" ariaLabel="Goal actions" className={styles.menu}>
-            <div className={styles.menuItems} ref={contentRef} onKeyDown={handleKeyDown}>
-                <Button variant="menuItem" role="menuitem" tabIndex={-1} onClick={() => { close(); onOpenHistory(); }}>
-                    <i className="bi bi-clock-history" aria-hidden="true" /> Open goal history
-                </Button>
-                {!ended && <>
-                    <div role="separator" className={styles.menuSeparator} />
-                    <ConfirmButton appearance="menuItem" role="menuitem" tabIndex={-1} label="Cancel goal…" aria-label="Cancel goal"
-                        confirmLabel="Cancel this goal?" busyLabel="Cancelling…" icon="bi-x-circle"
-                        onConfirm={async () => { await onCancel(); setOpen(false); }} />
-                </>}
-            </div>
-        </Popover>}
+        <IconButton ref={triggerRef} size="md" aria-label="More goal actions" aria-haspopup="menu" aria-expanded={open} disabled={disabled}
+            onClick={() => setOpen((value) => !value)}><i className="bi bi-three-dots" aria-hidden="true" /></IconButton>
+        {open && <Menu triggerRef={triggerRef} onClose={close} label="Goal actions" items={items} width={200} align="end" />}
     </>;
 }
 
@@ -188,7 +131,7 @@ export default function GoalPanel({ conversationId, isOffline = false, onEdit, o
                     <h3 className={styles.label}>Next up</h3>
                     <p className={styles.prose}>{nextUp}</p>
                 </section>}
-                <GoalPlan plan={goal.plan || []} />
+                <GoalPlan goal={goal} />
                 {goal.summary && <section className={styles.block} aria-label="What the agent knows">
                     <h3 className={styles.label}>What the agent knows</h3>
                     <p className={styles.prose}>{goal.summary}</p>

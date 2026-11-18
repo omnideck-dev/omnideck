@@ -119,6 +119,20 @@ describe('ChatInput', () => {
     });
 
     describe('/goal command', () => {
+        it('points the text box at the active command while the hint shows', async () => {
+            const user = userEvent.setup();
+            render(<ChatInput onSend={vi.fn()} isStreaming={false} onRequestGoal={vi.fn()} />);
+            const textarea = screen.getByRole('textbox');
+            await user.type(textarea, '/go');
+            const hint = screen.getByRole('listbox', { name: 'Commands' });
+            const option = screen.getByRole('option', { name: /\/goal/ });
+            expect(textarea).toHaveAttribute('aria-autocomplete', 'list');
+            expect(textarea).toHaveAttribute('aria-controls', hint.id);
+            expect(textarea).toHaveAttribute('aria-activedescendant', option.id);
+            await user.type(textarea, 'al Plan');
+            expect(textarea).not.toHaveAttribute('aria-activedescendant');
+        });
+
         it('picks /goal from the slash hint on the first Enter and opens the dialog on the next', async () => {
             const user = userEvent.setup();
             const onRequestGoal = vi.fn();
@@ -162,7 +176,6 @@ describe('ChatInput', () => {
             await user.type(textarea, '/goal Plan this week{Enter}');
             expect(textarea).toHaveValue('/goal Plan this week');
             expect(screen.getByTitle('schedule.txt')).toBeInTheDocument();
-            // Closing or failing the dialog never invokes the completion callback.
             await user.keyboard('{Enter}');
             expect(onRequestGoal).toHaveBeenCalledTimes(2);
             expect(textarea).toHaveValue('/goal Plan this week');

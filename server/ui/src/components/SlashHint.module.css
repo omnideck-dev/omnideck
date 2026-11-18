@@ -1,4 +1,4 @@
-.hint { padding: var(--sp-1) var(--sp-2) 0 0; }
+.hint { display: flex; flex-direction: column; gap: var(--sp-1); padding: var(--sp-1) var(--sp-2) 0 0; }
 .option {
     display: flex;
     align-items: center;
@@ -6,11 +6,12 @@
     min-height: 32px;
     padding: 0 var(--sp-2);
     border-radius: var(--radius-md);
-    background: var(--surface);
+    background: transparent;
     color: var(--text-primary);
     font-size: var(--font-size-body);
     cursor: pointer;
 }
+.option.active { background: var(--surface); }
 .option:hover { background: var(--accent-muted); }
 .command { flex-shrink: 0; font-family: var(--font-code); font-size: var(--font-size-small); color: var(--accent); }
 .description { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); }

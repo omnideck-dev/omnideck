@@ -2,9 +2,8 @@ import { useId, useState } from 'react';
 import Button from '../../components/primitives/Button.jsx';
 import Callout from '../../components/primitives/Callout.jsx';
 import Modal from '../../components/primitives/Modal.jsx';
-import styles from './GoalPanel.module.css';
+import styles from './goalForm.module.css';
 
-/** Ask what still needs doing. The answer goes into the chat as the user's message. */
 export default function GoalReopenDialog({ onSubmit, onClose }) {
     const headingId = useId();
     const [text, setText] = useState('');

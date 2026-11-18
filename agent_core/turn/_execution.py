@@ -369,9 +369,6 @@ class AgentExecutor:
                         final_content = content
 
                     if not tool_calls:
-                        # Input arriving during the final response still belongs
-                        # to this execution. Let the nudge hook deliver it before
-                        # completing, rather than silently dropping the reply.
                         control = get_execution_control()
                         if control is not None and control.nudges:
                             continue

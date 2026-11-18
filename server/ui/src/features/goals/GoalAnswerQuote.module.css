@@ -1,0 +1,11 @@
+.question {
+  color: var(--text-secondary);
+  font-size: var(--font-size-small);
+  margin-bottom: var(--sp-2);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.answer + .answer {
+  margin-top: var(--sp-4);
+}

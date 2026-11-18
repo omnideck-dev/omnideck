@@ -20,7 +20,6 @@ export function useGoalDesktopActions() {
     return { openGoal };
 }
 
-/** Keeps the Goal tab's label on the selected chat, and closes goal tabs when Goals is turned off. */
 export function GoalDesktopEffects() {
     const { features, featuresLoaded } = useAppData();
     const { enabled, goalsByConversation } = useGoals();

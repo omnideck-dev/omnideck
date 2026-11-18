@@ -55,10 +55,8 @@ async def test_goal_skill_lifetime_follows_goal_ownership(harness, tmp_path, dis
         assert "notes" in state.skill_ids
         tools = set(request["tools"]) & GOAL_TOOLS
         if disposition == "paused":
-            # A chat turn on a paused goal is a normal turn with every goal tool.
             assert tools == GOAL_TOOLS
         else:
-            # An ended goal can only be read.
             assert tools == {"read_goal", "read_goal_history"}
             assert "This chat's goal has ended." in request["messages"][0]["content"]
         yield reply(calls=[call("load_skill", name="Session goal")])

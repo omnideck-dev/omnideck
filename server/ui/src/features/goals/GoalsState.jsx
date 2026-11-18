@@ -25,11 +25,11 @@ function pruneAnswerDrafts(goals) {
     } catch { /* Storage can be unavailable. */ }
 }
 
-export async function requestJson(url, options) {
+export async function requestJson(url, options, failure = 'Could not update the goal. Please try again.') {
     const response = await fetch(url, options);
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-        const error = new Error(data.error || 'Could not update the goal. Please try again.');
+        const error = new Error(data.error || failure);
         error.status = response.status;
         throw error;
     }

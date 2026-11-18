@@ -28,7 +28,6 @@ async def test_unchanged_question_keeps_version_and_answer_sends(owned):
     day = {"id": "day", "question": "Which Saturday works?", "choices": ["June 14", "June 21"]}
     assert await change(context, tools, day) == "Saved."
     seen = store.get(goal.id).questions[0].revision
-    # The agent lists the same question again while the user types an answer.
     assert await change(context, tools, day) == "Saved."
     assert store.get(goal.id).questions[0].revision == seen
     accepted = store.save_answers("chat", GoalAnswerSubmission(goal_id=goal.id, answers=[

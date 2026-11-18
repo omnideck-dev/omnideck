@@ -38,12 +38,10 @@ export function getSessionEventActions(event) {
     switch (event.type) {
         case EVENT.USER_MESSAGE:
             if (isRootEvent) actions.push({ type: 'CONFIRM_USER_MESSAGE' });
-            // A queued message leaves the queue once the agent reads it.
             if (event.nudge_id) {
                 actions.push({ type: 'DROP_QUEUED_MESSAGE', nudgeId: event.nudge_id, returned: false });
             }
             break;
-        // Queue events are replayed with the run but never saved in the chat.
         case EVENT.NUDGE_QUEUED:
             actions.push({
                 type: 'QUEUE_MESSAGE',

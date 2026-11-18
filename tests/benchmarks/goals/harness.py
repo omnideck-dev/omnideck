@@ -53,8 +53,6 @@ class RecordedProvider:
     def after(self, response, number):
         for key in self.usage:
             self.usage[key] += getattr(response.usage, key)
-        # Positive normalized counts are evidence of reporting. Zero alone cannot
-        # distinguish unsupported metrics from a real zero in the current API.
         for key in self.cache:
             value = getattr(response.usage, key)
             if value > 0:
@@ -172,8 +170,6 @@ class Episode:
 
         self.stack.enter_context(patch('agent_runtime._factory.tool_categories', categories))
         self.stack.enter_context(patch('skills._resolve.tool_categories', categories))
-        # Deliver a deterministic late answer at a model boundary once a real
-        # question exists, using the same active-run API as the composer.
         from agent_core.hooks import default_hooks
         episode = self
 
@@ -233,7 +229,6 @@ class Episode:
             for i in range(50):
                 goal = self.store.update(goal.id, goal.revision, summary=f'Routine inbox sweep {i}: nothing new.')
         if self.scenario.id == 'corrected_answer':
-            # An earlier run saved the first budget answer; the correction arrives before the next run.
             goal = self.store.claim(goal.id, goal.next.id, 'setup')
             goal = self.store.update(goal.id, goal.revision, claim_id='setup', actor='agent',
                                      summary='Campaign budget: $80.')
@@ -243,7 +238,6 @@ class Episode:
                 'question_id': 'budget', 'question_revision': 1,
                 'answer': f'Correction: my maximum campaign budget is ${self.world.budget}, replacing the earlier $80.',
             }]))
-            # The wake stays in place, so the next run starts once the claim is gone.
             self.store.release(goal.id, 'setup')
         self.world.on_event = self.on_world_event
 
@@ -260,8 +254,6 @@ class Episode:
         self.runtime.observe_events(GoalAnswerRecorder(self.store).handle_event)
         self.scheduler = Scheduler(limits={"goals": 2, "routines": 2}, poll_interval=0.01, shutdown_timeout=0)
         self.scheduler.register(GoalWorkSource(self.store, self.runtime, enabled=lambda: True))
-        # A crash fault occurs before run finalization. Keep that claim on disk so
-        # the real recovery function handles it after recreating the runtime.
         original = self.store.finish_run
 
         def finish(*args, **kwargs):
@@ -321,8 +313,6 @@ class Episode:
             self.note('run_started', number=run_number + 1)
             try:
                 result = await asyncio.wait_for(handle.wait(), self.settings['run_timeout'])
-                # Let the scheduler observe completion before advancing virtual
-                # time; its admission future can finish after the run handle.
                 await asyncio.gather(*(work.completion for work in self.scheduler.active('goals')))
                 self.run_results.append({'status': result.status, 'error': result.root.error})
             except TimeoutError:

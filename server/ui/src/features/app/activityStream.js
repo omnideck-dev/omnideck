@@ -37,7 +37,6 @@ function decodeGoal(goal) {
 }
 
 /**
- * Validate the whole message before it can change any state.
  * @param {string} data
  * @returns {import('./activityMessages.generated').ActivityMessage}
  */
@@ -82,7 +81,6 @@ export function activityEffect(message) {
 }
 
 /**
- * Native EventSource owns reconnection; each new connection begins with snapshots.
  * @param {(effect: import('./appEffects.types').AppEffect) => void} dispatch
  * @returns {() => void}
  */

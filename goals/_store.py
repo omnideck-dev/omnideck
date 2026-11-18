@@ -153,7 +153,7 @@ class GoalStore:
 
     def list(self) -> builtins.list[Goal]:
         with self._lock:
-            return self._files.list()
+            return self._files.all_goals()
 
     def read_history(self, goal_id: str, query: str = "", before: int | None = None) -> dict:
         with self._lock:

@@ -26,7 +26,6 @@ function Seed({ goals, children }) {
     return children;
 }
 
-/** Goals state fed through the activity effects, as the activity stream feeds it. */
 export function GoalsTestProvider({ goals = [], enabled = true, children }) {
     return <AppEffectsProvider>
         <Seed goals={goals}>
@@ -35,7 +34,6 @@ export function GoalsTestProvider({ goals = [], enabled = true, children }) {
     </AppEffectsProvider>;
 }
 
-/** Send a saved goal, and its run state, the way the activity stream does. */
 export function emitGoal(goal) {
     const saved = withRun(goal);
     act(() => {

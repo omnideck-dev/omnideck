@@ -245,7 +245,6 @@ describe('projectTurns', () => {
     });
 });
 
-
 describe('projectTurns with inflight iteration appended (live streaming)', () => {
     // Simulates the session's turns model: when the stream is
     // mid-iteration, it appends a synthetic iteration event built from
@@ -348,7 +347,6 @@ describe('projectTurns with inflight iteration appended (live streaming)', () =>
 });
 
 describe('projectTurns — goal chats', () => {
-    // Local times, so the day boundary does not depend on the machine's zone.
     const at = (day, hour) => new Date(2026, 9, day, hour).toISOString();
     const root = (n, timestamp) => ({ ..._agentStarted(n), depth: 0, timestamp });
     const wakeup = (id, reason, step, timestamp) => ({

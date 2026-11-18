@@ -3,7 +3,8 @@ import Button from '../../components/primitives/Button.jsx';
 import Callout from '../../components/primitives/Callout.jsx';
 import IconButton from '../../components/primitives/IconButton.jsx';
 import Modal from '../../components/primitives/Modal.jsx';
-import styles from './GoalPanel.module.css';
+import form from './goalForm.module.css';
+import styles from './GoalEditor.module.css';
 
 const STEP_STATES = { in_progress: 'Now', done: 'Done', blocked: 'Blocked', skipped: 'Skipped' };
 const WORKING_NOTE = 'The agent started working. Your changes are kept. Save when it finishes, or pause it.';
@@ -26,8 +27,8 @@ function PlanStepEditor({ item, index, titles, saving, invalid, onChange, onRemo
         </summary>
         {item.depends_on?.length > 0 && <p className={styles.dependsOn}>Depends on: {item.depends_on.map((id) => titles[id] || id).join(', ')}</p>}
         <div className={styles.stepFields}>
-            <label className={styles.field}><span>Step</span><textarea className={styles.textarea} aria-label={`Step ${index + 1} title`} rows={2} value={item.title} onChange={(event) => onChange({ title: event.target.value })} disabled={saving} /></label>
-            <label className={styles.field}><span>Notes</span><textarea className={styles.textarea} aria-label={`Step ${index + 1} notes`} rows={3} value={item.notes || ''} placeholder="Add details for this step" onChange={(event) => onChange({ notes: event.target.value })} disabled={saving} /></label>
+            <label className={form.field}><span>Step</span><textarea className={`${form.textarea} ${styles.stepText}`} aria-label={`Step ${index + 1} title`} rows={2} value={item.title} onChange={(event) => onChange({ title: event.target.value })} disabled={saving} /></label>
+            <label className={form.field}><span>Notes</span><textarea className={`${form.textarea} ${styles.stepText}`} aria-label={`Step ${index + 1} notes`} rows={3} value={item.notes || ''} placeholder="Add details for this step" onChange={(event) => onChange({ notes: event.target.value })} disabled={saving} /></label>
             <div className={styles.planEditorRow}>
                 <Button variant="ghost" aria-label={`Remove step ${index + 1}`} disabled={saving} onClick={onRemove}><i className="bi bi-trash3" aria-hidden="true" /> Remove step</Button>
             </div>
@@ -88,9 +89,9 @@ export default function GoalEditor({ goal, latestGoal, initialObjective = '', on
                     {error && <Callout tone="danger" title="Could not save goal" description={error} />}
                     {conflict && <Button variant="ghost" disabled={saving} onClick={reload}>Load latest version</Button>}
                     {replacing && <p className={styles.editorNote}>This replaces the current objective.</p>}
-                    <label className={styles.field}>
+                    <label className={form.field}>
                         <span>What would you like done?</span>
-                        <textarea className={styles.textarea} value={draft.objective} onChange={(event) => change('objective', event.target.value)} placeholder="Describe the goal…" disabled={saving} />
+                        <textarea className={form.textarea} value={draft.objective} onChange={(event) => change('objective', event.target.value)} placeholder="Describe the goal…" disabled={saving} />
                     </label>
                     {goal && <details className={styles.planDisclosure} open={planOpen} onToggle={(event) => setPlanOpen(event.currentTarget.open)}>
                         <summary className={styles.disclosure}>Plan <span>{draft.plan.length} {draft.plan.length === 1 ? 'step' : 'steps'}</span></summary>
@@ -102,7 +103,7 @@ export default function GoalEditor({ goal, latestGoal, initialObjective = '', on
                 </div>
                 <div className={styles.editorFooter}>
                     <div className={styles.editorFooterRow}>
-                        <div className={styles.actions}>
+                        <div className={form.actions}>
                             <Button variant="ghost" onClick={onClose} disabled={saving}>Cancel</Button>
                             <Button variant="filled" type="submit" loading={saving} loadingLabel="Saving…" disabled={conflict || working || !draft.objective.trim()}>{goal ? 'Save changes' : 'Start goal'}</Button>
                         </div>

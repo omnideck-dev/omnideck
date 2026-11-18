@@ -213,7 +213,7 @@ class GoalFiles:
         """Every goal in an active chat, newest first."""
         return self._read(self._active_paths())
 
-    def list(self) -> list[Goal]:
+    def all_goals(self) -> list[Goal]:
         """Every goal in an active or archived chat, newest first."""
         return self._read([*self._active_paths(), *self.base.glob(f'{ARCHIVE_DIRNAME}/*/goals/*/goal.json')])
 

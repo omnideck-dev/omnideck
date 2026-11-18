@@ -1,0 +1,12 @@
+.menu {
+  padding: var(--sp-1);
+  overflow-y: auto;
+  background: var(--elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+}
+.items { display: flex; flex-direction: column; }
+.slot { display: flex; flex-direction: column; }
+.separator { margin: var(--sp-1) 0; border-top: 1px solid var(--border-subtle); }
+.shortcut { margin-left: auto; padding-left: var(--sp-3); font-family: var(--font-code); font-size: var(--font-size-caption); color: var(--text-tertiary); }

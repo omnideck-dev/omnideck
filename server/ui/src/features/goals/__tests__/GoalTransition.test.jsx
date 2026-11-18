@@ -2,7 +2,7 @@ import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import GoalHeadline from '../GoalHeadline.jsx';
 import GoalStatus from '../GoalStatus.jsx';
-import GoalTransition, { DayHeader } from '../GoalTransition.jsx';
+import GoalTransition from '../GoalTransition.jsx';
 import { goalStatus } from '../goalStatus.js';
 import styles from '../GoalTransition.module.css';
 import statusStyles from '../GoalStatus.module.css';
@@ -74,16 +74,15 @@ describe('goal transition dividers', () => {
         expect(time.parentElement).toHaveClass(styles.content);
         expect(time.parentElement).toHaveAttribute('data-time', time.textContent);
     });
-
-    it('labels a day header with the day', () => {
-        const today = new Date();
-        render(<DayHeader timestamp={today.toISOString()} />);
-        expect(screen.getByTestId('day-header')).toHaveTextContent('Today');
-        expect(screen.getByRole('separator', { name: 'Today' })).toBeInTheDocument();
-    });
 });
 
 describe('one status everywhere', () => {
+    it('leaves the status chip unlabelled so screen readers read its text', () => {
+        render(<GoalStatus goal={goal({ paused: true })} />);
+        expect(screen.getByTestId('goal-status')).not.toHaveAttribute('aria-label');
+        expect(screen.getByTestId('goal-status')).toHaveAttribute('data-status', 'paused');
+    });
+
     it.each([
         goal({ next: { kind: 'done', outcome: 'Booked' } }),
         goal({ paused: true }),

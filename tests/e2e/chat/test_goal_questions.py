@@ -40,8 +40,6 @@ def test_goal_wakeup_instructions_stay_hidden_live_and_after_reload(goal_ui):
     view.idle()
     wakeups = [e for e in view.events() if e['type'] == 'goal' and e['data']['kind'] == 'wakeup']
     assert len(wakeups) == 2
-    # Wake runs show as dividers, never as messages from the user. The first run
-    # starts with the goal, so only the second gets its own divider.
     users = page.get_by_test_id('message-user')
     expect(users).to_have_count(2)
     expect(users.filter(has_text='[System activity')).to_have_count(0)
@@ -106,7 +104,6 @@ def test_goal_question_carousel_submits_all_drafts_and_preserves_transcript(goal
         page.screenshot(path=str(Path(output_path) / f'goal-questions-{label}.png'))
     page.set_viewport_size({'width': 1280, 'height': 900})
     page.get_by_role('button', name='Expand sidebar', exact=True).click()
-    # A choice marks the answer and moves on; it never fills the text box.
     page.get_by_role('button', name='Aetna Dental PPO', exact=True).click()
     expect(view.questions).to_contain_text('How far can you travel?')
     expect(view.composer).to_have_value('')
@@ -117,7 +114,6 @@ def test_goal_question_carousel_submits_all_drafts_and_preserves_transcript(goal
     expect(view.composer).to_have_value('')
     page.reload()
     expect(page.get_by_role('button', name='Aetna Dental PPO', exact=True)).to_have_attribute('aria-pressed', 'true')
-    # Both saved drafts are submitted together, independent of the visible question.
     page.get_by_role('button', name='Send 2 answers').click()
     expect(page.get_by_test_id('message-user').last).to_contain_text('Aetna Dental PPO')
     expect(page.get_by_test_id('message-user').last).to_contain_text('Which insurance plan?')
@@ -138,7 +134,6 @@ def test_goal_question_carousel_submits_all_drafts_and_preserves_transcript(goal
     assert current['questions'][0]['status'] == 'open'
     assert current['questions'][1]['answers'][0]['answer'] == 'Within 10 miles'
     expect(page.get_by_test_id('message-user').filter(has_text='[System activity')).to_have_count(0)
-    # The agent resolves one question and withdraws the other; only goal history shows these updates.
     view.background(read_goal() + update_questions(
         {'id': 'insurance', 'status': 'resolved'}, {'id': 'travel', 'status': 'withdrawn'},
     ) + update_goal(summary='Insurance: Aetna Dental PPO. Search the local area.') + say('The plan is recorded.'))
@@ -245,7 +240,6 @@ def test_goal_layout_keeps_editor_actions_and_long_questions_within_viewport(goa
         field_box, dialog_box = field.bounding_box(), dialog.bounding_box()
         assert field_box['x'] >= dialog_box['x'] + 16
         assert field_box['x'] + field_box['width'] <= dialog_box['x'] + dialog_box['width'] - 16
-        # Scrolling the body to its last control must not scroll the footer.
         dialog.get_by_role('button', name='Add step').click()
         expect(dialog.get_by_label('Step 7 title')).to_be_visible()
         after = save.bounding_box()
@@ -253,7 +247,6 @@ def test_goal_layout_keeps_editor_actions_and_long_questions_within_viewport(goa
         dialog.get_by_role('button', name='Cancel', exact=True).click()
         view.close()
         page.get_by_role('button', name='Toggle theme').click()
-    # Goal details have their own view, even while the composer is expanded.
     view.composer.fill('An answer\nwith several\nlines of detail')
     page.get_by_role('button', name='Expand input', exact=True).click()
     view.open()
@@ -276,7 +269,6 @@ def test_goal_tab_follows_selected_chat_restores_and_keeps_chat_draft(goal_ui, o
     assert page.request.post(view.base + '/pause', data={}).ok
     page.reload()
     expect(page.get_by_test_id('sidebar')).to_contain_text('Paused')
-    # Selecting a goal conversation shows status without opening a details tab.
     expect(view.header).to_contain_text('Paused')
     expect(page.get_by_test_id('view-tab-goal')).to_have_count(0)
     page.get_by_test_id('sidebar').get_by_test_id('goal-status').click()
@@ -288,7 +280,6 @@ def test_goal_tab_follows_selected_chat_restores_and_keeps_chat_draft(goal_ui, o
     expect(view.composer).to_have_value('Keep this unsent thought')
     expect(view.details.get_by_role('button', name='Resume', exact=True)).to_be_visible()
     expect(view.details.get_by_test_id('goal-reason')).to_contain_text('When you resume')
-    # The chat is visible beside the Goal tab, so the tab offers no Open chat.
     expect(view.details.get_by_role('button', name='Open chat')).to_have_count(0)
     view.open()
     expect(page.get_by_test_id('view-tab-goal')).to_have_count(1)
@@ -304,7 +295,6 @@ def test_goal_tab_follows_selected_chat_restores_and_keeps_chat_draft(goal_ui, o
     page.get_by_role('button', name='Send message', exact=True).click()
     expect(view.details).to_be_visible()
     expect(view.composer).to_have_value('')
-    # The one Goal tab follows the selected chat.
     view.chat()
     ChatView(page).new_conversation()
     expect(page.get_by_test_id('view-tab-goal')).to_have_count(1)
@@ -313,7 +303,6 @@ def test_goal_tab_follows_selected_chat_restores_and_keeps_chat_draft(goal_ui, o
     expect(view.details).not_to_contain_text('Grow the neighborhood newsletter')
     page.get_by_test_id('sidebar').get_by_test_id('goal-status').first.click()
     expect(view.details).to_contain_text('Grow the neighborhood newsletter')
-    # Mobile uses one reachable tab group rather than a hidden side pane.
     view.close()
     page.set_viewport_size({'width': 390, 'height': 844})
     page.get_by_role('button', name='Collapse sidebar', exact=True).click()
@@ -394,7 +383,6 @@ def test_goal_lifecycle_dividers_survive_reload_and_fit_narrow_chat(goal_ui, out
     expect(view.dividers()).to_have_count(len(labels))
     for index, label in enumerate(labels):
         expect(view.dividers().nth(index)).to_contain_text(label)
-    # Each divider's time shows only on hover.
     started = view.dividers('started')
     time = started.locator('time')
     expect(time).to_have_css('opacity', '0')

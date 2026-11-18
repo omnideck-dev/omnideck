@@ -164,8 +164,6 @@ def load_settings() -> dict[str, Any]:
         stat = path.stat()
     except FileNotFoundError:
         return dict(_DEFAULTS)
-    # Settings are read on hot paths, such as every model call. Reuse the last
-    # read until the file changes on disk.
     key = (str(path), stat.st_mtime_ns, stat.st_size)
     cached = _cache.get("settings")
     if cached is not None and cached[0] == key:

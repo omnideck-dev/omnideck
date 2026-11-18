@@ -6,7 +6,8 @@ import {
 import { containerFileUrl } from '../utils/containerFileUrl.js';
 import Message from './Message.jsx';
 import CompactionChip from './CompactionChip.jsx';
-import GoalTransition, { DayHeader } from '../features/goals/GoalTransition.jsx';
+import GoalTransition from '../features/goals/GoalTransition.jsx';
+import DayHeader from './DayHeader.jsx';
 import Callout from './primitives/Callout.jsx';
 import styles from './Message.module.css';
 

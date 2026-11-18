@@ -7,7 +7,6 @@ import { formatAgentName } from '../utils/agentUtils.js';
 import { useAgentState } from '../features/agent/AgentState.jsx';
 import styles from './ChatPanel.module.css';
 
-/** One conversation header, transcript, and composer. */
 export default function ChatPanel({ title = 'New chat', turns, stalled = false, isOffline = false, onSend, onSendAnswers, queue, returned, onRemoveQueued, onReturnedConsumed, onStop, isStreaming, stopRequested = false, attachment, onPreview, onSelectAgent, networkAgentCount = 0, networkRunningCount = 0, onOpenNetwork, onOpenArtifacts, selectedProfileId, onProfileChange, profileRefreshSignal, conversationId, draft, onDraftChange, onRequestGoal, onOpenGoal, goal }) {
     const headerRef = useRef(null);
     const agentState = useAgentState();

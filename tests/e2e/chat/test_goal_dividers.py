@@ -43,7 +43,6 @@ def test_outcome_shows_below_the_reply_once_the_run_finishes(goal_ui):
     page.get_by_role('button', name='Send message', exact=True).click()
     stop = page.get_by_test_id('chat-stop-btn')
     expect(stop).to_be_visible()
-    # The agent chose "complete" before writing its reply. While the reply streams, no outcome shows.
     view.wait(lambda g: g['next']['kind'] == 'done')
     assert view.transitions()[-1] == 'completed'
     expect(view.dividers('completed')).to_have_count(0)
@@ -85,7 +84,6 @@ def test_divider_labels_are_centered_while_the_time_is_hidden(goal_ui):
     for transition in ['started', 'waiting']:
         divider = view.dividers(transition)
         expect(divider.locator('time')).to_have_css('opacity', '0')
-        # The visible part runs from the icon to the text just before the hidden time.
         offset = divider.evaluate('''(row) => {
             const time = row.querySelector('time');
             const start = row.querySelector('i').getBoundingClientRect().left;
@@ -103,8 +101,6 @@ def test_outcome_shows_after_reload_when_a_restart_cut_off_the_finish(goal_ui):
               'The calendar is current.')
     expect(view.dividers('completed')).to_have_count(1)
 
-    # A restart during a run leaves its turn without a saved finish. Reload the
-    # chat as if the last turn's finish was never written and no run is active.
     def without_last_finish(route):
         response = route.fetch()
         snapshot = response.json()

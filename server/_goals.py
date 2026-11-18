@@ -9,7 +9,7 @@ from collections.abc import Callable
 from aiohttp import web
 
 from conversations import conversations_dir
-from goals import GoalAnswerRecorder, GoalRunExtension, GoalStore, GoalWorkSource, stop_goal_runs
+from goals import Goal, GoalAnswerRecorder, GoalRunExtension, GoalStore, GoalWorkSource, stop_goal_runs
 from scheduling import Scheduler
 from settings import goals_enabled
 from server._activity_messages import ActivityMessage, GoalChangedMessage, GoalSnapshotMessage
@@ -29,7 +29,7 @@ class GoalActivityFeed:
         self._enabled = enabled
 
     def subscribe(self, send: Callable[[ActivityMessage], bool]) -> Callable[[], None]:
-        def changed(goal, _entries) -> None:
+        def changed(goal: Goal, _entries: object) -> None:
             if self._enabled():
                 send(GoalChangedMessage(type="goal_changed", conversation_id=goal.conversation_id, goal=goal))
         return self._store.subscribe(changed)

@@ -59,6 +59,10 @@ beforeEach(() => {
 });
 afterEach(() => vi.restoreAllMocks());
 
+async function expectStatus(label) {
+    await waitFor(() => expect(screen.getByTestId('goal-status')).toHaveTextContent(label));
+}
+
 describe('goal detail view', () => {
     it('shows one status line with the reason, the objective, the plan and what the agent knows', async () => {
         setup();
@@ -86,6 +90,13 @@ describe('goal detail view', () => {
         expect(now.closest('li')).toHaveTextContent('Combine calendars');
         expect(within(plan).getAllByText('Now')).toHaveLength(1);
         expect(within(plan).getByText('Depends on: Combine calendars')).toBeInTheDocument();
+    });
+
+    it('starts each plan step with its status for screen readers', async () => {
+        setup();
+        const plan = await screen.findByRole('region', { name: 'Plan' });
+        const titles = within(plan).getAllByRole('listitem').map((item) => item.querySelector('div > span').textContent);
+        expect(titles).toEqual(['Done: Collect school dates', 'In progress: Combine calendars', 'Skipped: Skip the old planner', 'Not started: Share the calendar']);
     });
 
     it('opens the editor and source chat through their callbacks', async () => {
@@ -120,7 +131,7 @@ describe('goal detail view', () => {
         expect(screen.queryByRole('button', { name: /Resume now/ })).not.toBeInTheDocument();
         expect(screen.getByRole('region', { name: 'Next up' })).toHaveTextContent('Combine calendars');
         fireEvent.click(screen.getByRole('button', { name: 'Run now' }));
-        await screen.findByLabelText('Goal: Starting');
+        await expectStatus('Starting');
         expect(posts()).toEqual([{ action: 'run', body: { goal_id: 'g1' } }]);
         expect(screen.queryByRole('button', { name: 'Run now' })).not.toBeInTheDocument();
     });
@@ -150,7 +161,7 @@ describe('goal detail view', () => {
     it('offers only Resume while paused and says when it will run', async () => {
         currentGoal.paused = true;
         setup();
-        await screen.findByLabelText('Goal: Paused');
+        await expectStatus('Paused');
         expect(screen.getByTestId('goal-reason')).toHaveTextContent(`When you resume, it runs ${formatRunTime(FUTURE)} as planned.`);
         expect(screen.queryByRole('button', { name: 'Pause', exact: true })).not.toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Run now' })).not.toBeInTheDocument();
@@ -166,7 +177,7 @@ describe('goal detail view', () => {
         currentGoal.paused = true;
         currentGoal.next = { kind: 'error', message: 'Rate limit reached (429).' };
         setup();
-        await screen.findByLabelText('Goal: Paused');
+        await expectStatus('Paused');
         expect(screen.getByRole('button', { name: 'Resume', exact: true })).toBeVisible();
         expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
         expect(screen.queryByTestId('goal-error')).not.toBeInTheDocument();
@@ -177,7 +188,7 @@ describe('goal detail view', () => {
         currentGoal.note = 'I need one answer before booking.';
         currentGoal.questions = [{ id: 'morning', question: 'Which morning works for you?', choices: [], status: 'open', revision: 1, answers: [], reviewed_answer_count: 0 }];
         setup();
-        await screen.findByLabelText('Goal: 1 question for you');
+        await expectStatus('1 question for you');
         expect(screen.getByTestId('goal-reason')).toHaveTextContent('I need one answer before booking.');
         expect(screen.queryByText('Which morning works for you?')).not.toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Run now' })).not.toBeInTheDocument();
@@ -189,7 +200,7 @@ describe('goal detail view', () => {
     it('explains a wait with no questions', async () => {
         currentGoal.next = { kind: 'wait', question_ids: [] };
         setup();
-        await screen.findByLabelText('Goal: Waiting for you');
+        await expectStatus('Waiting for you');
         expect(screen.getByTestId('goal-reason')).toHaveTextContent('The agent stopped without choosing what to do next.');
     });
 
@@ -198,7 +209,7 @@ describe('goal detail view', () => {
         currentGoal.last_run_id = 'run-test';
         currentGoal.next = wake();
         setup();
-        await screen.findByLabelText('Goal: Working');
+        await expectStatus('Working');
         expect(screen.queryByRole('button', { name: 'Run now' })).not.toBeInTheDocument();
         expect(screen.queryByRole('region', { name: 'Next up' })).not.toBeInTheDocument();
     });
@@ -225,7 +236,7 @@ describe('goal detail view', () => {
     it('shows no callout and no Edit on a cancelled goal', async () => {
         currentGoal.next = { kind: 'cancelled' };
         setup();
-        await screen.findByLabelText('Goal: Cancelled');
+        await expectStatus('Cancelled');
         expect(screen.queryByTestId('goal-outcome')).not.toBeInTheDocument();
         expect(screen.queryByTestId('goal-reason')).not.toBeInTheDocument();
         expect(screen.queryByRole('region', { name: 'Next up' })).not.toBeInTheDocument();
@@ -259,7 +270,7 @@ describe('goal detail view', () => {
         fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }));
         expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
         expect(posts()).toEqual([]);
-        expect(screen.getByLabelText('Goal: Cancelled')).toBeInTheDocument();
+        expect(screen.getByTestId('goal-status')).toHaveTextContent('Cancelled');
     });
 
     it('puts goal history and Cancel goal in the ⋯ menu', async () => {
@@ -277,7 +288,7 @@ describe('goal detail view', () => {
         fireEvent.click(await screen.findByRole('button', { name: 'More goal actions' }));
         fireEvent.click(screen.getByRole('menuitem', { name: 'Cancel goal' }));
         fireEvent.click(screen.getByRole('menuitem', { name: 'Cancel this goal?' }));
-        await screen.findByLabelText('Goal: Cancelled');
+        await expectStatus('Cancelled');
         expect(posts()).toEqual([{ action: 'cancel', body: { goal_id: 'g1' } }]);
         expect(screen.getByRole('button', { name: 'Reopen…' })).toBeVisible();
     });
@@ -285,7 +296,7 @@ describe('goal detail view', () => {
     it('pauses the goal in this conversation', async () => {
         setup();
         fireEvent.click(await screen.findByRole('button', { name: 'Pause', exact: true }));
-        await screen.findByLabelText('Goal: Paused');
+        await expectStatus('Paused');
         expect(posts()).toEqual([{ action: 'pause', body: { goal_id: 'g1' } }]);
     });
 

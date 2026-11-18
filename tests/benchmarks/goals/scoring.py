@@ -77,7 +77,6 @@ def grade(data):
         checks['compaction_exercised'] = any(e['type'] == 'compaction' for e in data['events'])
     if case == 'ongoing_campaign':
         checks['next_wake_saved'] = disposition(goal) == 'scheduled'
-        # The plan says what the next run does: a step left open, with the summary as the handoff.
         checks['handoff_saved'] = bool(goal and goal['summary'] and has_open_step(goal))
     events = data['events']
     tool_results = [e for e in events if e['type'] == 'tool_result']

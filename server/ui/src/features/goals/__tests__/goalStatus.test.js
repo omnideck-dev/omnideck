@@ -13,7 +13,6 @@ const goal = (fields = {}) => ({
 const wake = (at, reason = 'planned') => ({ kind: 'wake', id: 'w1', at, reason });
 
 describe('goalStatus', () => {
-    // One row per line of the requirements table, plus the error row, in table order.
     it.each([
         ['Done', goal({ next: { kind: 'done', outcome: 'Booked' } }), 'done', 'Done', 'bi-check-circle', 'success'],
         ['Cancelled', goal({ next: { kind: 'cancelled' } }), 'cancelled', 'Cancelled', 'bi-x-circle', 'neutral'],

@@ -3,7 +3,6 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import GoalHistory, { groupHistory } from '../GoalHistory.jsx';
 
-// Local times, so day headers do not depend on the machine's zone.
 const at = (day, hour) => new Date(2026, 9, day, hour).toISOString();
 const entry = (id, summary, fields = {}) => ({
     id, summary, kind: 'summary', actor: 'agent', claim_id: null, created_at: at(1, 10), data: {}, ...fields,
@@ -17,6 +16,12 @@ function History({ startOpen = false, ...props }) {
 }
 
 describe('goal history', () => {
+    it('shows a plain error when the server answers with a page instead of data', async () => {
+        vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: false, status: 502, json: async () => { throw new SyntaxError('Unexpected token <'); } });
+        render(<History startOpen />);
+        expect(await screen.findByText('Could not load goal history.')).toBeVisible();
+    });
+
     it('loads only on opening, pages older entries, and filters as you type', async () => {
         const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
             if (url.includes('q=failed')) return response([entry(1, 'Old experiment failed')]);

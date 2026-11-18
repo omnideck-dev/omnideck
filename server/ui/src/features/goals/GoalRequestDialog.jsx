@@ -1,6 +1,5 @@
 import GoalDialog from './GoalDialog.jsx';
 
-/** The start or edit dialog for the chat's current goal request. */
 export default function GoalRequestDialog({ request, profileId, onClose }) {
     if (!request) return null;
     return <GoalDialog

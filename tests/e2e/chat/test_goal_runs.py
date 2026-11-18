@@ -30,7 +30,6 @@ def test_unrelated_message_keeps_goal_waiting(goal_ui):
     assert saved['next'] == {'kind': 'wait', 'question_ids': ['day']}
     assert saved['revision'] == waiting['revision']
     assert saved['last_run_id'] != waiting['last_run_id']
-    # Needs you cannot be collapsed, and the Goals filter keeps only chats with a goal.
     sidebar = page.get_by_test_id('sidebar')
     needs_you = sidebar.locator('[data-section="needs-you"]')
     expect(needs_you.get_by_test_id('recent-item')).to_have_count(1)
@@ -68,7 +67,6 @@ def test_failed_goal_run_shows_error(goal_ui):
     error = view.details.get_by_test_id('goal-error')
     expect(error).to_contain_text('Rate limit reached (429).')
     expect(view.details.get_by_role('button', name='Run now', exact=True)).to_have_count(0)
-    # The user rewrites the step so the retried run can succeed; Retry runs the step in progress again.
     view.details.get_by_role('button', name='Edit', exact=True).click()
     dialog = page.get_by_role('dialog', name='Edit', exact=True)
     dialog.locator('summary').filter(has_text='Plan').first.click()
@@ -117,7 +115,6 @@ def test_answer_still_sends_when_agent_lists_the_same_question_again(goal_ui):
     expect(view.questions).to_be_visible()
     asked = view.current()['questions'][0]
     view.composer.fill('Saturday morning')
-    # A run the user did not start lists the same question again, unchanged.
     view.background(read_goal() + update_questions(question) + say('Still checking the venues.'))
     expect(page.get_by_test_id('message-assistant').filter(has_text='Still checking the venues.')).to_be_visible(timeout=10000)
     relisted = view.current()['questions'][0]
@@ -151,7 +148,6 @@ def test_pause_and_resume_keep_future_schedule(goal_ui):
     assert resumed['next'] == scheduled['next']
     expect(view.header).to_contain_text('Resumes')
     expect(view.details.get_by_role('button', name='Run now', exact=True)).to_be_visible()
-    # Resume never starts a run.
     page.wait_for_timeout(1500)
     assert view.current()['last_run_id'] == scheduled['last_run_id']
     expect(view.dividers('paused')).to_have_count(1)

@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import Button from '../../components/primitives/Button.jsx';
 import SearchInput from '../../components/primitives/SearchInput.jsx';
 import Callout from '../../components/primitives/Callout.jsx';
-import { DayHeader } from './GoalTransition.jsx';
-import styles from './GoalPanel.module.css';
+import DayHeader from '../../components/DayHeader.jsx';
+import styles from './GoalHistory.module.css';
+import { formatClockTime } from './goalStatus.js';
+import { requestJson } from './GoalsState.jsx';
 
 const ACTORS = { agent: 'Agent', user: 'You', system: 'App' };
 const SEARCH_DELAY_MS = 250;
@@ -31,7 +33,6 @@ function entryLine(entry) {
     return entry.summary;
 }
 
-/** One entry per run: its note is the main line and the run's other changes fold under it. */
 export function groupHistory(entries) {
     const groups = [];
     const byRun = new Map();
@@ -50,7 +51,6 @@ export function groupHistory(entries) {
             const [entry] = group.entries;
             return { id: group.id, created_at: entry.created_at, actor: entry.actor, line: entryLine(entry), detail: entryDetail(entry), details: [] };
         }
-        // A run with no note is shown by what ended it: an error, Stop, or no choice.
         const note = group.entries.find((entry) => entry.kind === 'note');
         const ending = group.entries.find((entry) => entry.kind === 'state' && entry.actor !== 'agent');
         const main = note || ending || group.entries[0];
@@ -63,10 +63,6 @@ export function groupHistory(entries) {
             detail: note || ending ? entryDetail(main) : '', details: note || ending ? details : [{ id: main.id, line: entryLine(main), detail: entryDetail(main) }, ...details],
         };
     });
-}
-
-function timeOf(value) {
-    return new Date(value).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 }
 
 export default function GoalHistory({ conversationId, goalId, revision, open, onOpenChange }) {
@@ -92,9 +88,7 @@ export default function GoalHistory({ conversationId, goalId, revision, open, on
         try {
             const params = new URLSearchParams({ goal_id: goalId, q: search });
             if (before) params.set('before', before);
-            const response = await fetch(`/api/conversations/sessions/${encodeURIComponent(conversationId)}/goal/history?${params}`);
-            const data = await response.json();
-            if (!response.ok) throw new Error(data.error || 'Could not load goal history.');
+            const data = await requestJson(`/api/conversations/sessions/${encodeURIComponent(conversationId)}/goal/history?${params}`, undefined, 'Could not load goal history.');
             if (!mounted.current || generation.current !== version) return;
             setPage((current) => ({ ...data, entries: before ? [...current.entries, ...data.entries] : data.entries }));
         } catch (failure) {
@@ -103,7 +97,6 @@ export default function GoalHistory({ conversationId, goalId, revision, open, on
             if (mounted.current && generation.current === version) setBusy(false);
         }
     }
-    // History follows the goal: a new revision reloads the newest page.
     useEffect(() => {
         const version = ++generation.current;
         if (open) void load(null, version);
@@ -123,7 +116,7 @@ export default function GoalHistory({ conversationId, goalId, revision, open, on
                 return <li key={group.id} data-testid="goal-history-entry">
                     {header}
                     <div className={styles.historyLine}>
-                        <time dateTime={group.created_at} title={new Date(group.created_at).toLocaleString()}>{timeOf(group.created_at)}</time>
+                        <time dateTime={group.created_at} title={new Date(group.created_at).toLocaleString()}>{formatClockTime(group.created_at)}</time>
                         <span className={styles.historyActor}>{ACTORS[group.actor] || 'App'}</span>
                         <span>{group.line}</span>
                     </div>

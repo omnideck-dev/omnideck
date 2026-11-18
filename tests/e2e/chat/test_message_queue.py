@@ -15,8 +15,6 @@ def _start_slow_run(page: Page, captured: dict) -> ChatView:
     chat = ChatView(page).goto().new_conversation()
     chat.send(bash("sleep 8") + say("first step done"))
     expect(chat.stop_button).to_be_visible(timeout=10_000)
-    # The agent reads queued messages before each model call. Give the first
-    # model call time to start the sleep so the message waits for the next one.
     page.wait_for_timeout(2_000)
     expect(chat.composer).to_have_attribute("placeholder", "Message the agent while it works…")
     return chat
@@ -34,7 +32,6 @@ def test_message_sent_during_a_tool_call_waits_in_the_strip_then_moves_into_the_
         expect(strip).to_contain_text("Also check Thursday")
         expect(chat.composer).to_have_value("")
         expect(page.locator("[role='region'][aria-label='Notifications']")).not_to_contain_text("sent")
-        # The agent reads it after the tool call; the strip empties and the chat shows it.
         expect(page.get_by_test_id("message-user").filter(has_text="Also check Thursday")).to_be_visible(timeout=20_000)
         expect(strip).to_have_count(0)
         chat.wait_streaming(timeout=20_000)

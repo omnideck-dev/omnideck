@@ -394,7 +394,6 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
                 {searching && searchResults.map((convo) => renderRow(convo, { showAge: true }))}
 
                 {!searching && sections.map((section) => {
-                    // Needs you never collapses, so a new question is never hidden.
                     const isCollapsed = section.key !== NEEDS_YOU && collapsed.has(section.key);
                     return (
                         <div key={section.key} data-testid="recent-section" data-section={section.key}>

@@ -143,7 +143,6 @@ export type SessionAction =
     | { type: 'QUEUE_MESSAGE'; message: QueuedMessage }
     | { type: 'DROP_QUEUED_MESSAGE'; nudgeId: string; returned: boolean };
 
-/** A message waiting for the agent's next step. Its id is the server's nudge id. */
 export type QueuedMessage = {
     id: string;
     content: string;

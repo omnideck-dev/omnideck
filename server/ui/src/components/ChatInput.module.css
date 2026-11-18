@@ -30,8 +30,6 @@
   box-shadow: var(--shadow-md), var(--shadow-glow);
 }
 
-/* Keep the expand control with the text field, below any goal questions.
-   In expanded mode this flex child stretches to fill the card. */
 .textareaWrapper {
   position: relative;
   min-width: 0;
@@ -120,40 +118,7 @@
   align-items: center;
 }
 
-/* Ghost icon button — composer actions */
-.iconButton {
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-full);
-  background: none;
-  color: var(--text-secondary);
-  border: none;
-  cursor: pointer;
-  transition: background 120ms ease, color 120ms ease;
-}
-.iconButton svg { width: 16px; height: 16px; display: block; }
-.iconButton:hover:not(:disabled) { background: var(--accent-muted); color: var(--text-primary); }
-.iconButton:active:not(:disabled) { transform: translateY(1px); }
-.iconButton:disabled { opacity: 0.4; cursor: not-allowed; }
-.iconButton:focus-visible { outline: none; box-shadow: var(--shadow-glow); }
-.addIcon { font-size: var(--font-size-heading); }
-
-.addMenu {
-  padding: var(--sp-1);
-  background: var(--elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-lg);
-  overflow-y: auto;
-}
-
-.addMenuItems { display: flex; flex-direction: column; }
 .composerNote { margin: 0; padding: var(--sp-2) var(--sp-2) 0 0; color: var(--text-secondary); font-size: var(--font-size-small); }
-.menuShortcut { margin-left: auto; font-family: var(--font-code); font-size: var(--font-size-caption); color: var(--text-tertiary); }
 
 /* Filled circular send button */
 .sendButton {
@@ -201,12 +166,14 @@
    The composer grows tall and floats over the chat transcript rather than
    taking over the whole panel — same width and horizontal position as the
    collapsed composer (.inputArea keeps its own max-width/margin), just
-   anchored to the bottom of the panel at roughly 80% of its height. The wrapper itself stays transparent
+   anchored to the bottom of the panel at roughly 80% of its height. `top`
+   is clamped to at least --titlebar-height so this can never creep above
+   the title bar on a very short panel. The wrapper itself stays transparent
    and click-through outside the card so the transcript underneath is still
    visible and scrollable. */
 .expandedWrapper {
   position: absolute;
-  top: 20%;
+  top: max(var(--titlebar-height), 20%);
   left: 0;
   right: 0;
   bottom: 0;

@@ -3,7 +3,6 @@ import { goalStatus, planProgress, stepInProgress } from './goalStatus.js';
 import styles from './GoalHeadline.module.css';
 import toneStyles from './GoalStatus.module.css';
 
-/** The chat header's goal button. It opens the Goal tab; plan details sit in the hover text. */
 export default function GoalHeadline({ goal, onOpen }) {
     const status = goalStatus(goal);
     if (!status) return null;

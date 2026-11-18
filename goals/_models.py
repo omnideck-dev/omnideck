@@ -102,7 +102,6 @@ def apply_step_changes(plan: list[GoalStep], changes: list[GoalStepChange]) -> l
             for step in steps:
                 step.depends_on = [item for item in step.depends_on if item != change.id]
             continue
-        # Some models send null for fields they leave out; null never clears a saved value.
         fields = {name: value for name, value in change.model_dump(exclude={"id", "before", "remove"}).items()
                   if value is not None}
         if index is None:

@@ -310,7 +310,6 @@ async def test_internal_goal_skill_cannot_be_granted_from_user_records(monkeypat
     from skills._policy import SESSION_GOAL_SKILL_ID
     from skills._tools import list_available_skills, load_skill
 
-    # A conflicting on-disk record must not shadow the run-bound internal skill.
     save_skill_record(SkillRecord(
         id=SESSION_GOAL_SKILL_ID, name="Session goal", prompt="Wrong instructions",
         tool_categories=["coding"],

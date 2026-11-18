@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import styles from './Message.module.css';
 import MarkdownContent from './MarkdownContent.jsx';
+import GoalAnswerQuote from '../features/goals/GoalAnswerQuote.jsx';
 import AgentOutput from './AgentOutput.jsx';
 import AttachmentChip from './AttachmentChip.jsx';
 
@@ -168,14 +169,7 @@ function UserMessage({ content, attachments, context = [] }) {
                         ))}
                     </div>
                 )}
-                {replies.map((item) => (
-                    <div className={styles.goalReply} key={`${item.goal_id}:${item.question_id}`} data-testid="goal-question-answer">
-                        <div className={styles.replyReference}>
-                            <span aria-hidden="true">↳ </span>{item.question}
-                        </div>
-                        <MarkdownContent>{item.answer}</MarkdownContent>
-                    </div>
-                ))}
+                {replies.map((item) => <GoalAnswerQuote key={`${item.goal_id}:${item.question_id}`} item={item} />)}
                 {!replies.length && content && <MarkdownContent>{content}</MarkdownContent>}
             </div>
         </div>

@@ -1,14 +1,13 @@
 import React, { useRef, useState, useEffect, useCallback, useId } from 'react';
 import styles from './ChatInput.module.css';
-import PaperclipIcon from './icons/PaperclipIcon.jsx';
 import SendIcon from './icons/SendIcon.jsx';
 import StopIcon from './icons/StopIcon.jsx';
 import OfflineNotice from './OfflineNotice.jsx';
 import ProfileSelector from './ProfileSelector.jsx';
 import AttachmentChip from './AttachmentChip.jsx';
-import Popover from './primitives/Popover.jsx';
+import ComposerAddMenu from './ComposerAddMenu.jsx';
 import Button from './primitives/Button.jsx';
-import SlashHint from './SlashHint.jsx';
+import SlashHint, { slashOptionId } from './SlashHint.jsx';
 import QueueStrip from './QueueStrip.jsx';
 import GoalQuestions from '../features/goals/GoalQuestions.jsx';
 import useGoalAnswering, { isAnswerMessage, queueRows } from '../features/goals/useGoalAnswering.js';
@@ -22,7 +21,6 @@ const MIN_HEIGHT_PX = 44;
 const MAX_AUTO_HEIGHT_PX = 8 * LINE_HEIGHT_PX + PADDING_V_PX; // 172px — 8 visible rows
 const GOAL_COMMAND = '/goal';
 
-/** Stop ends this run only; say what the goal does afterwards. */
 function stopTitle(goal) {
     if (!isGoalOpen(goal)) return 'Stop generation';
     const next = goal.next;
@@ -49,64 +47,16 @@ function ChatInput({ onSend, onSendAnswers, queue = NO_MESSAGES, returned = NO_M
     const [selectedProfile, setSelectedProfile] = useState(null);
     const [expanded, setExpanded] = useState(false);
     const [isGrown, setIsGrown] = useState(false);
-    const [addMenuOpen, setAddMenuOpen] = useState(false);
 
     const textareaRef = useRef(null);
     const fileInputRef = useRef(null);
-    const addButtonRef = useRef(null);
-    const menuItemRefs = useRef([]);
-    const firstMenuFocusRef = useRef(0);
-    const menuId = useId();
     const hintId = useId();
     const [hintDismissed, setHintDismissed] = useState('');
+    const [slashIndex, setSlashIndex] = useState(0);
     const controlsDisabled = stopRequested || isOffline;
-    const closeAddMenu = useCallback(() => setAddMenuOpen(false), []);
     const goalOpen = isGoalOpen(goal);
     const hasGoalCommand = Boolean(onRequestGoal);
-    // Queued messages cannot carry files.
     const attachBlocked = isStreaming;
-
-    useEffect(() => {
-        if (controlsDisabled) setAddMenuOpen(false);
-    }, [controlsDisabled]);
-
-    // Focus moves into the menu once the popover is positioned and visible.
-    const focusFirstMenuItem = useCallback(() => {
-        const items = menuItemRefs.current.filter(Boolean);
-        items[Math.min(firstMenuFocusRef.current, items.length - 1)]?.focus();
-    }, []);
-
-    const openAddMenu = (last = false) => {
-        if (controlsDisabled) return;
-        firstMenuFocusRef.current = last && hasGoalCommand ? 1 : 0;
-        setAddMenuOpen(true);
-    };
-
-    const handleMenuKeyDown = (event) => {
-        const items = menuItemRefs.current.filter(Boolean);
-        const index = items.indexOf(document.activeElement);
-        if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
-            event.preventDefault();
-            const next = event.key === 'Home' ? 0
-                : event.key === 'End' ? items.length - 1
-                : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
-            items[next]?.focus();
-        } else if (event.key === 'Escape') {
-            event.preventDefault();
-            event.stopPropagation();
-            closeAddMenu();
-            addButtonRef.current?.focus();
-        } else if (event.key === 'Tab') {
-            event.preventDefault();
-            closeAddMenu();
-            const controls = Array.from(addButtonRef.current?.form?.querySelectorAll(
-                'button:not([disabled]), textarea:not([disabled]), input:not([disabled]):not([type="hidden"]):not([type="file"])',
-            ) || []);
-            const triggerIndex = controls.indexOf(addButtonRef.current);
-            const nextControl = controls[triggerIndex + (event.shiftKey ? -1 : 1)];
-            (nextControl || addButtonRef.current)?.focus();
-        }
-    };
 
     const profileName = selectedProfile?.name;
     const placeholder = stopRequested
@@ -117,9 +67,10 @@ function ChatInput({ onSend, onSendAnswers, queue = NO_MESSAGES, returned = NO_M
         ? 'Message the agent while it works…'
         : `Message ${profileName || 'Omnideck'}…`;
     const goalCommandLabel = goalOpen ? 'Open this chat\'s goal' : 'Start a goal for this chat';
-    // The hint shows while the text could still become /goal and has no objective yet.
+    const slashCommands = [{ command: GOAL_COMMAND, description: goalCommandLabel }];
     const showSlashHint = hasGoalCommand && !answering && !controlsDisabled && message.startsWith('/')
         && !/\s/.test(message) && GOAL_COMMAND.startsWith(message) && hintDismissed !== message;
+    const activeSlash = Math.min(slashIndex, slashCommands.length - 1);
     const requestGoalCommand = (objective) => {
         const originalCommand = message;
         onRequestGoal({
@@ -128,12 +79,12 @@ function ChatInput({ onSend, onSendAnswers, queue = NO_MESSAGES, returned = NO_M
             onClosed: () => textareaRef.current?.focus(),
         });
     };
-    const pickSlashCommand = () => {
-        if (goalOpen) {
+    const pickSlashCommand = (command) => {
+        if (command === GOAL_COMMAND && goalOpen) {
             requestGoalCommand('');
             return;
         }
-        setMessage(`${GOAL_COMMAND} `);
+        setMessage(`${command} `);
         textareaRef.current?.focus();
     };
 
@@ -175,10 +126,10 @@ function ChatInput({ onSend, onSendAnswers, queue = NO_MESSAGES, returned = NO_M
     // ESC collapses the expanded composer without discarding text.
     useEffect(() => {
         if (!expanded) return;
-        const onKey = (e) => { if (e.key === 'Escape' && !addMenuOpen) setExpanded(false); };
+        const onKey = (e) => { if (e.key === 'Escape') setExpanded(false); };
         document.addEventListener('keydown', onKey);
         return () => document.removeEventListener('keydown', onKey);
-    }, [expanded, addMenuOpen]);
+    }, [expanded]);
 
     useEffect(() => {
         if (draft) {
@@ -241,8 +192,6 @@ function ChatInput({ onSend, onSendAnswers, queue = NO_MESSAGES, returned = NO_M
         setExpanded(false);
     };
 
-    // Messages the run gave back unread return to where they were written:
-    // text to the message box, one per line, and answers to the question card.
     useEffect(() => {
         if (!returned.length) return;
         const texts = returned.filter((item) => !isAnswerMessage(item)).map((item) => item.content).filter(Boolean);
@@ -301,8 +250,16 @@ function ChatInput({ onSend, onSendAnswers, queue = NO_MESSAGES, returned = NO_M
         'aria-label': 'Message',
         'aria-describedby': answering ? 'goal-current-question' : undefined,
         onChange: (e) => setMessage(e.target.value),
+        'aria-autocomplete': showSlashHint ? 'list' : undefined,
         'aria-controls': showSlashHint ? hintId : undefined,
+        'aria-activedescendant': showSlashHint ? slashOptionId(hintId, activeSlash) : undefined,
         onKeyDown: (e) => {
+            if (showSlashHint && slashCommands.length > 1 && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+                e.preventDefault();
+                const step = e.key === 'ArrowDown' ? 1 : -1;
+                setSlashIndex((activeSlash + step + slashCommands.length) % slashCommands.length);
+                return;
+            }
             if (showSlashHint && e.key === 'Escape') {
                 e.preventDefault();
                 e.stopPropagation();
@@ -312,7 +269,7 @@ function ChatInput({ onSend, onSendAnswers, queue = NO_MESSAGES, returned = NO_M
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault();
                 if (showSlashHint) {
-                    pickSlashCommand();
+                    pickSlashCommand(slashCommands[activeSlash].command);
                     return;
                 }
                 handleSubmit(e);
@@ -344,7 +301,7 @@ function ChatInput({ onSend, onSendAnswers, queue = NO_MESSAGES, returned = NO_M
                 <GoalQuestions state={goalAnswering.questions} disabled={controlsDisabled || goalAnswering.sending} paused={Boolean(goal?.paused)} visible={answering}
                     onHide={() => { goalAnswering.hide(); textareaRef.current?.focus(); }}
                     onShow={() => { goalAnswering.show(); textareaRef.current?.focus(); }} />
-                {showSlashHint && <SlashHint id={hintId} command={GOAL_COMMAND} description={goalCommandLabel} onPick={pickSlashCommand} />}
+                {showSlashHint && <SlashHint id={hintId} commands={slashCommands} activeIndex={activeSlash} onPick={pickSlashCommand} />}
                 {attachBlocked && attachments.length > 0 && <p className={styles.composerNote}>Files can be sent after the agent finishes.</p>}
                 {attachments.length > 0 && (
                     <div className={styles.tray}>
@@ -385,76 +342,20 @@ function ChatInput({ onSend, onSendAnswers, queue = NO_MESSAGES, returned = NO_M
                 </div>
                 <div className={styles.inputAreaButtons}>
                     <div className={styles.leftActions}>
-                        <button
-                            ref={addButtonRef}
-                            type="button"
-                            id="fileButton"
-                            className={styles.iconButton}
-                            onClick={() => addMenuOpen ? closeAddMenu() : openAddMenu()}
-                            onKeyDown={(event) => {
-                                if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-                                    event.preventDefault();
-                                    openAddMenu(event.key === 'ArrowUp');
-                                }
-                            }}
-                            title="Add to chat"
-                            aria-label="Add to chat"
-                            aria-haspopup="menu"
-                            aria-expanded={addMenuOpen}
-                            aria-controls={addMenuOpen ? menuId : undefined}
+                        <ComposerAddMenu
                             disabled={controlsDisabled}
-                        >
-                            <i className={`bi bi-plus ${styles.addIcon}`} aria-hidden="true" />
-                        </button>
-                        {addMenuOpen && <Popover
-                            anchorRef={addButtonRef}
-                            onClose={closeAddMenu}
-                            onOpen={focusFirstMenuItem}
-                            align="start"
-                            placement="top"
-                            width={232}
-                            maxHeight={160}
-                            className={styles.addMenu}
-                            testId="composer-add-menu"
-                        >
-                            <div id={menuId} role="menu" aria-label="Add to chat" className={styles.addMenuItems} onKeyDown={handleMenuKeyDown}>
-                                <Button
-                                    ref={(node) => { menuItemRefs.current[0] = node; }}
-                                    variant="menuItem"
-                                    role="menuitem"
-                                    tabIndex={-1}
-                                    disabled={controlsDisabled || attachBlocked}
-                                    onClick={() => {
-                                        closeAddMenu();
-                                        addButtonRef.current?.focus();
-                                        fileInputRef.current?.click();
-                                    }}
-                                >
-                                    <PaperclipIcon />
-                                    Attach file
-                                </Button>
-                                {hasGoalCommand && <Button
-                                    ref={(node) => { menuItemRefs.current[1] = node; }}
-                                    variant="menuItem"
-                                    role="menuitem"
-                                    tabIndex={-1}
-                                    disabled={controlsDisabled}
-                                    onClick={() => {
-                                        closeAddMenu();
-                                        addButtonRef.current?.focus();
-                                        onRequestGoal({
-                                            objective: '',
-                                            onStarted: () => {},
-                                            onClosed: () => textareaRef.current?.focus(),
-                                        });
-                                    }}
-                                >
-                                    <i className="bi bi-bullseye" aria-hidden="true" />
-                                    {goalOpen ? 'Open goal' : 'Start a goal…'}
-                                    <span className={styles.menuShortcut}>{GOAL_COMMAND}</span>
-                                </Button>}
-                            </div>
-                        </Popover>}
+                            attachDisabled={attachBlocked}
+                            onAttach={() => fileInputRef.current?.click()}
+                            goalItem={hasGoalCommand ? {
+                                label: goalOpen ? 'Open goal' : 'Start a goal…',
+                                shortcut: GOAL_COMMAND,
+                                onSelect: () => onRequestGoal({
+                                    objective: '',
+                                    onStarted: () => {},
+                                    onClosed: () => textareaRef.current?.focus(),
+                                }),
+                            } : null}
+                        />
                         <input
                             ref={fileInputRef}
                             type="file"

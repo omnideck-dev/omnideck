@@ -61,7 +61,6 @@ export function ConversationSessionProvider({ children }) {
         return session.sendAnswers(goalId, answers, profileId);
     }, [noteStartedConversation, session.isOffline, session.sendAnswers]);
 
-    /** Message a sub-agent from its activity view. */
     const sendNudge = useCallback(async (message, agentId) => {
         const result = await session.sendNudge(message, agentId);
         if (!result || result.ok) return result;
@@ -296,7 +295,6 @@ export function useConversationSessionCommands() {
     return commands;
 }
 
-/** The agent the chat's next message goes to: the user's pick, the chat's saved agent, or the default. */
 export function useSelectedProfileId() {
     const { conversationProfileId } = useConversationSessionState();
     const { defaultProfileId } = useAppSettings();

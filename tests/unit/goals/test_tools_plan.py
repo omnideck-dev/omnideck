@@ -91,7 +91,6 @@ async def test_update_goal_does_not_choose_what_happens_next(planned):
 
 
 async def test_step_change_with_null_fields_keeps_saved_values(planned):
-    # Some providers send every optional field, as null when unused.
     store, goal, context, tools = planned
     result = await update(context, tools, plan=[{
         "id": "guests", "title": None, "status": "done", "notes": None, "depends_on": None, "before": None,

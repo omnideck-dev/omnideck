@@ -3,11 +3,6 @@ import styles from './QueueStrip.module.css';
 
 export const QUEUE_TITLE = "Queued for the agent's next step";
 
-/**
- * Messages waiting for the agent's next step, joined to the top edge of the
- * message box. Rows are `{id, label, editable}`. Clicking an editable row's
- * label calls `onEdit`; every row can be removed. Renders nothing when empty.
- */
 export default function QueueStrip({ rows, onRemove, onEdit, disabled = false }) {
     if (!rows?.length) return null;
     return <section className={styles.strip} aria-label={QUEUE_TITLE} data-testid="queue-strip">

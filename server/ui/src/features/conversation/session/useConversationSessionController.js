@@ -136,9 +136,7 @@ const INITIAL_CONVERSATION_STATE = {
     events: [],
     inflightIteration: null,
     pendingUserPrompt: null,
-    // Messages waiting for the agent's next step, in the order they were sent.
     queue: [],
-    // Queued messages the run gave back unread, waiting for the composer.
     returned: [],
 };
 
@@ -295,7 +293,6 @@ export default function useConversationSessionController({
         _setActiveConversationId(id);
     }, []);
     const rootAgentIdRef = useRef(null);
-    // Set when a send started a new run while another connection was closing.
     const followNextRunRef = useRef(false);
     const runConnectionRef = useRef(null);
 
@@ -364,7 +361,6 @@ export default function useConversationSessionController({
         }
         return addedEventCount;
     }, [workspaceDispatch]);
-    /** Message a sub-agent directly. Main composer messages go through sendMessage. */
     const sendNudge = useCallback(async (message, agentId) => {
         if (!message || stopRequestedRef.current || browserIsOffline()) return null;
         const nudgeBody = {
@@ -513,9 +509,6 @@ export default function useConversationSessionController({
                         });
                     for await (const data of records) {
                         if (controller.signal.aborted) throw abortError();
-                        // The agent was already working, so the server queued
-                        // this turn. Follow that run from its start; the queue
-                        // events show the message in the strip.
                         if (source === 'start' && data?.nudge) {
                             dispatchConversation({ type: 'CLEAR_PENDING_USER_PROMPT' });
                             if (typeof data.nudge.run_id === 'string') {
@@ -651,7 +644,6 @@ export default function useConversationSessionController({
                 setStopRequested(false);
                 setIsOffline(browserIsOffline());
                 dispatchConversation({ type: 'FINALIZE_ITERATION' });
-                // A message sent as this run ended started the next run. Follow it.
                 if (followNextRunRef.current) {
                     followNextRunRef.current = false;
                     const next = new AbortController();
@@ -675,11 +667,6 @@ export default function useConversationSessionController({
         runConnectionRef.current = runConnection;
     }, [runConnection]);
 
-    /**
-     * Send one user turn. While the agent works the server queues it and the
-     * run's queue events show it; otherwise this follows the run it starts.
-     * Resolves to `{queued: true}` for a queued turn, or an error result.
-     */
     const submitTurn = useCallback(async (request, prompt) => {
         if (browserIsOffline() || stopRequestedRef.current) return null;
         const conversationId = conversationIdRef.current;
@@ -695,8 +682,6 @@ export default function useConversationSessionController({
                 const body = await response.json().catch(() => ({}));
                 return { ok: false, status: response.status, error: body?.error };
             }
-            // The run ended before the message arrived, so it started a new
-            // run. Follow that run once the current connection finishes.
             void response.body?.cancel().catch(() => {});
             followNextRunRef.current = true;
             if (!isStreamingRef.current && !abortControllerRef.current) {
@@ -722,7 +707,6 @@ export default function useConversationSessionController({
 
     const sendMessage = useCallback(async (message, attachments, profileId) => {
         if (!message && !attachments?.length) return null;
-        // Files cannot wait in the queue.
         if (isStreamingRef.current && attachments?.length) {
             return { ok: false, status: 409, error: 'Files can be sent after the agent finishes.' };
         }
@@ -746,7 +730,6 @@ export default function useConversationSessionController({
         );
     }, [submitTurn]);
 
-    /** Send goal answers. `answers` carry the question text the agent reads. */
     const sendAnswers = useCallback(async (goalId, answers, profileId) => {
         if (!goalId || !answers?.length) return null;
         const pendingUserId = `u_${Date.now()}_${Math.random().toString(36).slice(2)}`;
@@ -761,7 +744,6 @@ export default function useConversationSessionController({
         );
     }, [submitTurn]);
 
-    /** Take a message out of the queue before the agent reads it. */
     const removeQueuedMessage = useCallback(async (nudgeId) => {
         let result;
         try {
@@ -869,7 +851,6 @@ export default function useConversationSessionController({
     }, [runConnection]);
 
     const refreshingRef = useRef(false);
-    /** Refresh autonomous work without clearing the user's composer or workspace. */
     const refreshActiveConversation = useCallback(async () => {
         if (isStreamingRef.current || abortControllerRef.current || refreshingRef.current || browserIsOffline()) return null;
         refreshingRef.current = true;

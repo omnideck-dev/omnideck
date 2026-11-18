@@ -4,10 +4,6 @@ import { useConversationSessionState } from '../conversation/session/Conversatio
 import { useGoalDesktopActions } from './GoalDesktopAdapter.jsx';
 import { isGoalOpen, useGoals } from './GoalsState.jsx';
 
-/**
- * Requests to start or open the chat's goal, from the composer, the + menu or
- * the Goals page. An open goal with no new text focuses its Goal tab instead.
- */
 export default function useGoalRequests(conversationId) {
     const { enabled, goalsByConversation, startRequest, clearStartRequest } = useGoals();
     const { isOffline, stopRequested } = useConversationSessionState();
