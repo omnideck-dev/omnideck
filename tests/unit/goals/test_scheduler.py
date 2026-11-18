@@ -41,7 +41,7 @@ def store(tmp_path: Path) -> GoalStore:
 
 
 def make_scheduler(store: GoalStore, runtime: AgentRuntime, enabled=lambda: True) -> Scheduler:
-    scheduler = Scheduler(max_concurrent=2, poll_interval=0.01, shutdown_timeout=0)
+    scheduler = Scheduler(limits={"goals": 2, "routines": 2}, poll_interval=0.01, shutdown_timeout=0)
     scheduler.register(GoalWorkSource(store, runtime, enabled=enabled))
     return scheduler
 

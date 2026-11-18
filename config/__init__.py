@@ -5,11 +5,11 @@ import os
 import re
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 import yaml
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
 
 # Matches ${VAR_NAME:-default_value} or ${VAR_NAME}
 _ENV_VAR_PATTERN = re.compile(r"^\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-(.*))?\}$", re.DOTALL)
@@ -135,10 +135,10 @@ class NotificationsConfig(BaseModel):
 
 
 class SchedulingConfig(BaseModel):
-    """Shared limits for scheduled goals and routine tasks."""
+    """Polling, shutdown and each source's run limit for scheduled goals and routine tasks."""
 
     poll_interval: float = Field(default=5.0, gt=0)
-    max_concurrent: int = Field(default=2, ge=1)
+    max_concurrent: dict[str, Annotated[int, Field(ge=1)]] = Field(default_factory=lambda: {"routines": 4, "goals": 4})
     shutdown_timeout: float = Field(default=60, ge=0)
 
 
@@ -177,26 +177,6 @@ class AppConfig(BaseModel):
     scheduling: SchedulingConfig = Field(default_factory=SchedulingConfig)
     routines: RoutinesConfig = Field(default_factory=RoutinesConfig)
     integrations: IntegrationsConfig = Field(default_factory=IntegrationsConfig)
-
-    @model_validator(mode="before")
-    @classmethod
-    def migrate_scheduling_config(cls, data: Any) -> Any:
-        """Preserve deployed config.yaml routine limits under the shared scheduler.
-
-        The explicit scheduling section takes precedence. This migration is for
-        existing user configuration, not an alternate execution contract.
-        """
-        if not isinstance(data, dict) or not isinstance(data.get("routines"), dict):
-            return data
-        result = dict(data)
-        routines = dict(data["routines"])
-        scheduling = dict(data.get("scheduling") or {})
-        for key in ("poll_interval", "max_concurrent", "shutdown_timeout"):
-            if key in routines:
-                scheduling.setdefault(key, routines.pop(key))
-        result["routines"] = routines
-        result["scheduling"] = scheduling
-        return result
 
 
 

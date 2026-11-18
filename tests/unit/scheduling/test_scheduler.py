@@ -1,4 +1,4 @@
-"""Shared scheduler capacity, timing, lifecycle and failure isolation."""
+"""Per-source run limits, timing, lifecycle and failure isolation in the shared scheduler."""
 import asyncio
 from datetime import datetime, timedelta, timezone
 
@@ -29,33 +29,48 @@ class Source:
             self.started.append(key)
             self.jobs.pop(key)
             return asyncio.get_running_loop().create_future()
-        self.jobs[key] = ScheduledWork(key, target or key, due, {"item": key}, dispatch)
+        self.jobs[key] = ScheduledWork(key, target or key, due, dispatch)
 
 
 def scheduler(*sources, capacity=2):
-    service = Scheduler(max_concurrent=capacity, poll_interval=0.01, shutdown_timeout=0)
+    service = Scheduler(limits={source.name: capacity for source in sources}, poll_interval=0.01, shutdown_timeout=0)
     for source in sources:
         service.register(source)
     return service
 
 
-async def test_shared_capacity_rotates_sources_and_serializes_overlapping_ticks():
+async def test_source_at_its_limit_leaves_the_other_source_admitted():
     goals, routines = Source('goals'), Source('routines')
     for i in range(3):
         goals.add(f'g{i}')
         routines.add(f'r{i}')
     service = scheduler(goals, routines, capacity=1)
     try:
-        await asyncio.gather(service.tick(NOW), service.tick(NOW))
-        assert goals.started == ['g0'] and not routines.started
-        service.active('goals')[0].completion.set_result(None)
         await service.tick(NOW)
-        assert routines.started == ['r0'] and goals.started == ['g0']
+        assert goals.started == ['g0'] and routines.started == ['r0']
         service.active('routines')[0].completion.set_result(None)
         await service.tick(NOW)
-        assert goals.started == ['g0', 'g1']
+        assert goals.started == ['g0'] and routines.started == ['r0', 'r1']
     finally:
         await service.stop()
+
+
+async def test_overlapping_ticks_are_serialized():
+    source = Source('jobs')
+    for i in range(3):
+        source.add(f'j{i}')
+    service = scheduler(source, capacity=1)
+    try:
+        await asyncio.gather(service.tick(NOW), service.tick(NOW))
+        assert source.started == ['j0']
+    finally:
+        await service.stop()
+
+
+def test_register_refuses_a_source_without_a_limit():
+    service = Scheduler(limits={'goals': 1}, poll_interval=0.01, shutdown_timeout=0)
+    with pytest.raises(ValueError, match='no run limit'):
+        service.register(Source('routines'))
 
 
 async def test_future_replacement_cancellation_disabled_and_busy_target_are_rechecked():
@@ -65,7 +80,7 @@ async def test_future_replacement_cancellation_disabled_and_busy_target_are_rech
     try:
         await service.tick(NOW)
         assert not source.started
-        source.jobs.clear()  # Durable schedule was cancelled/replaced.
+        source.jobs.clear()
         source.add('new', target='chat')
         source.add('other', target='chat')
         source.enabled = False
@@ -95,9 +110,27 @@ async def test_source_failure_does_not_stop_other_sources():
         await service.stop()
 
 
-async def test_deletion_blocks_admission_and_shutdown_does_not_cancel_cleanup_twice():
+async def test_start_recovers_other_sources_when_one_recover_fails():
+    class Broken(Source):
+        def recover(self):
+            raise OSError('Unreadable goal file')
+    broken, healthy = Broken('broken'), Source('healthy')
+    healthy.add('ready')
+    service = scheduler(broken, healthy)
+    await service.start()
+    try:
+        assert healthy.recovered == 1
+        assert service.running
+        await service.tick(NOW)
+        assert healthy.started == ['ready']
+    finally:
+        await service.stop()
+
+
+async def test_shutdown_does_not_cancel_cleanup_twice():
     source = Source('jobs')
     entered, cleaning, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    finished = []
 
     async def work():
         entered.set()
@@ -106,32 +139,26 @@ async def test_deletion_blocks_admission_and_shutdown_does_not_cancel_cleanup_tw
         finally:
             cleaning.set()
             await release.wait()
+            finished.append(True)
+
+    tasks = []
 
     async def dispatch():
-        return asyncio.create_task(work())
+        tasks.append(asyncio.create_task(work()))
+        return tasks[-1]
 
-    source.jobs['a'] = ScheduledWork('a', 'chat', NOW, {'item': 'a'}, dispatch)
+    source.jobs['a'] = ScheduledWork('a', 'chat', NOW, dispatch)
     service = scheduler(source)
     await service.tick(NOW)
     await entered.wait()
-
-    async def delete():
-        async with service.block('jobs', 'item', 'a'):
-            assert service.blocked('jobs', {'item': 'a'})
-            source.jobs.clear()
-
-    deletion = asyncio.create_task(delete())
+    tasks[0].cancel()
     await cleaning.wait()
-    await service.tick(NOW)
     shutdown = asyncio.create_task(service.stop())
     await asyncio.sleep(0)
-    assert not deletion.done() and not shutdown.done()
+    assert not shutdown.done()
     release.set()
-    await asyncio.gather(deletion, shutdown)
-    assert not service.active('jobs')
-    source.add('late')
-    await service.tick(NOW)
-    assert not source.started
+    await shutdown
+    assert finished == [True]
 
 
 async def test_start_recovers_sources_once_and_stop_cancels_remaining_work():

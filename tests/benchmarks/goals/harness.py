@@ -258,7 +258,7 @@ class Episode:
         self.runtime = AgentRuntime(browser_runtime=NoBrowser(), shutdown_timeout=0.1,
                                     extensions=[GoalRunExtension(self.store, enabled=lambda: True)])
         self.runtime.observe_events(GoalAnswerRecorder(self.store).handle_event)
-        self.scheduler = Scheduler(max_concurrent=2, poll_interval=0.01, shutdown_timeout=0)
+        self.scheduler = Scheduler(limits={"goals": 2, "routines": 2}, poll_interval=0.01, shutdown_timeout=0)
         self.scheduler.register(GoalWorkSource(self.store, self.runtime, enabled=lambda: True))
         # A crash fault occurs before run finalization. Keep that claim on disk so
         # the real recovery function handles it after recreating the runtime.

@@ -41,7 +41,7 @@ class GoalWorkSource:
     def pending(self, now: datetime) -> list[ScheduledWork]:
         return [ScheduledWork(
             id=goal.next.id, target=goal.conversation_id,
-            due_at=datetime.fromisoformat(goal.next.at), labels={"goal": goal.id},
+            due_at=datetime.fromisoformat(goal.next.at),
             dispatch=partial(self._dispatch, goal.id, goal.next.id, now),
         ) for goal in self._store.wakes() if goal.next.kind == "wake"]
 

@@ -54,9 +54,8 @@ async def test_deletion_awaits_owned_trees_and_preserves_unrelated_work(harness,
     other = h.store.create_routine("unrelated", auto_run=False)
     h.store.create_task(other.id, "other", message, agent_profile="root")
     other_run = h.store.queue_run(other.id)
-    config = h.config.scheduling.model_copy(update={"max_concurrent": 6, "shutdown_timeout": 0})
-    scheduler = Scheduler(**config.model_dump())
-    runner = RoutineWorkSource(h.store, TaskExecutor(h.store, h.manager), h.config.routines, scheduler=scheduler)
+    scheduler = Scheduler(limits={"routines": 6}, poll_interval=5, shutdown_timeout=0)
+    runner = RoutineWorkSource(h.store, TaskExecutor(h.store, h.manager), h.config.routines, max_concurrent=6)
     scheduler.register(runner)
     service = RoutineService(h.store, runner)
     app = web.Application()
@@ -80,9 +79,8 @@ async def test_deletion_awaits_owned_trees_and_preserves_unrelated_work(harness,
             original_delete = getattr(h.store, f"delete_{target}")
 
             def checked_delete(identifier):
-                # The service owns this boundary; admission stays blocked for
-                # the complete store operation, including history deletion.
-                assert scheduler.blocked("routines", {target: identifier})
+                blocked = runner._blocked_routines if target == "routine" else runner._blocked_runs
+                assert identifier in blocked
                 if getattr(h.store, f"get_{target}")(identifier) is None:
                     return original_delete(identifier)
                 # These checks run at the exact destructive boundary, while the
@@ -186,9 +184,8 @@ async def test_shutdown_waits_for_cleanup_already_started_by_deletion(harness, m
     routine = h.store.create_routine("delete during shutdown", auto_run=False)
     h.store.create_task(routine.id, "hold", call_tool("delayed_cleanup"), agent_profile="leaf")
     run = h.store.queue_run(routine.id)
-    config = h.config.scheduling.model_copy(update={"shutdown_timeout": 0})
-    scheduler = Scheduler(**config.model_dump())
-    runner = RoutineWorkSource(h.store, TaskExecutor(h.store, h.manager), h.config.routines, scheduler=scheduler)
+    scheduler = Scheduler(limits={"routines": 4}, poll_interval=5, shutdown_timeout=0)
+    runner = RoutineWorkSource(h.store, TaskExecutor(h.store, h.manager), h.config.routines, max_concurrent=4)
     scheduler.register(runner)
     service = RoutineService(h.store, runner)
     await scheduler.tick()
@@ -291,13 +288,13 @@ async def test_http_deletion_service_is_available_without_a_started_scheduler(ha
     assert load_events_jsonl(conversation)
     app = web.Application()
     app[AGENT_RUNTIME_KEY] = h.manager
-    app[SCHEDULER_KEY] = Scheduler(**h.config.scheduling.model_dump())
+    app[SCHEDULER_KEY] = Scheduler(limits=h.config.scheduling.max_concurrent, poll_interval=5, shutdown_timeout=0)
     app.on_startup.append(_configure_routines)
     register_task_routes(app)
     async with TestClient(TestServer(app)) as client:
         if enabled:
             assert not app[SCHEDULER_KEY].running
-            assert not app["routine_work_source"].status["running"]
+            assert not (await (await client.get("/api/runner/status")).json())["running"]
         else:
             assert "routine_work_source" not in app
         path = f"/api/routines/{routine.id}"

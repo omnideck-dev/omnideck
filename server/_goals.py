@@ -2,13 +2,26 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
+
 from aiohttp import web
 
 from goals import GoalAnswerRecorder, GoalStore, stop_goal_runs
 from settings import goals_enabled
 from server._agent_runtime import AGENT_RUNTIME_KEY
 
+logger = logging.getLogger(__name__)
+
 GOAL_STORE_KEY: web.AppKey[GoalStore] = web.AppKey("goal_store", GoalStore)
+
+
+async def start_goals(app: web.Application) -> None:
+    """Read saved goals off the event loop. A failure is logged so other scheduled work still starts."""
+    try:
+        await asyncio.to_thread(app[GOAL_STORE_KEY].load)
+    except Exception:
+        logger.exception("Could not load saved goals")
 
 
 def disable_goals(app: web.Application) -> None:

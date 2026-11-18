@@ -8,8 +8,10 @@ from aiohttp import web
 
 from tasks import RoutineService, TaskStore, get_store
 from tasks._models import Run
+from server._scheduling import SCHEDULER_KEY
 
 logger = logging.getLogger(__name__)
+
 ROUTINE_SERVICE_KEY = web.AppKey("routine_service", RoutineService)
 
 
@@ -102,6 +104,7 @@ async def handle_trigger_routine(request: web.Request) -> web.Response:
     if not routine:
         return web.json_response({"error": "Not found"}, status=404)
     run = store.queue_run(routine_id)
+    request.app[SCHEDULER_KEY].wake()
     return web.json_response({"run_id": run.id, "run_number": run.run_number}, status=201)
 
 
@@ -130,7 +133,7 @@ async def handle_runner_status(request: web.Request) -> web.Response:
             "active_tasks": 0,
             "max_concurrent": 0,
         })
-    return web.json_response(runner.status)
+    return web.json_response({**runner.status, "running": request.app[SCHEDULER_KEY].running and runner.enabled})
 
 
 async def handle_runner_pause(request: web.Request) -> web.Response:

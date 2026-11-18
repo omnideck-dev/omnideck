@@ -44,7 +44,9 @@ parallel:
 
 scheduling:
   poll_interval: 5
-  max_concurrent: 2
+  max_concurrent:
+    routines: 4
+    goals: 4
   shutdown_timeout: 60
 
 routines:

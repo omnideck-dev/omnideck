@@ -40,7 +40,7 @@ from server._custom_tool_routes import register_custom_tool_routes
 from server._desktop_routes import register_desktop_routes
 from server._feature_routes import register_feature_routes
 from server._goal_routes import register_goal_routes
-from server._goals import GOAL_STORE_KEY, save_goal_answers_when_read
+from server._goals import GOAL_STORE_KEY, save_goal_answers_when_read, start_goals
 from server.oauth_setup.routes import register_oauth_routes
 from server._integrations_routes import register_integrations_routes
 from server._memory_routes import register_memory_routes
@@ -136,7 +136,11 @@ def create_app(
         extensions=[GoalRunExtension(goal_store, enabled=goals_enabled)],
     )
     save_goal_answers_when_read(app)
-    app[SCHEDULER_KEY] = Scheduler(**load_config().scheduling.model_dump())
+    scheduling = load_config().scheduling
+    app[SCHEDULER_KEY] = Scheduler(
+        limits=scheduling.max_concurrent, poll_interval=scheduling.poll_interval,
+        shutdown_timeout=scheduling.shutdown_timeout,
+    )
     app[SCHEDULER_KEY].register(GoalWorkSource(
         goal_store, app[AGENT_RUNTIME_KEY], enabled=goals_enabled, on_change=app[SCHEDULER_KEY].wake,
     ))
@@ -348,8 +352,7 @@ async def _start_deferred_subsystems(app: web.Application) -> None:
                 logger.info("Deferred subsystems waiting for readiness")
             await app["ready"].wait()
             logger.info("Ready — starting deferred subsystems")
-            # Read saved goals off the event loop before the scheduler first asks for due work.
-            await asyncio.to_thread(app[GOAL_STORE_KEY].load)
+            await start_goals(app)
             await app[SCHEDULER_KEY].start()
         except asyncio.CancelledError:
             raise
@@ -377,7 +380,9 @@ async def _configure_routines(app: web.Application) -> None:
         if not notifier.enabled:
             notifier = None
 
-    runner = RoutineWorkSource(store, executor, config.routines, scheduler=app[SCHEDULER_KEY], notifier=notifier)
+    runner = RoutineWorkSource(
+        store, executor, config.routines, max_concurrent=config.scheduling.max_concurrent["routines"], notifier=notifier,
+    )
     app[SCHEDULER_KEY].register(runner)
     app["routine_work_source"] = runner
     app[ROUTINE_SERVICE_KEY] = RoutineService(store, runner)

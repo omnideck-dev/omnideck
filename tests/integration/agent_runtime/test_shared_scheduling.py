@@ -11,16 +11,16 @@ from tasks import RoutineWorkSource, TaskExecutor
 from ._support import reply
 
 
-def make_scheduler(h, tmp_path, *, capacity=1):
+def make_scheduler(h, tmp_path, *, capacity=1, enabled=lambda: True):
     store = h.goals
-    scheduler = Scheduler(max_concurrent=capacity, poll_interval=0.01, shutdown_timeout=0)
-    scheduler.register(GoalWorkSource(store, h.manager, enabled=lambda: True))
-    routines = RoutineWorkSource(h.store, TaskExecutor(h.store, h.manager), h.config.routines, scheduler=scheduler)
+    scheduler = Scheduler(limits={"goals": capacity, "routines": capacity}, poll_interval=0.01, shutdown_timeout=0)
+    scheduler.register(GoalWorkSource(store, h.manager, enabled=enabled))
+    routines = RoutineWorkSource(h.store, TaskExecutor(h.store, h.manager), h.config.routines, max_concurrent=capacity)
     scheduler.register(routines)
     return store, scheduler, routines
 
 
-async def test_goals_and_routines_share_capacity_and_take_turns(harness, tmp_path):
+async def test_goal_wakes_at_their_limit_do_not_delay_a_due_routine(harness, tmp_path):
     h = harness
     h.profile()
     store, scheduler, routines = make_scheduler(h, tmp_path)
@@ -38,30 +38,62 @@ async def test_goals_and_routines_share_capacity_and_take_turns(harness, tmp_pat
 
     h.provider.plan('leaf', hold, hold, hold)
     try:
-        await asyncio.gather(scheduler.tick(), scheduler.tick())
-        await asyncio.wait_for(entered.get(), 3)
-        assert len(scheduler.active('goals')) == 1
-        assert not scheduler.active('routines')
-        first = scheduler.active('goals')[0].completion
-        release.put_nowait(True)
-        await first
         await scheduler.tick()
         await asyncio.wait_for(entered.get(), 3)
-        assert not scheduler.active('goals')
+        await asyncio.wait_for(entered.get(), 3)
+        assert len(scheduler.active('goals')) == 1
         assert len(scheduler.active('routines')) == 1
-        routine_execution = scheduler.active('routines')[0].completion
         release.put_nowait(True)
-        await routine_execution
+        release.put_nowait(True)
+        await asyncio.gather(*(entry.completion for source in ('goals', 'routines') for entry in scheduler.active(source)))
         assert h.store.get_run(run.id).status == 'completed'
         await scheduler.tick()
         await asyncio.wait_for(entered.get(), 3)
-        assert len(scheduler.active('goals')) == 1
         release.put_nowait(True)
         await scheduler.active('goals')[0].completion
         assert len(h.provider.requests) == 3
     finally:
         for _ in range(3):
             release.put_nowait(True)
+        await scheduler.stop()
+
+
+async def test_broken_goal_file_with_goals_off_still_runs_a_routine(harness, tmp_path):
+    h = harness
+    h.profile()
+    goal = h.goal('broken', 'A goal whose file breaks', 'leaf')
+    (tmp_path / 'conversations' / 'broken' / 'goals' / goal.id / 'goal.json').write_text('{')
+    store, scheduler, _routines = make_scheduler(h, tmp_path, enabled=lambda: False)
+    routine = h.store.create_routine('Routine', auto_run=False)
+    h.store.create_task(routine.id, 'Task', 'Run routine', agent_profile='leaf')
+    run = h.store.queue_run(routine.id)
+    h.provider.plan('leaf', reply('Routine checked'))
+    try:
+        store.load()
+        await scheduler.start()
+        for _ in range(100):
+            if h.store.get_run(run.id).status == 'completed':
+                break
+            await asyncio.sleep(0.02)
+        assert h.store.get_run(run.id).status == 'completed'
+    finally:
+        await scheduler.stop()
+
+
+async def test_archived_goal_never_wakes(harness, tmp_path):
+    from conversations import archive_conversation
+
+    h = harness
+    h.profile()
+    store, scheduler, _ = make_scheduler(h, tmp_path)
+    goal = h.goal('archived-goal', 'Review the report', 'leaf')
+    store.archive_conversation('archived-goal', lambda: archive_conversation('archived-goal'))
+    try:
+        await scheduler.tick(datetime.now(timezone.utc) + timedelta(days=1))
+        assert not scheduler.active('goals')
+        assert store.get(goal.id) is None
+        assert h.provider.requests == []
+    finally:
         await scheduler.stop()
 
 

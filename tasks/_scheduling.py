@@ -11,7 +11,7 @@ from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from scheduling import ScheduledWork, Scheduler
+from scheduling import ScheduledWork
 
 if TYPE_CHECKING:
     from config import RoutinesConfig
@@ -24,17 +24,21 @@ logger = logging.getLogger(__name__)
 
 
 class RoutineWorkSource:
-    """Supply routine tasks; keep dependency, retry and notification policy here."""
+    """Supply routine tasks; keep dependency, retry, deletion and notification policy here."""
     name = "routines"
 
     def __init__(self, store: TaskStore, executor: TaskExecutor, config: RoutinesConfig, *,
-                 scheduler: Scheduler, notifier: TelegramNotifier | None = None) -> None:
+                 max_concurrent: int, notifier: TelegramNotifier | None = None) -> None:
         self._store = store
         self._executor = executor
         self._config = config
-        self._scheduler = scheduler
+        self._max_concurrent = max_concurrent
         self._notifier = notifier
         self._paused = False
+        self._running: dict[str, tuple[str, str, asyncio.Task]] = {}
+        self._blocked_routines: set[str] = set()
+        self._blocked_runs: set[str] = set()
+        self._delete_lock = asyncio.Lock()
 
     @property
     def enabled(self) -> bool:
@@ -51,44 +55,74 @@ class RoutineWorkSource:
 
     @asynccontextmanager
     async def stop_routine(self, routine_id: str) -> AsyncIterator[None]:
-        async with self._scheduler.block(self.name, "routine", routine_id):
-            yield
+        """Cancel and await a routine's tasks; block its admission until the caller exits."""
+        async with self._delete_lock:
+            self._blocked_routines.add(routine_id)
+            try:
+                await self._cancel([key for key, (routine, _run, _task) in self._running.items() if routine == routine_id])
+                yield
+            finally:
+                await asyncio.sleep(0)
+                self._blocked_routines.discard(routine_id)
 
     @asynccontextmanager
     async def stop_run(self, run_id: str) -> AsyncIterator[None]:
-        async with self._scheduler.block(self.name, "run", run_id):
-            yield
+        """Cancel and await a run's tasks; block its admission until the caller exits."""
+        async with self._delete_lock:
+            self._blocked_runs.add(run_id)
+            try:
+                await self._cancel([key for key, (_routine, run, _task) in self._running.items() if run == run_id])
+                yield
+            finally:
+                await asyncio.sleep(0)
+                self._blocked_runs.discard(run_id)
+
+    async def _cancel(self, result_ids: list[str]) -> None:
+        tasks = [self._running[result_id][2] for result_id in result_ids if result_id in self._running]
+        for task in tasks:
+            if not task.done() and not task.cancelling():
+                task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    def _blocked(self, routine_id: str, run_id: str | None = None) -> bool:
+        return routine_id in self._blocked_routines or run_id in self._blocked_runs
 
     @property
     def status(self) -> dict:
-        active = self._scheduler.active(self.name)
         return {
-            "running": self._scheduler.running and self.enabled,
             "paused": self._paused,
-            "active_tasks": len(active),
-            "max_concurrent": self._scheduler.max_concurrent,
-            "running_routine_ids": list({entry.work.labels["routine"] for entry in active}),
+            "active_tasks": len(self._running),
+            "max_concurrent": self._max_concurrent,
+            "running_routine_ids": list({routine for routine, _run, _task in self._running.values()}),
         }
 
     def pending(self, now: datetime) -> list[ScheduledWork]:
         for routine in self._store.get_due_recurring_routines(now):
-            if self._scheduler.blocked(self.name, {"routine": routine.id}):
+            if self._blocked(routine.id):
                 continue
             run = self._store.queue_run(routine.id)
             self._store.stamp_last_run_spawned(routine.id)
             logger.info("Spawned run #%d for routine %s", run.run_number, routine.id)
         return [ScheduledWork(
             id=result.id, target=f"routines/{task.routine_id}/{result.run_id}/{result.id}",
-            due_at=now, labels={"routine": task.routine_id, "run": result.run_id},
-            dispatch=partial(self._dispatch, result, task),
-        ) for result, task in self._store.get_ready_task_results()]
+            due_at=now, dispatch=partial(self._dispatch, result, task),
+        ) for result, task in self._store.get_ready_task_results()
+            if not self._blocked(task.routine_id, result.run_id)]
 
     async def _dispatch(self, result: TaskResult, task: Task) -> asyncio.Future | None:
-        if not self.enabled:
+        if not self.enabled or self._blocked(task.routine_id, result.run_id):
             return None
         self._store.mark_task_result_running(result.id)
         self._store.update_run_status(result.run_id)
-        return asyncio.create_task(self._execute(result, task), name=f"scheduled-routine-{result.id}")
+        execution = asyncio.create_task(self._execute(result, task), name=f"scheduled-routine-{result.id}")
+        self._running[result.id] = (task.routine_id, result.run_id, execution)
+        execution.add_done_callback(partial(self._forget, result.id))
+        return execution
+
+    def _forget(self, result_id: str, execution: asyncio.Task) -> None:
+        if result_id in self._running and self._running[result_id][2] is execution:
+            del self._running[result_id]
 
     async def _execute(self, task_result: "TaskResult", task: "Task") -> None:
         """Execute a task, recording outcome into its result."""

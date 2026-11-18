@@ -212,29 +212,33 @@ cancellation cancels its handle and waits for session cleanup.
 ### Shared scheduling
 
 The application registers `GoalWorkSource` and `RoutineWorkSource` with one
-`Scheduler` before readiness. The scheduler recovers each source, polls with one
-clock, and admits due work within `scheduling.max_concurrent`. It alternates
-sources when both have work; interactive chat is outside this scheduled-work
-limit. A busy goal conversation keeps its pending wake until it can be admitted.
+`Scheduler` before readiness. The sources share only the poll loop, the clock,
+admission and shutdown. Each source has its own run limit in
+`scheduling.max_concurrent`, a map such as `{routines: 4, goals: 4}`; a source
+at its limit never delays another source's work. Registering a source with no
+limit is refused. The scheduler reads the limits once per poll. A source that
+fails to recover or to list its work is logged and skipped; the others still
+run. Interactive chat is outside these limits. A busy goal conversation keeps
+its pending wake until it can be admitted.
 
 Schedules remain in the existing goal and routine files, with no duplicate queue.
 The goal adapter revalidates the wake ID when claiming it, so replaced, cancelled,
 or paused wakes cannot execute from a stale candidate. A run keeps its wake in place
 while it runs; a saved goal change wakes the scheduler so a due wake does not wait
-for the next poll. Routine recurrence uses
-cron and timezones; task dependencies, retries and notifications stay in the
-routine adapter. Deleting a routine/run blocks matching admission and awaits
-agent-tree cleanup before deleting storage.
+for the next poll, and so does a routine's Run now. Routine recurrence uses cron
+and timezones; task dependencies, retries and notifications stay in the routine
+adapter. Deleting a routine or run is handled by the routine source: it blocks
+that routine or run, cancels and awaits its own tasks, and keeps admission blocked
+until storage is deleted.
 
 Shutdown stops new admission, waits up to `scheduling.shutdown_timeout`, and
 cancels remaining source-owned work without interrupting cleanup twice. Routine
 cancellation owns its agent tree; goal observers leave execution to
 `AgentRuntime.close`, which preserves interrupted claims for reconciliation on
-restart: the wake a run held runs again, marked interrupted. This is single-process dispatch, not a distributed exactly-once guarantee
-for external actions.
+restart: the wake a run held runs again, marked interrupted. This is single-process
+dispatch, not a distributed exactly-once guarantee for external actions.
 
 Shared settings are `scheduling.poll_interval` (seconds), `max_concurrent`, and
-`shutdown_timeout`. Existing deployed `routines` values migrate during config
-loading; explicit `scheduling` values win. The routine pause control still pauses
-only routines. Disabling the Goals experiment stops goal runs and leaves every goal
-as it was; a stopped wake run runs again once Goals are back on.
+`shutdown_timeout`. The routine pause control still pauses only routines.
+Disabling the Goals experiment stops goal runs and goal chat turns and leaves
+every goal as it was; a stopped wake run runs again once Goals are back on.

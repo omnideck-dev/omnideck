@@ -3,8 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
-from contextlib import asynccontextmanager
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Protocol
@@ -22,7 +21,6 @@ class ScheduledWork:
     id: str
     target: str
     due_at: datetime
-    labels: dict[str, str]
     dispatch: Callable[[], Awaitable[asyncio.Future | None]]
 
 
@@ -45,31 +43,31 @@ class RunningWork:
 
 
 class Scheduler:
-    """Poll sources, share capacity fairly, and serialize admission and cleanup.
+    """Poll sources and admit each source's due work within its own run limit.
 
+    Sources share only the poll loop, the clock, admission and shutdown.
     Schedules remain in source stores, avoiding a second persistent queue that
     could disagree with a changed goal or routine. This is a single-process
     service, like the AgentRuntime it feeds.
     """
-    def __init__(self, *, max_concurrent: int, poll_interval: float, shutdown_timeout: float) -> None:
-        if max_concurrent < 1 or poll_interval <= 0 or shutdown_timeout < 0:
+    def __init__(self, *, limits: Mapping[str, int], poll_interval: float, shutdown_timeout: float) -> None:
+        if any(limit < 1 for limit in limits.values()) or poll_interval <= 0 or shutdown_timeout < 0:
             raise ValueError("Invalid scheduler limits")
-        self.max_concurrent = max_concurrent
+        self.limits = limits
         self._poll_interval = poll_interval
         self._shutdown_timeout = shutdown_timeout
         self._sources: dict[str, WorkSource] = {}
         self._running: dict[tuple[str, str], RunningWork] = {}
-        self._blocked: set[tuple[str, str, str]] = set()
         self._tick_lock = asyncio.Lock()
-        self._control_lock = asyncio.Lock()
         self._stopping = asyncio.Event()
         self._woken = asyncio.Event()
         self._loop_task: asyncio.Task | None = None
-        self._next_source = 0
 
     def register(self, source: WorkSource) -> None:
         if self._loop_task is not None or source.name in self._sources:
             raise ValueError("Register each work source once, before scheduler startup")
+        if source.name not in self.limits:
+            raise ValueError(f"Scheduled work source '{source.name}' has no run limit")
         self._sources[source.name] = source
 
     @property
@@ -82,15 +80,15 @@ class Scheduler:
         if self._loop_task is not None:
             return
         for source in self._sources.values():
-            source.recover()
+            try:
+                source.recover()
+            except Exception:
+                logger.exception("Could not recover scheduled work from %s", source.name)
         self._loop_task = asyncio.create_task(self._poll(), name="scheduled-work")
 
     def active(self, source: str) -> list[RunningWork]:
         self._prune()
         return [entry for entry in self._running.values() if entry.source == source]
-
-    def blocked(self, source: str, labels: dict[str, str]) -> bool:
-        return any((source, key, value) in self._blocked for key, value in labels.items())
 
     def _prune(self) -> None:
         for key, entry in list(self._running.items()):
@@ -109,34 +107,20 @@ class Scheduler:
             if self._stopping.is_set():
                 return
             self._prune()
-            sources = list(self._sources.values())
-            if not sources:
-                return
-            # Rotate after each admission so a busy source cannot consume every
-            # newly available slot while another source waits.
-            start = self._next_source % len(sources)
-            ordered = sources[start:] + sources[:start]
-            queues = []
-            for source in ordered:
+            limits = dict(self.limits)
+            for source in self._sources.values():
                 if not source.enabled:
                     continue
                 try:
                     candidates = sorted(source.pending(instant), key=lambda work: work.due_at)
-                    queues.append((source, iter(candidates)))
                 except Exception:
                     logger.exception("Could not read scheduled work from %s", source.name)
-            while queues and len(self._running) < self.max_concurrent:
-                remaining = []
-                for source, jobs in queues:
-                    if self._stopping.is_set() or len(self._running) >= self.max_concurrent:
+                    continue
+                for work in candidates:
+                    if self._stopping.is_set() or len(self.active(source.name)) >= limits[source.name]:
                         break
-                    work = next(jobs, None)
-                    if work is None:
-                        continue
-                    remaining.append((source, jobs))
                     key = (source.name, work.id)
                     if (not source.enabled or work.due_at > instant or key in self._running
-                            or self.blocked(source.name, work.labels)
                             or any(entry.work.target == work.target for entry in self._running.values())):
                         continue
                     try:
@@ -146,28 +130,10 @@ class Scheduler:
                         continue
                     if completion is not None:
                         self._running[key] = RunningWork(source.name, work, completion)
-                        self._next_source = (sources.index(source) + 1) % len(sources)
-                queues = remaining
-
-    @asynccontextmanager
-    async def block(self, source: str, label: str, value: str) -> AsyncIterator[None]:
-        """Stop matching work and hold admission until destructive cleanup ends."""
-        async with self._control_lock:
-            async with self._tick_lock:
-                key = (source, label, value)
-                self._blocked.add(key)
-                tasks = [entry.completion for entry in self.active(source) if entry.work.labels.get(label) == value]
-            try:
-                await self._cancel(tasks)
-                yield
-            finally:
-                self._prune()
-                self._blocked.remove(key)
 
     @staticmethod
     async def _cancel(tasks: Sequence[asyncio.Future]) -> None:
         for task in tasks:
-            # A second cancellation could interrupt execution-tree cleanup.
             if not task.done() and (not isinstance(task, asyncio.Task) or not task.cancelling()):
                 task.cancel()
         if tasks:
@@ -177,7 +143,6 @@ class Scheduler:
         self._stopping.set()
         if self._loop_task is not None:
             await self._loop_task
-        # Wait for an in-flight admission before taking the shutdown snapshot.
         async with self._tick_lock:
             tasks = [entry.completion for entry in self._running.values()]
         if tasks:

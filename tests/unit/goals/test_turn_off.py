@@ -55,7 +55,7 @@ async def test_turn_off_keeps_goal_state(setup):
 async def test_turn_off_marks_wake_run_interrupted(setup):
     store, runtime, runner, enabled = setup
     goal = create(store)
-    scheduler = Scheduler(max_concurrent=2, poll_interval=0.01, shutdown_timeout=0)
+    scheduler = Scheduler(limits={"goals": 2, "routines": 2}, poll_interval=0.01, shutdown_timeout=0)
     scheduler.register(GoalWorkSource(store, runtime, enabled=lambda: enabled["value"]))
     await scheduler.tick()
     await runner.entered.wait()

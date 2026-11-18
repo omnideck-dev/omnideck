@@ -164,7 +164,7 @@ async def routine_retry_probe():
                 return "done", []
 
         executor = SideEffectThenFailure()
-        runner = RoutineWorkSource(store, executor, SimpleNamespace(), scheduler=Scheduler(max_concurrent=2, poll_interval=1, shutdown_timeout=0))
+        runner = RoutineWorkSource(store, executor, SimpleNamespace(), scheduler=Scheduler(limits={"goals": 2, "routines": 2}, poll_interval=1, shutdown_timeout=0))
         store.mark_task_result_running(result.id)
         await runner._execute(result, task)
         retry = store.get_task_results(run.id)[0]
