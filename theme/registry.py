@@ -34,8 +34,13 @@ COLOR_SETTINGS: tuple[ThemeSetting, ...] = (
     _color("border-strong", "Emphasized borders", "#cbd5e1", "#363d52"),
     # Accent
     _color("accent", "Primary interactive color (buttons, links)", "#2563eb", "#3b82f6"),
-    _color("accent-hover", "Accent color while hovered", "#1d4ed8", "#60a5fa"),
-    _color("accent-muted", "Accent tint for subtle backgrounds", "rgba(37,99,235,0.08)", "rgba(59,130,246,0.12)"),
+    _color("accent-hover", "Accent-colored buttons and links while hovered", "#1d4ed8", "#60a5fa"),
+    _color(
+        "accent-muted",
+        "Soft accent tint behind hovered, selected and active items (icon buttons, rows), badges and info panels",
+        "rgba(37,99,235,0.08)",
+        "rgba(59,130,246,0.12)",
+    ),
     _color("accent-glow", "Accent glow around focus rings", "rgba(37,99,235,0.15)", "rgba(59,130,246,0.20)"),
     # Status
     _color("success", "Success color", "#16a34a", "#4ade80"),

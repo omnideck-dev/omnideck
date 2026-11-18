@@ -100,3 +100,10 @@ async def test_a_guessed_setting_name_gets_a_usable_error():
     assert result["status"] == "error"
     assert "did you mean 'canvas'?" in result["error"]
     assert "valid color settings:" in result["error"]
+
+
+def test_set_theme_description_points_hover_requests_at_both_settings():
+    """accent-hover alone only reaches a few buttons and links; most hover highlights use accent-muted."""
+    description = callable_to_json_schema(set_theme)["function"]["description"]
+    sentences = re.split(r"(?<=[.;])\s+", description)
+    assert any("hover" in s.lower() and "accent-muted" in s and "accent-hover" in s for s in sentences)

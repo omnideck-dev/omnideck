@@ -86,3 +86,11 @@ def test_aliases_point_at_real_settings_and_never_shadow_one():
     for alias, target in SETTING_ALIASES.items():
         assert target in ids, f"alias {alias!r} points at the unknown setting {target!r}"
         assert alias not in ids, f"alias {alias!r} is also a real setting id"
+
+
+def test_the_hover_settings_say_what_they_affect():
+    """Setting only accent-hover barely changes hovering, so each setting must say where it applies."""
+    colors = settings_for("color")
+    assert "hovered" in colors["accent-hover"].description
+    assert "hovered" in colors["accent-muted"].description
+    assert colors["accent-hover"].description != colors["accent-muted"].description

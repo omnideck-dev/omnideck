@@ -44,8 +44,11 @@ async def set_theme(
     background), surface (panels and cards), elevated (modals and popovers),
     scrim (the dim layer behind dialogs). Text: text-primary, text-secondary,
     text-tertiary, text-on-accent (text on accent-colored buttons). Borders:
-    border, border-subtle, border-strong. Accent (buttons, links, focus rings):
-    accent, accent-hover, accent-muted, accent-glow. Status: success,
+    border, border-subtle, border-strong. Accent: accent (buttons, links, focus
+    rings), accent-hover (accent-colored buttons and links while hovered),
+    accent-muted (the soft tint behind hovered, selected and active items such
+    as icon buttons and list rows, and behind badges and info panels),
+    accent-glow. Status: success,
     success-muted, warning, warning-muted, danger, danger-muted (the -muted ones
     are background tints). Terminal: terminal-bg, terminal-surface,
     terminal-border, terminal-text, terminal-prompt, terminal-stderr,
@@ -59,8 +62,12 @@ async def set_theme(
     background, dark and moody) means setting backgrounds, text and borders
     together, in both modes, so text stays readable on the new backgrounds;
     changing only the accent would barely show. Change just the accent for
-    requests about buttons, links or highlights. Call get_theme first when you
-    are unsure which settings exist or what is already customized.
+    requests about buttons, links or highlights. Hovering: most hover
+    highlights use accent-muted, and only accent-colored buttons and links use
+    accent-hover, so to change how hovering looks across the app set
+    accent-muted as well as accent-hover (a few hover effects use surface or
+    border-strong). Call get_theme first when you are unsure which settings
+    exist or what is already customized.
 
     Args:
         light: Light-mode colors as {setting id: color}, e.g. {"accent": "#7c3aed"}. A null value clears that override.
