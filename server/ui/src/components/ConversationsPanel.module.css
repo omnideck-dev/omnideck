@@ -108,7 +108,7 @@
 .item.active { background: var(--accent-muted); color: var(--text-primary); }
 .item:focus-visible { outline: none; box-shadow: var(--shadow-glow); }
 
-.goalItem { height: auto; min-height: 34px; padding-top: var(--sp-2); padding-bottom: var(--sp-2); }
+.item:has(.itemBody > :nth-child(2)) { height: auto; min-height: 34px; padding-top: var(--sp-2); padding-bottom: var(--sp-2); }
 .itemBody { display: flex; flex-direction: column; gap: var(--sp-1); flex: 1; min-width: 0; }
 
 .itemTitle {

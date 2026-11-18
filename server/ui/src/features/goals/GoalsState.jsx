@@ -40,6 +40,7 @@ export function GoalsProvider({ children, enabled = false }) {
     const [savedGoals, setGoals] = useState({});
     const [runs, setRuns] = useState({});
     const [detailsByConversation, setDetails] = useState({});
+    const [startRequest, setStartRequest] = useState(null);
     const detailRequests = useRef({});
 
     const onGoalSnapshot = useCallback((effect) => {
@@ -64,6 +65,9 @@ export function GoalsProvider({ children, enabled = false }) {
             return next;
         });
     }, []);
+    const onStartRequested = useCallback((effect) => setStartRequest(effect.payload), []);
+    const clearStartRequest = useCallback(() => setStartRequest(null), []);
+    useAppEffectSubscription(APP_EFFECT_TYPES.GOALS_START_REQUESTED, onStartRequested);
     useAppEffectSubscription(APP_EFFECT_TYPES.GOALS_SNAPSHOT, onGoalSnapshot);
     useAppEffectSubscription(APP_EFFECT_TYPES.GOALS_CHANGED, onGoalChanged);
     useAppEffectSubscription(APP_EFFECT_TYPES.RUNS_SNAPSHOT, onRunSnapshot);
@@ -102,8 +106,9 @@ export function GoalsProvider({ children, enabled = false }) {
         return acceptSnapshot(conversationId, data);
     }, [acceptSnapshot]);
 
-    const value = useMemo(() => ({ enabled, goalsByConversation, detailsByConversation, loadGoal, mutateGoal }),
-        [enabled, goalsByConversation, detailsByConversation, loadGoal, mutateGoal]);
+    const value = useMemo(() => ({
+        enabled, goalsByConversation, detailsByConversation, loadGoal, mutateGoal, startRequest, clearStartRequest,
+    }), [enabled, goalsByConversation, detailsByConversation, loadGoal, mutateGoal, startRequest, clearStartRequest]);
     return <GoalsContext.Provider value={value}>{children}</GoalsContext.Provider>;
 }
 

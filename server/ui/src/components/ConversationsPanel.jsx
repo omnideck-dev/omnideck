@@ -21,8 +21,8 @@ import {
     buildSections,
 } from './conversationSections.js';
 import styles from './ConversationsPanel.module.css';
-import { goalNeedsAnswer, useGoals } from '../features/goals/GoalsState.jsx';
-import GoalStatus from '../features/goals/GoalStatus.jsx';
+import { useNeedsYou } from '../features/goals/conversationGoals.js';
+import ConversationGoalStatus from '../features/goals/ConversationGoalStatus.jsx';
 
 const NEEDS_YOU = 'needs-you';
 
@@ -44,7 +44,6 @@ function pointRect(event) {
  * Searching drops the structure and shows a flat, recency-sorted list.
  */
 export default function ConversationsPanel({ onLoadConversation, onNewConversation, activeConversationId }) {
-    const { enabled: goalsEnabled, goalsByConversation } = useGoals();
     const { addToast } = useToast();
     const {
         items, setItems, loading, deleting, handleDelete, activity,
@@ -52,19 +51,7 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
         folders, createFolder, renameFolder, setFolderIcon, deleteFolder, setConversationFolder,
     } = useConversationCatalog();
     const [query, setQuery] = useState('');
-    const [filterId, setFilterId] = useState(null);
-    // The goal filter keeps chats that have a goal, finished or not.
-    const filters = useMemo(() => [
-        ...(goalsEnabled ? [{ id: 'goals', label: 'With a goal', chip: 'Goals', icon: 'bi-bullseye',
-            match: (item) => Boolean(goalsByConversation[item.conversation_id]) }] : []),
-        { id: 'running', label: 'Running now', chip: 'Running', icon: 'bi-arrow-repeat',
-            match: (item) => activity.running.has(item.conversation_id) },
-    ].map((f) => ({ ...f, count: items.filter(f.match).length })), [goalsEnabled, goalsByConversation, activity, items]);
-    const activeFilter = filters.find((f) => f.id === filterId);
-    const visibleItems = useMemo(
-        () => (activeFilter ? items.filter(activeFilter.match) : items),
-        [activeFilter, items],
-    );
+    const needsYou = useNeedsYou(items);
     // Which row's context menu is open, plus the trigger rect to anchor it.
     const [menu, setMenu] = useState(null); // { id, rect } | null
     const [renamingId, setRenamingId] = useState(null);
@@ -97,20 +84,17 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
     const searchResults = useMemo(() => {
         if (!searching) return [];
         const q = query.trim().toLowerCase();
-        return visibleItems
+        return items
             .filter((c) => label(c).toLowerCase().includes(q))
             .sort((a, b) => (b.started_at || '').localeCompare(a.started_at || ''));
-    }, [visibleItems, query, searching]);
+    }, [items, query, searching]);
 
     const sections = useMemo(() => {
         if (searching) return [];
-        const needsYou = goalsEnabled ? visibleItems.filter((item) => goalNeedsAnswer(goalsByConversation[item.conversation_id])) : [];
         const needsIds = new Set(needsYou.map((item) => item.conversation_id));
-        const grouped = buildSections(visibleItems.filter((item) => !needsIds.has(item.conversation_id)), folders, folderById, query)
-            // A filtered list leaves out folders with nothing that matches.
-            .filter((section) => !activeFilter || section.items.length > 0);
+        const grouped = buildSections(items.filter((item) => !needsIds.has(item.conversation_id)), folders, folderById, query);
         return needsYou.length ? [{ key: NEEDS_YOU, kind: 'goals', label: `Needs you · ${needsYou.length}`, items: needsYou }, ...grouped] : grouped;
-    }, [visibleItems, folders, folderById, query, searching, goalsEnabled, goalsByConversation, activeFilter]);
+    }, [items, needsYou, folders, folderById, query, searching]);
 
     const hasRows = sections.some((s) => s.items.length > 0);
 
@@ -275,13 +259,11 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
         const menuOpen = menu?.id === id;
         const running = activity.running.has(id);
         const finished = activity.finished.has(id);
-        const goal = goalsEnabled ? goalsByConversation[id] : null;
         return (
             <div
                 key={id}
                 className={[
                     styles.item,
-                    goal ? styles.goalItem : '',
                     active ? styles.active : '',
                     menuOpen ? styles.menuOpen : '',
                 ].filter(Boolean).join(' ')}
@@ -318,7 +300,7 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
                 )}
                 <span className={styles.itemBody}>
                     <span className={styles.itemTitle}>{label(convo)}</span>
-                    {goal && <GoalStatus goal={goal} compact />}
+                    <ConversationGoalStatus conversationId={id} />
                 </span>
                 {showAge && (
                     <span className={styles.itemAge} data-testid="recent-item-age">
@@ -385,10 +367,6 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
                     ariaLabel="Search conversations"
                     testId="recent-search"
                     clearTestId="recent-search-clear"
-                    filters={filters}
-                    filter={activeFilter?.id ?? null}
-                    onFilterChange={setFilterId}
-                    filterTestId="recent-filter"
                 />
             </div>
 
@@ -407,9 +385,9 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
                         {`No matches for "${query}"`}
                     </div>
                 )}
-                {!searching && !loading && !hasRows && !creatingFolder && (activeFilter || folders.length === 0) && (
+                {!searching && !loading && !hasRows && !creatingFolder && folders.length === 0 && (
                     <div className={styles.empty} data-testid="recent-empty">
-                        {activeFilter ? 'No chats match this filter' : 'No conversations yet'}
+                        No conversations yet
                     </div>
                 )}
 

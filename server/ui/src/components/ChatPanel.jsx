@@ -8,18 +8,16 @@ import { useAgentState } from '../features/agent/AgentState.jsx';
 import styles from './ChatPanel.module.css';
 
 /** One conversation header, transcript, and composer. */
-export default function ChatPanel({ turns, stalled = false, isOffline = false, onSend, onSendAnswers, queue, returned, onRemoveQueued, onReturnedConsumed, onStop, isStreaming, stopRequested = false, attachment, onPreview, onSelectAgent, networkAgentCount = 0, networkRunningCount = 0, onOpenNetwork, onOpenArtifacts, selectedProfileId, onProfileChange, profileRefreshSignal, conversationId, draft, onDraftChange, onRequestGoal, onOpenGoal, goal }) {
+export default function ChatPanel({ title = 'New chat', turns, stalled = false, isOffline = false, onSend, onSendAnswers, queue, returned, onRemoveQueued, onReturnedConsumed, onStop, isStreaming, stopRequested = false, attachment, onPreview, onSelectAgent, networkAgentCount = 0, networkRunningCount = 0, onOpenNetwork, onOpenArtifacts, selectedProfileId, onProfileChange, profileRefreshSignal, conversationId, draft, onDraftChange, onRequestGoal, onOpenGoal, goal }) {
     const headerRef = useRef(null);
     const agentState = useAgentState();
     const rootAgent = agentState.rootId ? agentState.agents[agentState.rootId] : null;
 
-    // A turn is one user message and its response. Keep this existing metadata
-    // available in Details without repeating the conversation tab title.
     const turnCount = Array.isArray(turns) ? turns.length : 0;
-    const title = rootAgent?.name ? formatAgentName(rootAgent.name) : 'Chat';
+    const agentName = rootAgent?.name ? formatAgentName(rootAgent.name) : 'Omnideck';
 
     const renderControls = () => <ConversationControls
-        key={conversationId} anchorRef={headerRef} agentName={title} turnCount={turnCount}
+        key={conversationId} anchorRef={headerRef} agentName={agentName} turnCount={turnCount}
         contextUsage={rootAgent?.contextUsage}
         onOpenArtifacts={onOpenArtifacts} onOpenNetwork={onOpenNetwork}
         networkAgentCount={networkAgentCount} networkRunningCount={networkRunningCount} />;
@@ -27,9 +25,10 @@ export default function ChatPanel({ turns, stalled = false, isOffline = false, o
     return (
         <div className={styles.panel} data-testid="chat-panel">
             <header ref={headerRef} className={styles.header} data-testid="chat-title-bar" aria-label="Conversation header">
-                {goal ? <div className={styles.goalHeading}>
-                    <GoalHeadline goal={goal} onOpen={onOpenGoal} />
-                </div> : <span className={styles.title}>{title}</span>}
+                <div className={styles.heading}>
+                    <span className={styles.title} title={title} data-testid="chat-title">{title}</span>
+                    {goal && <GoalHeadline goal={goal} onOpen={onOpenGoal} />}
+                </div>
                 {renderControls()}
             </header>
             <ChatMessages turns={turns} stalled={stalled} onPreview={onPreview} onSelectAgent={onSelectAgent} onStarterSelect={onDraftChange} />

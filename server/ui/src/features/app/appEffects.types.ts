@@ -59,6 +59,7 @@ export type AppEffectPayloads = {
     [APP_EFFECT_TYPES.RUNS_FINISHED]: { runs: RunIdentity[] };
     [APP_EFFECT_TYPES.GOALS_SNAPSHOT]: { goals: Goal[] };
     [APP_EFFECT_TYPES.GOALS_CHANGED]: { conversationId: string; goal: Goal };
+    [APP_EFFECT_TYPES.GOALS_START_REQUESTED]: { conversationId: string; objective: string };
 };
 
 export type AppEffectType = keyof AppEffectPayloads;

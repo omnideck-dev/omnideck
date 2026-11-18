@@ -1,0 +1,22 @@
+.view { flex: 1; min-width: 0; display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--canvas); }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--border); }
+.title { flex: 0 0 auto; font-size: 15px; margin: 0; display: flex; align-items: center; gap: var(--sp-2); white-space: nowrap; }
+.title .bi { color: var(--accent); }
+.titleCount { color: var(--text-tertiary); font-size: 12px; font-weight: 400; }
+.search { flex: 1; min-width: 120px; }
+.sortCtl { display: inline-flex; align-items: center; gap: 6px; color: var(--text-tertiary); font-size: 12px; }
+.select { --select-width: 128px; }
+.scroll { flex: 1; overflow-y: auto; min-height: 0; }
+.empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-3); height: 100%; min-height: 240px; color: var(--text-tertiary); text-align: center; padding: var(--sp-8); }
+.empty .bi { font-size: 34px; opacity: 0.5; }
+.emptyState { display: flex; flex-direction: column; flex: 1; height: 100%; min-height: 320px; }
+.emptyAction { display: flex; justify-content: center; padding-bottom: var(--sp-6); }
+.goalCell { display: flex; flex-direction: column; min-width: 0; max-width: 520px; }
+.objective { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.chat { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-tertiary); font-size: var(--font-size-small); }
+.plan { display: inline-flex; align-items: center; gap: var(--sp-2); min-width: 120px; }
+.bar { flex: 1; height: 4px; border-radius: var(--radius-sm); background: var(--border); overflow: hidden; }
+.barFill { display: block; height: 100%; background: var(--accent); }
+.count { color: var(--text-secondary); font-size: var(--font-size-small); white-space: nowrap; }
+.when { color: var(--text-tertiary); white-space: nowrap; }
+.muted { color: var(--text-tertiary); }

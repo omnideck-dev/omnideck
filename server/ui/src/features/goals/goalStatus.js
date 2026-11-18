@@ -89,6 +89,17 @@ export function nextStep(plan = []) {
         && (step.depends_on || []).every((id) => finished.has(id))) || null;
 }
 
+/** Done and skipped steps out of all plan steps. */
+export function planProgress(goal) {
+    const plan = goal?.plan || [];
+    return { done: plan.filter((step) => step.status === 'done' || step.status === 'skipped').length, total: plan.length };
+}
+
+/** The plan step the agent is working on, if any. */
+export function stepInProgress(goal) {
+    return (goal?.plan || []).find((step) => step.status === 'in_progress') || null;
+}
+
 /** The title of the step the next run works on, shown only when a run is coming. */
 export function nextUpStep(goal) {
     if (!isGoalOpen(goal) || goal.next?.kind !== 'wake') return '';

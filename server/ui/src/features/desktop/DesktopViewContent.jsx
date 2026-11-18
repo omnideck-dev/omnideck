@@ -9,6 +9,7 @@ import ConversationDesktopView from '../conversation/ConversationDesktopView.jsx
 import AppsDesktopView from '../customApps/AppsDesktopView.jsx';
 import BrowserView from '../browser/BrowserView.jsx';
 import CustomAppDesktopView from '../customApps/CustomAppDesktopAdapter.jsx';
+import GoalsDesktopView from '../goals/GoalsDesktopView.jsx';
 import RoutinesDesktopView from '../routines/RoutinesDesktopView.jsx';
 import WorkspaceResourceDesktopView from
     '../workspace/WorkspaceResourceDesktopAdapter.jsx';
@@ -71,6 +72,7 @@ export default function DesktopViewContent({
         onOpenIntegration={connectionId => openSettings('integrations', { connectionId })}
         onOpenSkill={skillId => openSettings('skills', { skillId })} />;
     if (view.type === 'routines') return <RoutinesDesktopView />;
+    if (view.type === 'goals') return <GoalsDesktopView />;
     if (view.type === 'artifacts') {
         return (
             <ArtifactsHubDesktopView

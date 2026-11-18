@@ -91,7 +91,7 @@ describe('one status everywhere', () => {
         goal({ next: { kind: 'error', message: 'Failed' } }),
         goal({ next: { kind: 'wait', question_ids: ['a'] }, questions: [{ id: 'a', question: 'Q', choices: [], status: 'open', revision: 1, answers: [], reviewed_answer_count: 0 }] }),
         goal({ next: { kind: 'wake', id: 'w', at: '2099-01-01T00:00:00Z', reason: 'planned' } }),
-    ])('renders the same text and icon in the status chip and the header (%#)', (input) => {
+    ])('renders the same text and tone in the status chip and the header (%#)', (input) => {
         const status = goalStatus(input);
         const chip = render(<GoalStatus goal={input} />);
         const chipStatus = chip.getByTestId('goal-status');
@@ -101,11 +101,9 @@ describe('one status everywhere', () => {
         chip.unmount();
 
         render(<GoalHeadline goal={input} onOpen={() => {}} />);
-        const [full, short] = screen.getAllByTestId('goal-status');
-        expect(full).toHaveTextContent(status.label);
-        expect(short).toHaveTextContent(status.shortLabel);
-        expect(short).toHaveClass(statusStyles[status.tone]);
-        expect(iconOf(full)).toBe(status.icon);
-        expect(iconOf(short)).toBe(status.icon);
+        const button = screen.getByTestId('goal-headline');
+        expect(button).toHaveTextContent(status.label);
+        expect(button.querySelector('i')).toHaveClass('bi-bullseye', statusStyles[status.tone]);
+        for (const text of button.querySelectorAll('span')) expect(text).toHaveClass(statusStyles[status.tone]);
     });
 });

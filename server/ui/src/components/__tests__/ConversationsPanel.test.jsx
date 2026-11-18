@@ -180,46 +180,6 @@ describe('ConversationsPanel', () => {
         expect(within(attention).getByTestId('recent-section-label')).toHaveTextContent('Needs you · 1');
     });
 
-    it('shows only chats with a goal while the goal filter is on', async () => {
-        goalsEnabled = true;
-        const user = userEvent.setup();
-        panelGoals = [
-                goalFor('c2', { next: { kind: 'wake', id: 'w1', at: '2099-11-14T15:00:00Z', reason: 'planned' } }),
-                goalFor('c4', { next: { kind: 'done', outcome: 'Shipped' } }),
-            ];
-        render(<ConversationsPanel onLoadConversation={vi.fn()} />);
-        await waitFor(() => expect(screen.getAllByTestId('goal-status')).toHaveLength(2));
-        await user.click(screen.getByRole('button', { name: 'Filter' }));
-        await user.click(screen.getByRole('menuitemradio', { name: /With a goal/ }));
-        expect(screen.getByTestId('recent-filter-chip')).toHaveTextContent('Goals');
-        expect(screen.getAllByTestId('recent-item').map((row) => row.textContent)).toEqual([
-            expect.stringContaining('snake game'), expect.stringContaining('eval pass'),
-        ]);
-        await user.click(screen.getByRole('button', { name: 'Clear Goals filter' }));
-        expect(screen.getAllByTestId('recent-item')).toHaveLength(4);
-    });
-
-    it('hides empty folders while a filter is on', async () => {
-        goalsEnabled = true;
-        const user = userEvent.setup();
-        mockFetch(SESSIONS, [{ id: 'f1', name: 'Work', icon: 'bi-folder', order: 0 }]);
-        render(<ConversationsPanel onLoadConversation={vi.fn()} />);
-        await screen.findByText('Work');
-        await user.click(screen.getByRole('button', { name: 'Filter' }));
-        await user.click(screen.getByRole('menuitemradio', { name: /With a goal/ }));
-        expect(screen.queryByText('Work')).not.toBeInTheDocument();
-        expect(screen.getByTestId('recent-empty')).toHaveTextContent('No chats match this filter');
-    });
-
-    it('offers no goal filter while goals are off', async () => {
-        const user = userEvent.setup();
-        render(<ConversationsPanel onLoadConversation={vi.fn()} />);
-        await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(4));
-        await user.click(screen.getByRole('button', { name: 'Filter' }));
-        expect(screen.queryByRole('menuitemradio', { name: /With a goal/ })).not.toBeInTheDocument();
-        expect(screen.getByRole('menuitemradio', { name: /Running now/ })).toBeInTheDocument();
-    });
-
     it('lists fetched conversations grouped by day', async () => {
         render(<ConversationsPanel onLoadConversation={vi.fn()} />);
         await waitFor(() => expect(screen.getAllByTestId('recent-item')).toHaveLength(4));

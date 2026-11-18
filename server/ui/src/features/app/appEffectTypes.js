@@ -21,4 +21,5 @@ export const APP_EFFECT_TYPES = Object.freeze(/** @type {const} */ ({
     RUNS_FINISHED: 'runs/finished',
     GOALS_SNAPSHOT: 'goals/snapshot',
     GOALS_CHANGED: 'goals/changed',
+    GOALS_START_REQUESTED: 'goals/startRequested',
 }));

@@ -36,26 +36,39 @@ describe('ChatPanel header and composer', () => {
     });
     it('keeps one header and preserves the composer draft across goal feature toggles', () => {
         const props = { turns: [], onSend: vi.fn(), onStop: vi.fn(), isStreaming: false, conversationId: 'chat-1', onDraftChange: vi.fn() };
-        const view = render(<ChatPanel {...props} goal={{ id: 'g1', next: { kind: 'wait', question_ids: [] }, questions: [], plan: [] }} />);
+        const goal = { id: 'g1', next: { kind: 'wait', question_ids: [] }, questions: [], plan: [] };
+        const view = render(<ChatPanel {...props} goal={goal} />);
         const composer = screen.getByRole('textbox', { name: 'Message' });
-        expect(screen.getByTestId('chat-title-bar')).toHaveTextContent('Goal');
-        expect(screen.queryByRole('button', { name: 'Pause goal' })).not.toBeInTheDocument();
+        expect(screen.getByTestId('goal-headline')).toBeInTheDocument();
         fireEvent.change(composer, { target: { value: 'My unsent question' } });
         view.rerender(<ChatPanel {...props} />);
-        expect(screen.queryByTestId('goal-panel')).not.toBeInTheDocument();
-        view.rerender(<ChatPanel {...props} goal={{ id: 'g1', next: { kind: 'wait', question_ids: [] }, questions: [], plan: [] }} />);
+        expect(screen.queryByTestId('goal-headline')).not.toBeInTheDocument();
+        view.rerender(<ChatPanel {...props} goal={goal} />);
         expect(screen.getByRole('textbox', { name: 'Message' })).toBe(composer);
         expect(composer).toHaveValue('My unsent question');
     });
-    it('opens existing goal details from its header status without starting a new goal', () => {
+    it('shows the chat title for chats with and without a goal', () => {
+        const view = render(<ChatPanel title="Plan the reunion" turns={[]} onSend={vi.fn()} onStop={vi.fn()} isStreaming={false} />);
+        expect(screen.getByTestId('chat-title')).toHaveTextContent('Plan the reunion');
+        expect(screen.getByTestId('chat-title')).toHaveAttribute('title', 'Plan the reunion');
+        view.rerender(<ChatPanel title="Plan the reunion" turns={[]} onSend={vi.fn()} onStop={vi.fn()} isStreaming={false}
+            goal={{ id: 'g1', paused: true, next: { kind: 'wait', question_ids: [] }, questions: [], plan: [] }} onOpenGoal={vi.fn()} />);
+        expect(screen.getByTestId('chat-title')).toHaveTextContent('Plan the reunion');
+    });
+    it('shows New chat before the chat is listed', () => {
+        renderPanel();
+        expect(screen.getByTestId('chat-title')).toHaveTextContent('New chat');
+    });
+    it('shows the goal button with the status and opens the Goal tab', () => {
         const onOpenGoal = vi.fn();
         const onRequestGoal = vi.fn();
         renderPanel({ goal: { id: 'g1', paused: true, next: { kind: 'wait', question_ids: [] }, questions: [], plan: [], objective: 'Plan a trip' }, onOpenGoal, onRequestGoal });
-        expect(screen.getByTestId('chat-title-bar')).toHaveTextContent('Paused');
-        fireEvent.click(screen.getByRole('button', { name: 'Open goal details' }));
+        const button = screen.getByRole('button', { name: 'Goal: Paused. Open goal details' });
+        expect(button).toHaveTextContent('Paused');
+        expect(button).not.toHaveTextContent('Goal');
+        fireEvent.click(button);
         expect(onOpenGoal).toHaveBeenCalledOnce();
         expect(onRequestGoal).not.toHaveBeenCalled();
-        expect(screen.queryByRole('button', { name: 'Pause goal' })).not.toBeInTheDocument();
     });
     it('shows the same status in the header as everywhere else, with a non-blocking question count', () => {
         const at = '2099-11-14T15:00:00Z';
@@ -63,9 +76,9 @@ describe('ChatPanel header and composer', () => {
             next: { kind: 'wake', id: 'w1', at, reason: 'planned' },
             questions: [{ id: 'q1', question: 'Which park?', choices: [], status: 'open', revision: 1, answers: [], reviewed_answer_count: 0 }],
         }, onOpenGoal: vi.fn() });
-        const [full] = screen.getAllByTestId('goal-status');
-        expect(full).toHaveAttribute('data-status', 'scheduled');
-        expect(full).toHaveTextContent(`Resumes ${formatRunTime(at)} · 1 question`);
+        const button = screen.getByTestId('goal-headline');
+        expect(button).toHaveAttribute('data-status', 'scheduled');
+        expect(button).toHaveTextContent(`Resumes ${formatRunTime(at)} · 1 question`);
     });
     it('shows "Stopped by an error" in the header for a failed run', () => {
         renderPanel({ goal: { id: 'g1', paused: false, running: false, plan: [], questions: [],
@@ -73,28 +86,22 @@ describe('ChatPanel header and composer', () => {
         expect(screen.getByTestId('chat-title-bar')).toHaveTextContent('Stopped by an error');
         expect(screen.getByTestId('chat-title-bar')).not.toHaveTextContent('Rate limit');
     });
-    it('keeps the full working step out of the headline and available on hover', () => {
+    it('keeps the full working step out of the goal button and available on hover', () => {
         const step = 'Search live openings for Senior Director / VP Engineering in Austin, remote OR hybrid; capture companies and application links';
         renderPanel({ goal: { id: 'g1', paused: false, next: { kind: 'wake', id: 'w1', at: '2026-10-01T00:00:00Z', reason: 'planned' }, running: true, questions: [], plan: [
             { id: 'done', title: 'Confirm preferences', status: 'done' },
             { id: 'now', title: step, status: 'in_progress' },
         ] }, onOpenGoal: vi.fn() });
-        const headline = screen.getByRole('button', { name: 'Open goal details' });
-        expect(headline).toHaveTextContent('Working');
-        expect(headline).not.toHaveTextContent(step);
-        expect(headline).toHaveAttribute('title', `1 of 2 steps done. Now: ${step}. Open goal details`);
+        const button = screen.getByTestId('goal-headline');
+        expect(button).toHaveTextContent('Working');
+        expect(button).not.toHaveTextContent(step);
+        expect(button).toHaveAttribute('title', `1 of 2 steps done. Now: ${step}. Open goal details`);
     });
-    it('falls back to "Chat" when there is no root agent', () => {
-        renderPanel();
-        fireEvent.click(screen.getByRole('button', { name: 'Conversation details', exact: true }));
-        expect(screen.getByTestId('chat-title')).toHaveTextContent('Chat');
-    });
-
-    it('shows the agent name as the title when a root agent exists', () => {
+    it('names the agent in the details popup', () => {
         agentState.value = { rootId: 'r', agents: { r: { name: 'Omnideck' } } };
         renderPanel();
         fireEvent.click(screen.getByRole('button', { name: 'Conversation details', exact: true }));
-        expect(screen.getByTestId('chat-title')).toHaveTextContent('Omnideck');
+        expect(screen.getByTestId('chat-agent')).toHaveTextContent('Agent: Omnideck');
     });
 
     it('hides the turn count for an empty conversation', () => {
@@ -115,34 +122,38 @@ describe('ChatPanel header and composer', () => {
         expect(screen.getByTestId('chat-turns')).toHaveTextContent('1 turn');
     });
 
-    it('shows the network indicator only when the conversation has an agent network', () => {
+    it('shows the sub-agent count and name only when the conversation has an agent network', () => {
         renderPanel({ networkAgentCount: 0 });
         expect(screen.queryByTestId('network-indicator')).not.toBeInTheDocument();
         render(
             <ChatPanel turns={[]} onSend={vi.fn()} onStop={vi.fn()} isStreaming={false}
                 networkAgentCount={3} networkRunningCount={1} onOpenNetwork={vi.fn()} />,
         );
-        expect(screen.getByTestId('network-indicator')).toHaveAccessibleName('Open sub-agents (3, 1 running)');
+        const button = screen.getByTestId('network-indicator');
+        expect(button).toHaveAccessibleName('Open sub-agents (3, 1 running)');
+        expect(button).toHaveTextContent(/^3$/);
     });
 
-    it('surfaces context only near the current profile compaction threshold', () => {
-        agentState.value = { rootId: 'r', agents: { r: { name: 'Assistant', contextUsage: { context_used: 500, context_limit: 1000, fill_ratio: .5, compaction_threshold: .9 } } } };
-        const props = { turns: [], onSend: vi.fn(), onStop: vi.fn(), isStreaming: false };
-        const view = render(<ChatPanel {...props} />);
+    it('never shows context on the bar and shows it in the popup', () => {
+        agentState.value = { rootId: 'r', agents: { r: { name: 'Assistant', contextUsage: { context_used: 720, context_limit: 1000, fill_ratio: .72, compaction_threshold: .8 } } } };
+        renderPanel();
         expect(screen.queryByRole('button', { name: /^Context / })).not.toBeInTheDocument();
-        agentState.value.agents.r.contextUsage = { context_used: 720, context_limit: 1000, fill_ratio: .72, compaction_threshold: .8 };
-        view.rerender(<ChatPanel {...props} />);
-        fireEvent.click(screen.getByRole('button', { name: /^Context 72%/ }));
+        expect(screen.getByTestId('chat-title-bar')).not.toHaveTextContent('72%');
+        fireEvent.click(screen.getByRole('button', { name: 'Conversation details', exact: true }));
         expect(screen.getByTestId('context-meter')).toHaveAttribute('data-level', 'med');
         expect(screen.getByText(/At 80%, older messages/)).toBeVisible();
     });
 
-    it('delegates conversation artifact navigation to the desktop', () => {
+    it('says context shows after the first reply when there is no usage yet', () => {
+        renderPanel();
+        fireEvent.click(screen.getByRole('button', { name: 'Conversation details', exact: true }));
+        expect(screen.getByText("Context shows after the agent's first reply.")).toBeVisible();
+    });
+
+    it('opens Artifacts in one click', () => {
         const onOpenArtifacts = vi.fn();
         renderPanel({ onOpenArtifacts });
-
-        fireEvent.click(screen.getByRole('button', { name: 'Conversation details', exact: true }));
-        fireEvent.click(screen.getByTestId('conversation-artifacts-trigger'));
+        fireEvent.click(screen.getByRole('button', { name: 'Artifacts in this chat' }));
         expect(onOpenArtifacts).toHaveBeenCalledOnce();
     });
 });

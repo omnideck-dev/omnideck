@@ -8,6 +8,9 @@ import ConversationsPanel from './ConversationsPanel.jsx';
 import SidebarReorderMenu from './SidebarReorderMenu.jsx';
 import { useTheme } from '../contexts/Theme.jsx';
 import { useCustomApps } from '../features/customApps/CustomApps.jsx';
+import { useConversationCatalog } from '../features/conversation/catalog/ConversationCatalog.jsx';
+import { useNeedsYou } from '../features/goals/conversationGoals.js';
+import { useGoals } from '../features/goals/GoalsState.jsx';
 import PinnedAppsSidebarSection from '../features/customApps/sidebar/PinnedAppsSidebarSection.jsx';
 import {
     useCurrentNavigationTarget,
@@ -33,7 +36,10 @@ const NAV_ITEMS = [
         id: 'agents', icon: 'bi-robot', label: 'Agents', command: 'openAgents',
     },
     {
-        id: 'routines', icon: 'bi-bullseye', label: 'Routines', command: 'openRoutines',
+        id: 'routines', icon: 'bi-alarm', label: 'Routines', command: 'openRoutines',
+    },
+    {
+        id: 'goals', icon: 'bi-bullseye', label: 'Goals', feature: 'goals', command: 'openGoals',
     },
     {
         id: 'artifacts', icon: 'bi-collection', label: 'Artifacts', command: 'openArtifacts',
@@ -106,6 +112,9 @@ export default function Sidebar({
     const navigationTarget = useCurrentNavigationTarget();
     const navigation = useDesktopNavigationCommands();
     const customApps = useCustomApps();
+    const goals = useGoals();
+    const { items: conversations } = useConversationCatalog();
+    const needsYouCount = useNeedsYou(conversations).length;
     const isMobile = useIsMobileViewport();
     const [collapsed, setCollapsed] = useState(() => _readCollapsed(isMobile));
     const [navigationOrder, setNavigationOrder] = useState(_readNavigationOrder);
@@ -119,6 +128,7 @@ export default function Sidebar({
         .map((id) => navItemsById.get(id))
         .filter((item) => {
             if (item.feature === 'customApps') return customApps.enabled;
+            if (item.feature === 'goals') return goals.enabled;
             return true;
         });
     const visibleNavigationIds = orderedNavigationItems.map((item) => item.id);
@@ -187,6 +197,8 @@ export default function Sidebar({
             <nav ref={navigationReorder.containerRef} className={styles.nav}>
                 {orderedNavigationItems.map((item) => {
                     const active = activeItemId === item.id;
+                    const badge = item.id === 'goals' && needsYouCount > 0 ? needsYouCount : 0;
+                    const badgeText = badge === 1 ? '1 goal needs you' : `${badge} goals need you`;
                     return (
                         <button
                             key={item.id}
@@ -218,8 +230,8 @@ export default function Sidebar({
                                     y: event.clientY,
                                 });
                             }}
-                            title={item.label}
-                            aria-label={item.label}
+                            title={badge ? badgeText : item.label}
+                            aria-label={badge ? `${item.label}, ${badge} need${badge === 1 ? 's' : ''} you` : item.label}
                             aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
                             data-reorder-id={item.id}
                             data-testid={`sidebar-nav-${item.id}`}
@@ -228,6 +240,12 @@ export default function Sidebar({
                             {!collapsed && (
                                 <span className={navigationItemStyles.label}>
                                     {item.label}
+                                </span>
+                            )}
+                            {badge > 0 && (
+                                <span className={collapsed ? navigationItemStyles.badgeOnIcon : navigationItemStyles.badge}
+                                    data-testid="sidebar-goals-needs-you" aria-hidden="true">
+                                    {badge}
                                 </span>
                             )}
                             {!collapsed && (
