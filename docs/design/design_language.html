@@ -523,20 +523,6 @@ body {
 .btn-icon:hover { background: var(--surface); color: var(--text-primary); }
 .btn-icon:active { transform: translateY(1px); }
 
-/* ── Search with filter ── */
-.search-field { width: 260px; height: 32px; display: flex; align-items: center; gap: var(--sp-2); padding: 0 6px 0 10px; background: var(--elevated); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-tertiary); }
-.search-field:focus-within { border-color: var(--accent); box-shadow: var(--shadow-glow); }
-.search-field input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; color: var(--text-primary); font: inherit; font-size: 13px; }
-.search-field .btn-icon { width: 24px; height: 24px; font-size: 13px; }
-.search-chip { display: inline-flex; align-items: center; gap: var(--sp-1); flex-shrink: 0; height: 22px; padding: 0 2px 0 var(--sp-2); border-radius: var(--radius-full); background: var(--accent-muted); color: var(--accent); font-size: 12px; font-weight: 600; }
-.search-chip button { width: 18px; height: 18px; display: grid; place-items: center; padding: 0; border: none; border-radius: var(--radius-full); background: transparent; color: inherit; font-size: 9px; cursor: pointer; }
-.search-chip button:hover { background: var(--accent-glow); }
-.search-filter-menu { width: 200px; display: flex; flex-direction: column; gap: var(--sp-1); padding: var(--sp-2); align-self: flex-end; background: var(--elevated); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); }
-.search-filter-menu button { height: 32px; display: flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-3); border: none; border-radius: var(--radius-md); background: transparent; color: var(--text-primary); font: inherit; font-size: 13px; cursor: pointer; }
-.search-filter-menu button:hover { background: var(--surface); }
-.search-filter-menu button span:first-of-type { flex: 1; text-align: left; }
-.search-filter-menu .check { color: var(--accent); }
-.search-filter-menu .count { color: var(--text-tertiary); font-size: 12px; }
 
 /* ── Inputs ── */
 .input {
@@ -2762,6 +2748,37 @@ body {
   .slash-hint-command { font-family: var(--font-code); font-size: var(--font-size-small); color: var(--accent); }
   .slash-hint-desc { flex: 1; min-width: 0; color: var(--text-secondary); }
   .slash-hint-key { color: var(--text-tertiary); font-size: var(--font-size-caption); }
+  .slash-hint-option.active { background: var(--surface); }
+  .goal-status-example { display: inline-flex; align-items: center; gap: var(--sp-1); font-size: var(--font-size-small); }
+  .goal-status-example.compact { font-size: var(--font-size-caption); }
+  .tone-accent { color: var(--accent); }
+  .tone-success { color: var(--success); }
+  .tone-warning { color: var(--warning); }
+  .tone-danger { color: var(--danger); }
+  .plan-example { width: min(100%, 420px); display: flex; flex-direction: column; gap: var(--sp-2); }
+  .plan-progress { display: flex; align-items: center; gap: var(--sp-3); color: var(--text-secondary); font-size: var(--font-size-small); font-variant-numeric: tabular-nums; }
+  .plan-progress h3 { margin: 0; font-family: var(--font-brand); font-size: var(--font-size-caption); color: var(--text-tertiary); text-transform: uppercase; }
+  .plan-bar { flex: 1; height: 4px; border-radius: var(--radius-sm); background: var(--border); overflow: hidden; }
+  .plan-bar span { display: block; height: 100%; background: var(--accent); }
+  .plan-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
+  .plan-steps li { display: flex; gap: var(--sp-2); align-items: baseline; }
+  .plan-steps li > i { color: var(--text-tertiary); }
+  .plan-steps .done { color: var(--text-secondary); }
+  .plan-steps .done > i { color: var(--success); }
+  .plan-steps .now > i { color: var(--accent); }
+  .plan-now { margin-left: var(--sp-2); color: var(--accent); font-size: var(--font-size-caption); font-weight: 600; }
+  .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+  .divider-example { width: min(100%, 560px); display: flex; flex-direction: column; }
+  .goal-divider { display: flex; align-items: center; gap: var(--sp-4); margin: var(--sp-4) 0; color: var(--text-secondary); font-size: var(--font-size-small); }
+  .goal-divider::before, .goal-divider::after { content: ''; flex: 1 0 var(--sp-4); height: 1px; background: var(--border-subtle); }
+  .goal-divider span { display: inline-flex; align-items: center; gap: var(--sp-1); white-space: nowrap; }
+  .goal-divider time { color: var(--text-tertiary); opacity: 0; }
+  .goal-divider:hover time { opacity: 1; }
+  @media (hover: none) { .goal-divider time { opacity: 1; } }
+  .day-header { margin: var(--sp-6) 0 var(--sp-2); text-align: center; color: var(--text-tertiary); font-size: var(--font-size-caption); font-weight: 600; }
+  .chat-header-example { width: min(100%, 640px); display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); }
+  .chat-header-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+  .chat-header-example .btn { flex-shrink: 0; }
   .queue-strip-example { width: min(100%, 420px); padding: var(--sp-2) var(--sp-2) var(--sp-1) var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--accent-muted); font-size: var(--font-size-small); }
   .queue-strip-title { color: var(--text-secondary); font-weight: 600; }
   .queue-strip-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); min-height: 24px; color: var(--text-primary); }
@@ -3601,15 +3618,15 @@ body {
           <button class="btn armed"><i class="bi bi-trash" aria-hidden="true"></i> Confirm delete?</button>
         </div>
       </div>
-      <p class="section-desc">Production menus use menu/menuitem semantics, arrows and Home/End to move focus, Escape to close and restore the trigger, and Tab to leave. Move initial focus through Popover’s onOpen callback only after the positioned surface is visible. Keep the menu open while confirmation is armed. Guard navigation actions against silently discarding dirty edits.</p>
+      <p class="section-desc">In React, use the Menu primitive. It renders in a Popover with menu and menuitem roles, focuses the first item once the menu is visible, and owns the keys: arrows and Home/End move focus, Escape closes and returns focus to the trigger, and Tab closes and moves on from the trigger. Picking an item closes the menu before the action runs. Keep the menu open while confirmation is armed. Guard navigation actions against silently discarding dirty edits.</p>
     </div>
 
     <div class="subsection" id="slash-hint">
       <div class="subsection-label">Composer Command Hint</div>
-      <p class="section-desc">SlashHint shows one row above a composer while its text starts with “/”. Focus stays in the text box. Enter picks the command, Escape hides the hint, and clicking the row also picks it. The command uses the code font in accent; the description uses secondary text.</p>
+      <p class="section-desc">SlashHint lists commands above a composer while its text starts with “/”. Focus stays in the text box, which points at the active option for screen readers. Enter picks the active command, Escape hides the hint, and clicking a row picks it. Arrow keys move the active option when there is more than one. The command uses the code font in accent; the description uses secondary text. Only the active row shows the Enter key.</p>
       <div class="component-row">
         <div class="slash-hint-example" role="listbox" aria-label="Commands">
-          <div class="slash-hint-option" role="option" aria-selected="true">
+          <div class="slash-hint-option active" role="option" aria-selected="true">
             <span class="slash-hint-command">/goal</span>
             <span class="slash-hint-desc">Start a goal for this chat</span>
             <span class="slash-hint-key">Enter</span>
@@ -3620,13 +3637,71 @@ body {
 
     <div class="subsection" id="queue-strip">
       <div class="subsection-label">Composer Queue Strip</div>
-      <p class="section-desc">QueueStrip sits above the message box while the agent works. It lists messages waiting for the agent's next step, each with a remove control. Clicking a text message takes it out of the queue and back into the message box. Goal answers show as “Answers to N questions” with remove only. A message leaves the strip when the agent reads it.</p>
+      <p class="section-desc">QueueStrip is a tab joined to the top edge of the message box while the agent works. It lists messages waiting for the agent's next step, each with a remove control. Clicking a text message takes it out of the queue and back into the message box. Goal answers show as one row, “Answers to N questions”, with remove only. A message leaves the strip when the agent reads it.</p>
       <div class="component-row">
         <section class="queue-strip-example" aria-label="Queued for the agent's next step">
           <div class="queue-strip-title">Queued for the agent's next step</div>
           <div class="queue-strip-row"><span>Also check flights on Thursday</span><button type="button" class="btn-icon" aria-label="Remove queued message"><i class="bi bi-x" aria-hidden="true"></i></button></div>
           <div class="queue-strip-row"><span>Answers to 2 questions</span><button type="button" class="btn-icon" aria-label="Remove queued message"><i class="bi bi-x" aria-hidden="true"></i></button></div>
         </section>
+      </div>
+    </div>
+
+    <div class="subsection" id="goal-status">
+      <div class="subsection-label">Goal Status</div>
+      <p class="section-desc">GoalStatus shows one status everywhere a goal appears: an icon and a label in the tone of the goal status table. Lists use the compact size and may use the short label. Conversation rows show it as a second line, and chats that wait for the user or stopped on an error also show in a Needs you section that never collapses. The label is plain text, so screen readers read it as written.</p>
+      <div class="component-row">
+        <span class="goal-status-example tone-accent"><i class="bi bi-arrow-repeat" aria-hidden="true"></i>Working</span>
+        <span class="goal-status-example tone-warning"><i class="bi bi-chat-left-text" aria-hidden="true"></i>2 questions for you</span>
+        <span class="goal-status-example tone-accent"><i class="bi bi-clock" aria-hidden="true"></i>Resumes tomorrow at 9:00 AM</span>
+        <span class="goal-status-example tone-danger"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i>Stopped by an error</span>
+        <span class="goal-status-example compact tone-success"><i class="bi bi-check-circle" aria-hidden="true"></i>Done</span>
+      </div>
+    </div>
+
+    <div class="subsection" id="goal-plan">
+      <div class="subsection-label">Plan Progress</div>
+      <p class="section-desc">The plan shows a 4px progress bar and “N of M”. Done and skipped steps count as finished. Each step starts with hidden status text, so screen readers read “In progress: Combine calendars”. The step in progress shows a small accent “Now”.</p>
+      <div class="component-row">
+        <section class="plan-example" aria-label="Plan">
+          <div class="plan-progress">
+            <h3>Plan</h3>
+            <span class="plan-bar" role="progressbar" aria-label="Plan progress" aria-valuemin="0" aria-valuemax="3" aria-valuenow="1"><span style="width:33%"></span></span>
+            <span>1 of 3</span>
+          </div>
+          <ol class="plan-steps">
+            <li class="done"><i class="bi bi-check-circle" aria-hidden="true"></i><span><span class="visually-hidden">Done: </span>Collect school dates</span></li>
+            <li class="now"><i class="bi bi-record-circle" aria-hidden="true"></i><span><span class="visually-hidden">In progress: </span>Combine calendars</span><span class="plan-now" aria-hidden="true">Now</span></li>
+            <li><i class="bi bi-circle" aria-hidden="true"></i><span><span class="visually-hidden">Not started: </span>Share the calendar</span></li>
+          </ol>
+        </section>
+      </div>
+    </div>
+
+    <div class="subsection" id="goal-dividers">
+      <div class="subsection-label">Goal Dividers and Day Headers</div>
+      <p class="section-desc">A goal divider is one centered line after a run that ends with a new outcome: scheduled, waiting, error or done. The time shows on hover, and always on touch screens. A day header marks where the day changes in a long goal chat or in goal history.</p>
+      <div class="component-row">
+        <div class="divider-example">
+          <div class="day-header" role="separator" aria-label="Today">Today</div>
+          <div class="goal-divider"><span><i class="bi bi-clock tone-accent" aria-hidden="true"></i>Resumes tomorrow at 9:00 AM <time>· 4:12 PM</time></span></div>
+          <div class="goal-divider"><span><i class="bi bi-chat-left-text tone-warning" aria-hidden="true"></i>Waiting for you · 2 questions <time>· 4:30 PM</time></span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="subsection" id="chat-header">
+      <div class="subsection-label">Chat Header</div>
+      <p class="section-desc">The chat header shows the chat title on one line. A chat with a goal shows a ghost goal button right after the title: a bullseye and the status label in the status tone, with the short label below 640px. The title shrinks before the button does. The button opens the Goal tab. On the right: the sub-agent count, Artifacts in this chat, and conversation details.</p>
+      <div class="component-row">
+        <div class="chat-header-example">
+          <span class="chat-header-title">Plan the family calendar for autumn</span>
+          <button class="btn btn-ghost" title="1 of 3 steps done. Now: Combine calendars. Open goal details"><i class="bi bi-bullseye tone-accent" aria-hidden="true"></i><span class="tone-accent">Working</span></button>
+          <span class="spacer" style="flex:1"></span>
+          <button class="btn-icon" aria-label="Open sub-agents (2)"><i class="bi bi-diagram-3" aria-hidden="true"></i> 2</button>
+          <button class="btn-icon" aria-label="Artifacts in this chat"><i class="bi bi-collection" aria-hidden="true"></i></button>
+          <button class="btn-icon" aria-label="Conversation details"><i class="bi bi-info-circle" aria-hidden="true"></i></button>
+        </div>
       </div>
     </div>
 
@@ -3640,37 +3715,6 @@ body {
       </div>
       <div class="component-row" style="max-width: 400px">
         <textarea class="textarea" placeholder="Enter your message..." rows="3"></textarea>
-      </div>
-    </div>
-
-    <!-- Search with filter -->
-    <div class="subsection" id="search-filter">
-      <div class="subsection-label">Search with filter</div>
-      <div class="component-row" style="align-items:flex-start;gap:24px">
-        <div class="search-field">
-          <i class="bi bi-search" aria-hidden="true"></i>
-          <input placeholder="Search conversations…" aria-label="Search conversations">
-          <button class="btn-icon" aria-label="Filter" aria-haspopup="menu"><i class="bi bi-funnel" aria-hidden="true"></i></button>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:6px">
-          <div class="search-field">
-            <i class="bi bi-search" aria-hidden="true"></i>
-            <span class="search-chip">Goals<button aria-label="Clear Goals filter"><i class="bi bi-x-lg" aria-hidden="true"></i></button></span>
-            <input placeholder="Search…" aria-label="Search conversations">
-            <button class="btn-icon" aria-label="Filter" aria-haspopup="menu" aria-expanded="true"><i class="bi bi-funnel" aria-hidden="true"></i></button>
-          </div>
-          <div class="search-filter-menu" role="menu" aria-label="Filter">
-            <button role="menuitemradio" aria-checked="false"><i class="bi bi-list-ul" aria-hidden="true"></i><span>All</span></button>
-            <button role="menuitemradio" aria-checked="true"><i class="bi bi-bullseye" aria-hidden="true"></i><span>With a goal</span><i class="bi bi-check2 check" aria-hidden="true"></i></button>
-            <button role="menuitemradio" aria-checked="false"><i class="bi bi-arrow-repeat" aria-hidden="true"></i><span>Running now</span><span class="count">1</span></button>
-          </div>
-        </div>
-      </div>
-      <div style="font-size:11px;color:var(--text-tertiary);font-family:var(--font-code);margin-top:12px;line-height:1.6;max-width:760px">
-        // Narrow a list by kind from inside its search field. A funnel icon button at the end of the field opens a single-choice menu: All first, then each filter with its icon and count.<br>
-        // The chosen filter shows as an accent chip before the text, with an x to clear it. The placeholder shortens to "Search…" so the chip has room. The list says when nothing matches the filter.<br>
-        // Search and the filter combine. Folders and pinned items keep their sections; sections with no matches are hidden while a filter is on.<br>
-        // Use this instead of toggle buttons in headers or extra rows of filter chips. In React, pass <code>filters</code>, <code>filter</code> and <code>onFilterChange</code> to <code>SearchInput</code>.
       </div>
     </div>
 
@@ -4459,7 +4503,7 @@ body {
       <div class="m-sidebar" style="height:280px;border-radius:var(--radius-lg);border:1px solid var(--border)">
         <button class="m-sidebar-icon active" title="Chat"><i class="bi bi-chat"></i></button>
         <button class="m-sidebar-icon" title="Agent Network"><i class="bi bi-diagram-3"></i></button>
-        <button class="m-sidebar-icon" title="Routines"><i class="bi bi-bullseye"></i></button>
+        <button class="m-sidebar-icon" title="Routines"><i class="bi bi-alarm"></i></button>
         <button class="m-sidebar-icon" title="Memory"><i class="bi bi-database"></i></button>
         <div class="m-sidebar-sep"></div>
         <button class="m-sidebar-icon" title="Conversations"><i class="bi bi-clock-history"></i></button>
@@ -4586,7 +4630,7 @@ body {
       <div class="flyout-sidebar-mini">
         <button class="m-sidebar-icon" title="Chat"><i class="bi bi-chat"></i></button>
         <button class="m-sidebar-icon active" title="Settings"><i class="bi bi-gear"></i></button>
-        <button class="m-sidebar-icon" title="Routines"><i class="bi bi-bullseye"></i></button>
+        <button class="m-sidebar-icon" title="Routines"><i class="bi bi-alarm"></i></button>
       </div>
       <div class="flyout-panel">
         <div class="flyout-header">
@@ -5163,23 +5207,17 @@ body {
   <div class="section">
     <div class="section-title">26. Chat Input</div>
     <div class="section-desc">
-      The composer at the bottom of the chat column. Wrapped textarea with focus glow, button bar below
-      (profile selector + add menu + send / stop). The add menu includes file attachments and
-      enabled chat actions such as Goal. The <code>/goal</code> command opens the same goal dialog;
-      an optional objective prefills it. Streaming-state placeholder ("Message the agent while it
-      works…"). Messages sent while the agent works wait in the queue strip above the textarea. Optional inline attachment preview area sits above the textarea.
-      An assigned goal appears beside Artifacts, Sub-agents, and Details on the right of the
-      composer controls, separated from Send. The add menu and profile picker stay on the left.
-      Goal status opens the plan and controls in a bounded popover above the composer;
-      conversation Details holds the existing agent, turn count, and context information.
-      There is no separate chat header, and the tab row remains navigation only.
-      Steps and next actions use two columns when there is room; on narrow screens they stack.
-      Questions live inside the composer with previous/next navigation and Hide; hidden questions
-      reopen from goal status. While questions are visible, the status control quietly reads Goal.
-      Automatic question updates appear only in goal history; submitted answers quote their question
-      in the transcript. Asking, revising, resolving, or withdrawing a question adds no transcript block.
-      Conversation rows show a second line of goal status;
-      goals needing an answer appear in a Needs you group without changing saved folders or pins.
+      The composer at the bottom of the chat column. Wrapped textarea with focus glow, button bar below:
+      the + add menu and the agent picker on the left, and one button on the right. While the agent
+      works that button is Stop; once there is something to send it becomes Send. The add menu holds
+      Attach file and, when Goals is on, Start a goal or Open goal with its <code>/goal</code> shortcut.
+      The <code>/goal</code> command opens the same goal dialog; text after it prefills the objective.
+      While the agent works the placeholder reads “Message the agent while it works…” and sent messages
+      wait in the queue strip, a tab on the box's top edge. Optional inline attachment preview area
+      sits above the textarea. A goal's open questions show as a card inside the composer with
+      Skip for now and Hide; while the card shows, the text box answers the current question.
+      Answers being sent or queued leave the card. Submitted answers quote their question in the
+      transcript.
     </div>
 
     <div class="m-chat-input" style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);max-width:640px">
@@ -5188,11 +5226,6 @@ body {
         <button class="btn-icon" title="Add to chat" aria-label="Add to chat" aria-haspopup="menu" aria-expanded="false"><i class="bi bi-plus-lg"></i></button>
         <button class="select" type="button" role="combobox" aria-expanded="false" aria-label="Agent" style="min-width:140px;height:26px;font-size:11px;font-family:var(--font-brand);padding-left:8px">ollama-agent</button>
         <span class="spacer"></span>
-        <button class="btn btn-ghost" title="Goal details"><i class="bi bi-bullseye"></i> Goal</button>
-        <button class="btn-icon" title="Artifacts"><i class="bi bi-collection"></i></button>
-        <button class="btn-icon" title="Sub-agents"><i class="bi bi-diagram-3"></i></button>
-        <button class="btn-icon" title="Conversation details"><i class="bi bi-sliders"></i></button>
-        <button class="btn-icon" title="Stop" style="color:var(--danger)"><i class="bi bi-stop-circle"></i></button>
         <button class="btn-icon" title="Send" style="color:var(--accent)"><i class="bi bi-send"></i></button>
       </div>
     </div>
