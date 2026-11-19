@@ -4,16 +4,19 @@ Plumbing that sits between an LLM's tool calls and the plain Python functions
 that implement them. A "tool" here is just a callable — its signature is the
 runtime validation schema and its Google-style docstring is the model-facing
 documentation. There is no decorator and no registration step; a tool is any
-function handed to the turn loop. `SchemaTool` is the explicit-schema alternative:
-it preserves a supplied JSON Schema and validates calls against that same schema.
+function handed to the turn loop. `SchemaTool`, from `tool_schemas`, is the
+explicit-schema alternative: it preserves a supplied JSON Schema and validates
+calls against that same schema.
 
 The package does two jobs:
 
 1. **Inbound** — turn a tool-call (name + JSON args) into a real Python call:
    match the function, coerce the arguments to the annotated types, run it,
    normalize the result back to a string. (`_helpers.py`)
-2. **Outbound** — turn a callable into the JSON Schema some providers require
-   in order to advertise the tool to the model. (`_callable_schema.py`)
+2. **Outbound** — turn a callable into the JSON Schema some model clients
+   require in order to advertise the tool to the model. This half lives in the
+   `tool_schemas` package, so the model clients can use it without depending
+   on the agent core. (`tool_schemas/_callable_schema.py`)
 
 ## Public surface
 
@@ -21,13 +24,10 @@ Re-exported from `agent_core.tools` (`__init__.py` is a pure facade):
 
 | Name | Source | What it does |
 | --- | --- | --- |
-| `SchemaTool` | `_schema_tool` | Advertise an explicit input schema and validate arguments before invoking its callback, without coercion. |
 | `_execute_tool_call` | `_helpers` | Resolve a tool by name, validate args, run it, return a string for the model. The inbound entry point. |
 | `_prepare_tool_arguments` | `_helpers` | Validate/coerce a raw arg dict against a callable's signature. |
 | `_normalize_tool_result` | `_helpers` | Recursively flatten a tool's return value (Pydantic models, dicts, sequences) into JSON-serializable data. |
 | `_summarize_arguments` | `_helpers` | Stringify + length-cap args for UI display events. |
-| `callable_to_json_schema` | `_callable_schema` | Build an OpenAI-style tool schema from a callable's signature + docstring. The outbound entry point. |
-| `estimate_tool_tokens` | `_callable_schema` | Rough token cost of including a tool's schema in a request. |
 
 The leading underscores on the `_helpers` exports are historical; they are
 imported across the package and treated as public-within-`agent_core`.
@@ -85,6 +85,10 @@ the tool, not in the generic coercion layer.
 
 ## Outbound path (how a callable becomes a schema)
 
+These live in `tool_schemas`: `callable_to_json_schema` builds an OpenAI-style
+tool schema from a callable, and `estimate_tool_tokens` estimates what a tool's
+schema costs in a request.
+
 `callable_to_json_schema` reads the signature and the Google-style docstring:
 
 - Signature is read with `eval_str=True`, so tools declared under
@@ -97,9 +101,9 @@ the tool, not in the generic coercion layer.
 - The docstring's `Args:` section → per-parameter `description`s.
 - Params without a default → `required`.
 
-Only the providers that require an explicit schema call this:
-`agent_core/providers/_openai.py`, `_openai_responses.py`, `_anthropic.py` (OpenRouter
-rides the OpenAI path). **Ollama does not** — it accepts raw callables and runs
+Only the clients that require an explicit schema call this: the OpenAI Chat,
+OpenAI Responses and Anthropic clients in `llm.clients` (OpenRouter rides the
+OpenAI Chat path). **Ollama does not** — it accepts raw callables and runs
 its own pydantic-based conversion inside the client library. The two conversion
 paths are independent, which is why a signature change can affect one and not
 the other.

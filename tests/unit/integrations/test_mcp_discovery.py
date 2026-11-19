@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from agent_core.tools import SchemaTool
+from tool_schemas import SchemaTool
 from brokering.mcp_protocol import discover
 from brokering.supervisor._operation_metadata import catalog_digest
 from integrations.discovery import MAX_CATALOG_BYTES, parse_discovered_operations

@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 from pydantic import BaseModel
-from ._schema_tool import SchemaTool
+from tool_schemas import SchemaTool
 
 # Strings the LLM commonly sends for boolean values.
 _BOOL_TRUE = frozenset({"true", "1", "yes"})

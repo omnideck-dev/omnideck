@@ -9,10 +9,16 @@ rather than naming either architectural layer.
 
 ## Package boundaries
 
-- `agent_core`: `Agent`, `AgentCapabilities`, `AgentExecutor`, provider contracts and real
-  provider adapters, generic `Skill`, context/history, events, controls, and hooks.
-  It does not import application packages or read application settings.
-  Application callers use the public agent core exports.
+- `agent_core`: `Agent`, `AgentCapabilities`, `AgentExecutor`, generic `Skill`,
+  context/history, events, controls, and hooks. It talks to a model only through
+  the shared `llm` types and a supplied `ModelClient`. It does not import
+  application packages or read application settings. Application callers use the
+  public agent core exports.
+- `llm`: the shared model types (`ModelClient`, `ChatResponse`, `ModelInfo`,
+  `ProviderError`), model details and request rules, and one client per request
+  format in `llm.clients`. Its only first-party dependency is `tool_schemas`.
+- `tool_schemas`: tool input contracts: `SchemaTool`, `callable_to_json_schema`,
+  and schema validation.
 - `agent_runtime`: `AgentFactory`, `AgentRunner`, `AgentRuntime`, `RunSession`,
   `RunHandle`, configured LLM compaction, and the scratchpad hook.
 - `conversations`: `ConversationStore` owns live histories, leases, and generic
@@ -20,19 +26,22 @@ rather than naming either architectural layer.
 - `browser`: `BrowserRuntime` assigns browser sessions to conversation or
   execution scopes.
 - `agents`: saved `AgentProfile` configuration.
-- `providers`: configured provider selection, vision selection, and the
-  application-aware FakeProvider directive protocol.
+- `provider_catalog`: the providers a user can connect, the cached client for
+  each connected provider, and the application-aware FakeClient directive
+  protocol.
+- `utility_models`: the vision, compaction and title models, which each have
+  their own provider and model in settings.
 - `skills`: stored skill catalog, resolution, policy, and skill management tools.
 - `server` and `tasks`: adapters for HTTP and scheduled workflows.
 
 ## Agent preparation and execution
 
 `AgentFactory` resolves an `AgentProfile` into `PreparedAgent`: an `Agent` holding
-instructions/model settings/limits, an injected `Provider`, `AgentCapabilities`
+instructions/model settings/limits, an injected `ModelClient`, `AgentCapabilities`
 holding effective tools and loaded-skill guidance, and the base system prompt.
 
 `AgentRunner` prepares each root or child through that factory and calls
-`AgentExecutor.execute` with explicit provider, capabilities, history, hooks,
+`AgentExecutor.execute` with explicit client, capabilities, history, hooks,
 execution context, and tool concurrency. The agent core returns `ExecutionResult` with
 status, output, finish reason, execution-local usage, and normalized error.
 

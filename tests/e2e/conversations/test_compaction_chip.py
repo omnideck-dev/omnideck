@@ -16,7 +16,7 @@ def compacted_conversation():
     with compaction_settings(), agent_profile(context_window=1000, compaction_threshold=0.01) as profile:
         try:
             events = []
-            # The summarizer also uses FakeProvider: this compacted user input
+            # The summarizer also uses FakeClient: this compacted user input
             # gives its real model call a concise reply via the same protocol.
             oranges = (
                 "what about oranges? Compare their sweetness, acidity, seasonal varieties, and common cooking uses. "

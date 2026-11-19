@@ -3,12 +3,12 @@
 import asyncio
 import copy
 import logging
+import time
 from datetime import datetime
 
 from rich.console import Console
 
-from agent_core.providers import ProviderError, accepted_options, find_model
-from providers import get_provider, resolve_role_options
+from llm import ProviderError, accepted_options
 from rich.panel import Panel
 from rich.text import Text
 
@@ -19,7 +19,7 @@ from agent_core.events import (
     CompactionStats,
     publish_event,
 )
-from settings import load_settings
+from utility_models import UtilityCall, configured_model, prepare_utility_call
 
 from agent_core.context import ContextStats, ConversationHistory, TriggerPoint
 
@@ -281,17 +281,17 @@ class LLMCompactionStrategy:
 
         prior_summary = _extract_prior_summary(compactable)
 
-        resolved = self._resolve_model()
-        if resolved is None:
+        resolved_model = configured_model("compaction", model=self._summary_model)
+        if resolved_model is None:
+            logger.warning("No compaction model/provider configured — compaction disabled")
             return
-        _resolved_provider, resolved_model, _resolved_options = resolved
 
-        import time as _time
-        t0 = _time.monotonic()
+        t0 = time.monotonic()
         try:
-            summary, model_name = await self._summarize(
-                compactable, prior_summary,
-            )
+            call = await prepare_utility_call("compaction", model=resolved_model)
+            if call is None:
+                return
+            summary, model_name = await self._summarize(call, compactable, prior_summary)
         except TimeoutError as exc:
             logger.warning(
                 "LLMCompactionStrategy: compaction timed out after %ds",
@@ -316,7 +316,7 @@ class LLMCompactionStrategy:
             raise ProviderError(
                 _compaction_error_message(resolved_model, "failed with an unexpected error"),
             ) from exc
-        elapsed = _time.monotonic() - t0
+        elapsed = time.monotonic() - t0
 
         # If the agent received multiple distinct user messages, the first
         # one likely no longer reflects current intent. Ask the summarizer
@@ -326,7 +326,7 @@ class LLMCompactionStrategy:
         user_intent_summary = None
         if has_first_user and len(all_user_contents) > 1:
             try:
-                user_intent_summary = await self._extract_intent(all_user_contents)
+                user_intent_summary = await self._extract_intent(call, all_user_contents)
                 logger.info(
                     "LLMCompactionStrategy: extracted intent from %d user messages",
                     len(all_user_contents),
@@ -469,6 +469,7 @@ class LLMCompactionStrategy:
 
     async def _summarize(
         self,
+        call: UtilityCall,
         messages: list[dict],
         prior_summary: str | None = None,
         objective: str = "",
@@ -480,12 +481,8 @@ class LLMCompactionStrategy:
         merges the chunk summaries. The chunk threshold scales with the
         summarizer's configured context window.
         """
-        provider_name, model, options = self._resolve_model() or (None, None, {})
-        model_info = None
-        if provider_name and model:
-            model_info = await find_model(get_provider(provider_name), model)
-        configured_ctx = options.get("num_ctx") if isinstance(options, dict) else None
-        num_ctx = configured_ctx or (model_info.context_window if model_info else None) or 8192
+        model_info = call.model_info
+        num_ctx = call.options.get("num_ctx") or (model_info.context_window if model_info else None) or 8192
         chunk_threshold = int(num_ctx * _CHARS_PER_TOKEN * _CTX_INPUT_FRACTION)
         chunk_target = chunk_threshold // 2
 
@@ -493,7 +490,7 @@ class LLMCompactionStrategy:
         serialized = _serialize_messages(copy.deepcopy(messages))
         if len(serialized) <= chunk_threshold:
             return await self._call_summarizer(
-                serialized, prior_summary, objective,
+                call, serialized, prior_summary, objective,
             )
 
         # Split messages into chunks and summarize each independently.
@@ -510,7 +507,7 @@ class LLMCompactionStrategy:
             # Include prior summary context only in the first chunk.
             ps = prior_summary if i == 0 else None
             summary, model_name = await self._call_summarizer(
-                chunk_text, ps, objective,
+                call, chunk_text, ps, objective,
             )
             chunk_summaries.append(summary)
 
@@ -520,23 +517,18 @@ class LLMCompactionStrategy:
             for i, s in enumerate(chunk_summaries)
         )
         final_summary, model_name = await self._call_summarizer(
-            merged_input, prior_summary=None, objective=objective,
+            call, merged_input, prior_summary=None, objective=objective,
         )
         return final_summary, model_name
 
     async def _call_summarizer(
         self,
+        call: UtilityCall,
         conversation_text: str,
         prior_summary: str | None = None,
         objective: str = "",
     ) -> tuple[str, str]:
         """Call the summarization LLM and return (summary_text, model_name)."""
-        resolved = self._resolve_model()
-        assert resolved is not None
-        provider_name, model, options = resolved
-        provider = get_provider(provider_name)
-        request = await resolve_role_options(provider, model, "compaction", options)
-
         user_content = ""
         if prior_summary:
             user_content += (
@@ -549,37 +541,33 @@ class LLMCompactionStrategy:
 
         system_prompt = _build_summarize_prompt(objective)
         response = await asyncio.wait_for(
-            provider.chat(
-                model=model,
+            call.client.chat(
+                model=call.model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_content},
                 ],
-                think=request.think,
-                options=request.options,
+                think=call.think,
+                model_info=call.model_info,
+                options=call.options,
             ),
             timeout=_CALL_TIMEOUT,
         )
-        return response.message.content or "", model
+        return response.message.content or "", call.model
 
-    async def _extract_intent(self, user_messages: list[str]) -> str:
+    async def _extract_intent(self, call: UtilityCall, user_messages: list[str]) -> str:
         """Extract the user's current intent from multiple user messages.
 
         Called during compaction when the conversation has more than one
         user message, indicating the user may have changed topics.  Uses
         the same model as the summarizer.
         """
-        resolved = self._resolve_model()
-        assert resolved is not None
-        provider_name, model, options = resolved
-        provider = get_provider(provider_name)
-        request = await resolve_role_options(provider, model, "compaction", options)
-        options = request.options
+        options = call.options
         # Ask for deterministic output only from a model known to accept it.
         # Reasoning models such as GPT Sol reject the request rather than
         # ignoring an unsupported temperature.
-        if request.model is not None:
-            options = accepted_options(request.model, {**options, "temperature": 0}, think=request.think)
+        if call.model_info is not None:
+            options = accepted_options(call.model_info, {**options, "temperature": 0}, think=call.think)
 
         # Build the user content with numbered messages.
         # Truncate individual messages to keep the input focused.
@@ -589,37 +577,19 @@ class LLMCompactionStrategy:
             user_content += f"\n--- Message {i + 1} ---\n{text}\n"
 
         response = await asyncio.wait_for(
-            provider.chat(
-                model=model,
+            call.client.chat(
+                model=call.model,
                 messages=[
                     {"role": "system", "content": _INTENT_EXTRACTION_PROMPT},
                     {"role": "user", "content": user_content},
                 ],
-                think=request.think,
+                think=call.think,
+                model_info=call.model_info,
                 options=options,
             ),
             timeout=60,
         )
         return response.message.content or ""
-
-    def _resolve_model(self) -> tuple[str, str, dict] | None:
-        """Determine the (provider, model, options) to use for summarization.
-
-        The model comes from an explicit constructor arg or the
-        ``compaction_model`` setting; the provider from ``compaction_provider``;
-        inference options from ``compaction_options``. Returns None if no
-        model/provider is configured.
-        """
-        settings = load_settings()
-        options = dict(settings.get("compaction_options") or {})
-        provider = settings.get("compaction_provider") or ""
-        model = self._summary_model or settings.get("compaction_model") or ""
-
-        if model and provider:
-            return provider, model, options
-
-        logger.warning("No compaction model/provider configured — compaction disabled")
-        return None
 
 
 async def _unload_model(model: str) -> None:

@@ -11,8 +11,8 @@ from typing import Any
 from agents import AgentProfile, get_agent_profile
 from agent_core.agent import Agent
 from agent_core.agent_capabilities import AgentCapabilities
-from agent_core.providers import Provider, accepted_options, find_model
-from providers import get_provider
+from llm import ModelClient, accepted_options, find_model
+from provider_catalog import get_client
 from integrations.connection_cache import ConnectionSnapshot
 from skills._tool_categories import ToolCategory, tool_categories
 from tools.memory import load_memory
@@ -26,7 +26,7 @@ class PreparedAgent:
     profile: AgentProfile
     agent: Agent
     capabilities: AgentCapabilities
-    provider: Provider
+    client: ModelClient
     system_prompt: str
 
 
@@ -55,8 +55,8 @@ class AgentFactory:
         connections: ConnectionSnapshot = (),
     ) -> PreparedAgent:
         agent = self.build_agent(profile, name=name)
-        provider = get_provider(agent.provider)
-        agent = await self.resolve_runtime_metadata(agent, provider)
+        client = get_client(agent.provider)
+        agent = await self.resolve_runtime_metadata(agent, client)
         capabilities = await self.build_capabilities(
             profile,
             spawn_agent=spawn_agent,
@@ -71,7 +71,7 @@ class AgentFactory:
             instruction = (
                 f"\n── Memory (persisted across sessions) ──────────────────────────\n{lines}\n{sep}\n" + instruction
             )
-        return PreparedAgent(profile, agent, capabilities, provider, instruction)
+        return PreparedAgent(profile, agent, capabilities, client, instruction)
 
     async def build_capabilities(
         self,
@@ -176,7 +176,7 @@ class AgentFactory:
         )
 
     @staticmethod
-    async def resolve_runtime_metadata(agent: Agent, provider: Provider) -> Agent:
+    async def resolve_runtime_metadata(agent: Agent, client: ModelClient) -> Agent:
         """Apply live model capabilities to one execution without persisting them.
 
         Profiles retain user choices, while fixed cloud context capacity and
@@ -184,7 +184,7 @@ class AgentFactory:
         those properties through the provider's cached model catalog for every
         root, child, and routine execution prepared by this factory.
         """
-        model_info = await find_model(provider, agent.model)
+        model_info = await find_model(client, agent.model)
         if model_info is None:
             logger.debug("Model details not found for %s/%s; using profile values", agent.provider, agent.model)
             return agent
@@ -201,6 +201,7 @@ class AgentFactory:
             "context_window": context_window,
             "options": accepted_options(model_info, agent.options, think=think),
             "think": think,
+            "model_info": model_info,
         })
 
 

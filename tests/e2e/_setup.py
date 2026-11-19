@@ -75,9 +75,13 @@ def _complete_setup_wizard(browser, wizard_choices):
 
     # Step 1: Provider — pick Ollama with localhost URL (network=host)
     page.get_by_text("Choose your LLM provider").wait_for(state="visible")
-    # Aperture is experimental and stays hidden until it is turned on in Settings.
+    # The choices come from the server's provider list. Wait for it so the
+    # Aperture check below cannot pass before the list loads. Aperture is
+    # experimental and stays hidden until it is turned on in Settings.
+    ollama = page.get_by_text("Ollama", exact=True)
+    expect(ollama).to_be_visible()
     expect(page.get_by_text("Tailscale Aperture")).to_have_count(0)
-    page.get_by_text("Ollama (local)").click()
+    ollama.click()
     page.locator("#ollama-url").fill("http://localhost:11434")
     page.get_by_role("button", name="Connect").click()
 

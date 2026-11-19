@@ -21,4 +21,4 @@ async def test_settings_include_the_output_limit_each_helper_role_uses(
 
     body = json.loads(response.body)
     assert body["vision_model"] == "m"
-    assert body["role_output_caps"] == {"vision": 512, "compaction": 8192, "title": 50}
+    assert body["utility_output_caps"] == {"vision": 512, "compaction": 8192, "title": 50}

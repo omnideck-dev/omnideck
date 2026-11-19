@@ -31,7 +31,7 @@ from agent_core.turn import StopRequestedError, ToolLoopError
 @pytest.fixture(autouse=True)
 def _browser_runtime(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     """Keep agent-run tests isolated from the process Browser runtime."""
-    monkeypatch.setattr(factory_module, "get_provider", lambda _: MagicMock())
+    monkeypatch.setattr(factory_module, "get_client", lambda _: MagicMock())
     runtime = MagicMock()
     runtime.prepare_current_agent_browser = AsyncMock()
     @asynccontextmanager

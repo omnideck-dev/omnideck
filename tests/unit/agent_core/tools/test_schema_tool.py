@@ -4,7 +4,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from agent_core.tools import SchemaTool, callable_to_json_schema, _execute_tool_call, _prepare_tool_arguments
+from agent_core.tools import _execute_tool_call, _prepare_tool_arguments
+from tool_schemas import SchemaTool, callable_to_json_schema
 
 
 async def test_schema_and_arguments_are_lossless_and_isolated():

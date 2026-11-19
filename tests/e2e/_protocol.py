@@ -1,4 +1,4 @@
-"""Directive-protocol helpers for driving the FakeProvider in e2e tests.
+"""Directive-protocol helpers for driving the FakeClient in e2e tests.
 
 The e2e suite runs the app with ``MOCK_LLM=1``, which swaps the real
 LLM for an in-process fake. The fake reads these

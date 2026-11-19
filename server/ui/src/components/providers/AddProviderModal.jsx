@@ -6,30 +6,13 @@ import Modal from '../primitives/Modal.jsx';
 import IconButton from '../primitives/IconButton.jsx';
 import styles from './AddProviderModal.module.css';
 
-// The picker catalog. Order is intentional: local first, then the managed
-// gateway, a generic compatibility option, and branded cloud APIs.
-const CATALOG = [
-    { name: 'ollama', label: 'Ollama', icon: 'bi-cpu',
-      sub: 'Run models on your own machine' },
-    { name: 'aperture', label: 'Tailscale Aperture', icon: 'bi-diagram-3',
-      sub: 'Discover models managed by your organization' },
-    { name: 'openai_compat', label: 'OpenAI-compatible', icon: 'bi-hdd-network',
-      sub: 'vLLM, LM Studio, llama.cpp, etc.' },
-    { name: 'anthropic', label: 'Anthropic', icon: 'bi-cloud',
-      sub: 'Claude models via API' },
-    { name: 'openai', label: 'OpenAI', icon: 'bi-cloud',
-      sub: 'GPT and o-series via API' },
-    { name: 'openrouter', label: 'OpenRouter', icon: 'bi-router',
-      sub: 'Many providers, one API' },
-];
-
 /**
- * Two-step modal: pick a provider from the catalog, then fill its
+ * Two-step modal: pick a provider from the server's catalog, then fill its
  * config form. Submitting POSTs to /api/providers — the server creates
  * the underlying entry (settings.direct_providers or vault integration),
  * probes the new provider, and returns its model list.
  */
-export default function AddProviderModal({ existingNames = [], apertureEnabled = false, onClose, onAdded }) {
+export default function AddProviderModal({ providerCatalog, existingNames = [], onClose, onAdded }) {
     const [step, setStep] = useState('catalog'); // 'catalog' | 'configure'
     const [picked, setPicked] = useState(null);
 
@@ -48,8 +31,8 @@ export default function AddProviderModal({ existingNames = [], apertureEnabled =
         >
             {step === 'catalog' && (
                 <CatalogStep
+                    providerCatalog={providerCatalog}
                     existingNames={existingNames}
-                    apertureEnabled={apertureEnabled}
                     onClose={onClose}
                     onPick={handlePickAndContinue}
                 />
@@ -69,10 +52,10 @@ export default function AddProviderModal({ existingNames = [], apertureEnabled =
 
 /* ── Step 1: catalog ───────────────────────────────────────────────── */
 
-function CatalogStep({ existingNames, apertureEnabled, onClose, onPick }) {
+function CatalogStep({ providerCatalog, existingNames, onClose, onPick }) {
+    const { catalog, loading, error, refresh } = providerCatalog;
     const [selected, setSelected] = useState(null);
-    const available = CATALOG.filter(c => !existingNames.includes(c.name)
-        && (c.name !== 'aperture' || apertureEnabled));
+    const available = catalog.filter(c => !existingNames.includes(c.name));
     return (
         <>
             <div className={styles.header}>
@@ -82,7 +65,16 @@ function CatalogStep({ existingNames, apertureEnabled, onClose, onPick }) {
                 </IconButton>
             </div>
             <div className={styles.body}>
-                {available.length === 0 ? (
+                {catalog.length === 0 && loading ? (
+                    <div className={styles.formHint}>Loading providers…</div>
+                ) : catalog.length === 0 && error ? (
+                    <>
+                        <Callout tone="danger" title="Couldn't load providers" description={error} />
+                        <Button onClick={refresh}>
+                            <i className="bi bi-arrow-clockwise" /> Retry
+                        </Button>
+                    </>
+                ) : available.length === 0 ? (
                     <Callout
                         tone="info"
                         title="All providers configured"
@@ -104,7 +96,7 @@ function CatalogStep({ existingNames, apertureEnabled, onClose, onPick }) {
                                 </div>
                                 <div className={styles.catalogText}>
                                     <div className={styles.catalogName}>{c.label}</div>
-                                    <div className={styles.catalogSub}>{c.sub}</div>
+                                    <div className={styles.catalogSub}>{c.description}</div>
                                 </div>
                             </button>
                         ))}
@@ -133,16 +125,16 @@ function CatalogStep({ existingNames, apertureEnabled, onClose, onPick }) {
 /* ── Step 2: configure ─────────────────────────────────────────────── */
 
 function ConfigureStep({ entry, onBack, onClose, onAdded }) {
-    // Field shape per provider:
-    //   ollama          → base_url
-    //   aperture        → gateway base_url; auth and API formats are discovered
-    //   openai_compat   → base_url, optional api_key
-    //   anthropic/openai/openrouter → api_key
+    // The catalog entry says which fields this provider takes.
+    const showUrl = entry.base_url !== 'none';
+    const urlRequired = entry.base_url === 'required';
+    const showKey = entry.api_key !== 'none';
+    const keyRequired = entry.api_key === 'required';
+    const keyOptional = entry.api_key === 'optional';
+    // Only Ollama has a host detected at install time.
     const isOllama = entry.name === 'ollama';
+    // Aperture gets its own wording: Tailscale handles access, and models are discovered.
     const isAperture = entry.name === 'aperture';
-    const isCompat = entry.name === 'openai_compat';
-    const isEndpoint = isOllama || isAperture || isCompat;
-    const isCloud = !isEndpoint;
 
     const [baseUrl, setBaseUrl] = useState('');
     const [ollamaHost, setOllamaHost] = useState('');
@@ -154,9 +146,9 @@ function ConfigureStep({ entry, onBack, onClose, onAdded }) {
 
     useEffect(() => {
         // Focus the most-likely-to-be-filled field on mount.
-        if (isCloud) keyRef.current?.focus();
-        else urlRef.current?.focus();
-    }, [isCloud]);
+        if (showUrl) urlRef.current?.focus();
+        else keyRef.current?.focus();
+    }, [showUrl]);
 
     // Prefill the Ollama URL from the host detected at install time, so the
     // user doesn't have to guess it from their container runtime.
@@ -175,18 +167,15 @@ function ConfigureStep({ entry, onBack, onClose, onAdded }) {
         return () => { cancelled = true; };
     }, [isOllama]);
 
-    const canSubmit = (() => {
-        if (isEndpoint) return !!baseUrl.trim();
-        return !!apiKey.trim();
-    })();
+    const canSubmit = (!urlRequired || !!baseUrl.trim()) && (!keyRequired || !!apiKey.trim());
 
     const handleSubmit = useCallback(async () => {
         if (!canSubmit || submitting) return;
         setSubmitting(true);
         setError(null);
         const body = { name: entry.name };
-        if (isEndpoint) body.base_url = baseUrl.trim();
-        if ((isCloud || isCompat) && apiKey.trim()) body.api_key = apiKey.trim();
+        if (showUrl && baseUrl.trim()) body.base_url = baseUrl.trim();
+        if (showKey && apiKey.trim()) body.api_key = apiKey.trim();
         try {
             const resp = await fetch('/api/providers', {
                 method: 'POST',
@@ -197,7 +186,7 @@ function ConfigureStep({ entry, onBack, onClose, onAdded }) {
             if (!resp.ok) {
                 const message = data.message || data.error || `HTTP ${resp.status}`;
                 setError(
-                    (isOllama || isAperture) && body.base_url && !message.includes(body.base_url)
+                    body.base_url && !message.includes(body.base_url)
                         ? `${message} Tried ${body.base_url}.`
                         : message,
                 );
@@ -206,11 +195,11 @@ function ConfigureStep({ entry, onBack, onClose, onAdded }) {
             onAdded?.(data.provider);
         } catch (err) {
             const message = err?.message || 'Request failed';
-            setError((isOllama || isAperture) && body.base_url ? `${message} Tried ${body.base_url}.` : message);
+            setError(body.base_url ? `${message} Tried ${body.base_url}.` : message);
         } finally {
             setSubmitting(false);
         }
-    }, [entry.name, isOllama, isAperture, isCompat, isEndpoint, isCloud, baseUrl, apiKey, canSubmit, submitting, onAdded]);
+    }, [entry.name, showUrl, showKey, baseUrl, apiKey, canSubmit, submitting, onAdded]);
 
     return (
         <>
@@ -228,7 +217,7 @@ function ConfigureStep({ entry, onBack, onClose, onAdded }) {
                 </IconButton>
             </div>
             <div className={styles.body}>
-                {isCloud && (
+                {keyRequired && (
                     <Callout
                         tone="info"
                         icon="bi-shield-lock"
@@ -246,7 +235,7 @@ function ConfigureStep({ entry, onBack, onClose, onAdded }) {
                 {error && (
                     <Callout tone="danger" title="Couldn't add provider" description={error} />
                 )}
-                {isEndpoint && (
+                {showUrl && (
                     <div className={styles.formRow}>
                         <label className={styles.formLabel} htmlFor="provider-url">
                             {isAperture ? 'Gateway URL' : 'Base URL'}
@@ -261,7 +250,7 @@ function ConfigureStep({ entry, onBack, onClose, onAdded }) {
                                 ? (ollamaHost || 'Enter your Ollama server URL')
                                 : isAperture
                                     ? 'http://aperture-hostname'
-                                    : 'http://host:port/v1'}
+                                    : (entry.url_hint || '')}
                             onChange={(e) => setBaseUrl(e.target.value)}
                             autoComplete="off"
                         />
@@ -274,10 +263,10 @@ function ConfigureStep({ entry, onBack, onClose, onAdded }) {
                         </div>
                     </div>
                 )}
-                {(isCloud || isCompat) && (
+                {showKey && (
                     <div className={styles.formRow}>
                         <label className={styles.formLabel} htmlFor="provider-key">
-                            API Key{isCompat ? ' (optional)' : ''}
+                            API Key{keyOptional ? ' (optional)' : ''}
                         </label>
                         <input
                             id="provider-key"
@@ -285,11 +274,11 @@ function ConfigureStep({ entry, onBack, onClose, onAdded }) {
                             className={`${styles.input} ${styles.inputMono}`}
                             type="password"
                             value={apiKey}
-                            placeholder={_keyPlaceholder(entry.name)}
+                            placeholder={entry.key_hint || ''}
                             onChange={(e) => setApiKey(e.target.value)}
                             autoComplete="new-password"
                         />
-                        {isCompat && (
+                        {keyOptional && (
                             <div className={styles.formHint}>
                                 Leave blank if the endpoint doesn't require auth.
                             </div>
@@ -318,10 +307,3 @@ function ConfigureStep({ entry, onBack, onClose, onAdded }) {
     );
 }
 
-
-function _keyPlaceholder(name) {
-    if (name === 'anthropic') return 'sk-ant-...';
-    if (name === 'openai') return 'sk-...';
-    if (name === 'openrouter') return 'sk-or-v1-...';
-    return '';
-}

@@ -16,7 +16,7 @@ from agent_core.events import get_current_agent_id
 from agent_core.turn import get_conversation_id
 from tasks._file_store import FileTaskStore
 
-from ._support import Harness, ScriptedProvider
+from ._support import Harness, ScriptedClient
 
 
 @pytest_asyncio.fixture
@@ -42,11 +42,11 @@ async def harness(tmp_path, monkeypatch):
     monkeypatch.setattr("conversations._store._get_conversations_dir", lambda: tmp_path / "conversations")
     monkeypatch.setattr("agent_runtime._runner.load_config", lambda: config)
 
-    provider = ScriptedProvider()
-    monkeypatch.setattr("agent_runtime._factory.get_provider", lambda _name: provider)
-    monkeypatch.setattr("agent_runtime._compaction.get_provider", lambda _name: provider)
+    provider = ScriptedClient()
+    monkeypatch.setattr("agent_runtime._factory.get_client", lambda _name: provider)
+    monkeypatch.setattr("utility_models._calls.get_client", lambda _name: provider)
     # Compaction settings are application configuration, not the strategy.
-    monkeypatch.setattr("agent_runtime._compaction.load_settings", lambda: {
+    monkeypatch.setattr("utility_models._calls.load_settings", lambda: {
         "compaction_provider": "scripted", "compaction_model": "summary", "compaction_options": {},
     })
 

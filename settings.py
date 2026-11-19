@@ -195,14 +195,8 @@ def custom_tools_enabled() -> bool:
     return load_settings().get("custom_tools_enabled", False) is True
 
 
-def aperture_enabled() -> bool:
-    """Return whether the user has enabled the experimental Tailscale Aperture provider."""
-    return load_settings().get("aperture_enabled", False) is True
-
-
 __all__ = [
     "SettingsUpdate",
-    "aperture_enabled",
     "custom_apps_enabled",
     "custom_tools_enabled",
     "load_settings",

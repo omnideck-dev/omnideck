@@ -7,7 +7,7 @@ import pytest
 
 from conversations import load_events_jsonl
 from agent_core.events import AgentEvent, FileOutputPayload, publish_event
-from agent_core.providers import ProviderError
+from llm import ProviderError
 from tasks import TaskExecutor, TaskRunner
 from tasks._file_store import FileTaskStore
 
@@ -38,13 +38,13 @@ async def test_routine_scheduler_executes_only_ready_tasks_and_persists_outcomes
     h.profile("worker", skills=["writer"])
     h.profile("second")
     if fail_first:
-        h.provider.plan("first", ProviderError("unavailable", retryable=False))
+        h.client.plan("first", ProviderError("unavailable", retryable=False))
     else:
-        h.provider.plan("first", reply(calls=[
+        h.client.plan("first", reply(calls=[
             call("spawn_agent", profile="worker", agent_name="WORKER", instructions="make proof"),
         ]), reply("predecessor result"))
-        h.provider.plan("worker", reply(calls=[call("write_proof")]), reply("worker result"))
-        h.provider.plan("second", reply("dependent result"))
+        h.client.plan("worker", reply(calls=[call("write_proof")]), reply("worker result"))
+        h.client.plan("second", reply("dependent result"))
     routine = h.store.create_routine("routine objective", auto_run=False)
     first = h.store.create_tasks(routine.id, [{
         "description": "First task", "instruction": "first instruction", "agent_profile": "first", "max_retries": 0,
@@ -74,7 +74,7 @@ async def test_routine_scheduler_executes_only_ready_tasks_and_persists_outcomes
     if fail_first:
         assert first_result.status == "failed"
         assert "unavailable" in first_result.error
-        assert not any(r["model"] == "second" for r in h.provider.requests)
+        assert not any(r["model"] == "second" for r in h.client.requests)
         assert results[second.id].status == "failed"
         assert results[second.id].error == "Blocked: a dependency task failed"
         assert len([e for e in first_events if e["type"] == "error"]) == 1
@@ -84,7 +84,7 @@ async def test_routine_scheduler_executes_only_ready_tasks_and_persists_outcomes
         assert output.read_text() == "routine proof"
         assert results[second.id].result == "dependent result"
         assert results[second.id].conversation_id != first_result.conversation_id
-        second_request = next(r for r in h.provider.requests if r["model"] == "second")
+        second_request = next(r for r in h.client.requests if r["model"] == "second")
         user = next(m["content"] for m in second_request["messages"] if m["role"] == "user")
         assert "routine objective" in user and "second instruction" in user
         assert "First task" in user and "predecessor result" in user

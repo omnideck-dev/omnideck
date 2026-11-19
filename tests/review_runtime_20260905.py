@@ -20,7 +20,7 @@ from agent_core.agent_capabilities import AgentCapabilities
 from agent_core.context import ConversationHistory
 from agent_core.events import AgentEvent, UserMessagePayload, agent_span, publish_event
 from agent_core.hooks import BudgetGuard, StopHook
-from agent_core.providers import ChatDelta, ChatMessage, ChatResponse, ToolCall, ToolCallFunction
+from llm import ChatDelta, ChatMessage, ChatResponse, ToolCall, ToolCallFunction
 from agent_core.turn import StopRequestedError, AgentExecutor, turn_scope
 from tasks._file_store import FileTaskStore
 from tasks._runner import TaskRunner
@@ -56,7 +56,7 @@ async def execute(provider, tools, seen, *, hooks=None, stop=None, parallel=Fals
             publish_event(AgentEvent(payload=UserMessagePayload(type="user_message", content="go")))
             result = await AgentExecutor().execute(
                 history=history, agent=agent, capabilities=capabilities,
-                provider=provider, context=context, hooks=hooks or [],
+                client=provider, context=context, hooks=hooks or [],
                 max_parallel_tools=2 if parallel else 1,
             )
             result.raise_for_status()

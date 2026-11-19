@@ -7,7 +7,6 @@ from pydantic import ValidationError
 
 from settings import (
     SettingsUpdate,
-    aperture_enabled,
     custom_apps_enabled,
     custom_tools_enabled,
     load_settings,
@@ -56,11 +55,6 @@ class TestLoadSettings:
         """Existing settings files predate the toggle and remain safely off."""
         (tmp_path / "settings.json").write_text(json.dumps({"setup_complete": True}))
         assert custom_tools_enabled() is False
-
-    def test_missing_aperture_setting_is_disabled(self, tmp_path):
-        """Existing settings files predate the toggle and remain safely off."""
-        (tmp_path / "settings.json").write_text(json.dumps({"setup_complete": True}))
-        assert aperture_enabled() is False
 
     def test_loads_from_disk(self, tmp_path):
         """Reads saved settings."""

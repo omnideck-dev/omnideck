@@ -1,4 +1,4 @@
-"""Session cleanup and process shutdown with real FakeProvider execution trees."""
+"""Session cleanup and process shutdown with real FakeClient execution trees."""
 
 import asyncio
 
@@ -9,15 +9,15 @@ from agent_core.control import StopRequestedError
 from agent_core.turn import get_execution_context
 from agent_runtime import AgentRunRequest, AgentRuntimeClosedError, RunConflictError, RunPolicy
 from conversations import load_events_jsonl
-from providers._fake import FakeProvider
+from provider_catalog._fake import FakeClient
 from tasks import TaskExecutor
 from tests.e2e._protocol import call_tool, say, spawn
 
 
 @pytest.fixture(autouse=True)
 def fake_provider(harness, monkeypatch):
-    provider = FakeProvider()
-    monkeypatch.setattr("agent_runtime._factory.get_provider", lambda _: provider)
+    provider = FakeClient()
+    monkeypatch.setattr("agent_runtime._factory.get_client", lambda _: provider)
 
 
 def _request(conversation="cleanup", *, lifetime="cached", message=None, profile="leaf"):

@@ -16,7 +16,7 @@ import SpecializedModelOptions, { ModelDefaultsSummary } from './SpecializedMode
 import { resolveInferenceCapabilities, sanitizeInferenceOptions } from './inference';
 
 export default function SystemSettings() {
-    const { providersHook, refreshFeatures } = useAppData();
+    const { providersHook, providerCatalogHook, refreshFeatures } = useAppData();
     const { providers } = providersHook;
     const [profiles, setProfiles] = useState([]);
     const [settings, setSettings] = useState({ default_agent: 'omnideck' });
@@ -65,8 +65,8 @@ export default function SystemSettings() {
                     await refreshFeatures();
                 }
                 if ('aperture_enabled' in patch) {
-                    await refreshFeatures();
-                    // The server hides Aperture from the provider list while it is off.
+                    // The server hides Aperture from the provider list and catalog while it is off.
+                    providerCatalogHook.refresh?.();
                     providersHook.refresh?.();
                 }
                 return;
@@ -75,7 +75,7 @@ export default function SystemSettings() {
             // Restore the server-backed value below.
         }
         setSettings((prev) => ({ ...prev, ...previousValues }));
-    }, [providersHook, refreshFeatures, settings]);
+    }, [providerCatalogHook, providersHook, refreshFeatures, settings]);
 
     const updateSetting = useCallback((key, value) => updateSettings({ [key]: value }), [updateSettings]);
 
@@ -260,8 +260,8 @@ export default function SystemSettings() {
                 />
             </div>
 
-            {/* Model defaults */}
-            <div className={styles.sectionLabel}>Model Defaults</div>
+            {/* Utility models */}
+            <div className={styles.sectionLabel}>Utility Models</div>
 
             <div className={styles.modelDefaults} data-testid="model-defaults-group">
                 <section className={styles.modelSetting} data-testid="vision-model-setting">
@@ -290,7 +290,7 @@ export default function SystemSettings() {
                         <SpecializedModelOptions
                             role="vision"
                             capabilities={roleCapabilities.vision}
-                            outputCap={settings.role_output_caps?.vision}
+                            outputCap={settings.utility_output_caps?.vision}
                             options={settings.vision_options}
                             think={!!settings.vision_think}
                             open={visionAdvancedOpen}
@@ -325,7 +325,7 @@ export default function SystemSettings() {
                         <SpecializedModelOptions
                             role="compaction"
                             capabilities={roleCapabilities.compaction}
-                            outputCap={settings.role_output_caps?.compaction}
+                            outputCap={settings.utility_output_caps?.compaction}
                             options={settings.compaction_options}
                             open={compactionAdvancedOpen}
                             onToggle={() => setCompactionAdvancedOpen((value) => !value)}
@@ -359,7 +359,7 @@ export default function SystemSettings() {
                         <ModelDefaultsSummary
                             capabilities={roleCapabilities.title}
                             role="title"
-                            outputCap={settings.role_output_caps?.title}
+                            outputCap={settings.utility_output_caps?.title}
                         />
                     </div>
                 </section>

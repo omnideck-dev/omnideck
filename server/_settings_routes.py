@@ -8,7 +8,8 @@ import logging
 from aiohttp import web
 from pydantic import ValidationError
 
-from providers import ROLE_OUTPUT_CAPS, reset_provider
+from provider_catalog import reset_client
+from utility_models import OUTPUT_CAPS
 from settings import SettingsUpdate, load_settings, save_settings
 
 logger = logging.getLogger(__name__)
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 def _settings_view(settings: dict) -> dict:
     """Settings plus read-only values the settings screen displays."""
-    return {**settings, "role_output_caps": ROLE_OUTPUT_CAPS}
+    return {**settings, "utility_output_caps": OUTPUT_CAPS}
 
 
 async def handle_get_settings(_request: web.Request) -> web.Response:
@@ -46,7 +47,7 @@ async def handle_update_settings(request: web.Request) -> web.Response:
     # If a direct provider's connection details changed, drop the cached
     # provider instances so the next request re-creates them.
     if "direct_providers" in update.model_fields_set:
-        reset_provider()
+        reset_client()
 
     if not was_complete and saved.get("setup_complete"):
         from setup import mark_ready

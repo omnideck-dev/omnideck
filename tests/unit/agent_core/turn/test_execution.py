@@ -17,10 +17,11 @@ from tests.unit.agent_core._execution_inputs import execution_inputs
 import agent_core.turn._execution as _execution
 from agent_core.agent import Agent
 from agent_core.context import ConversationHistory
-from agent_core.providers._models import (
+from llm._types import (
     ChatDelta,
     ChatMessage,
     ChatResponse,
+    ModelInfo,
     ProviderError,
     TokenUsage,
     ToolCall,
@@ -83,7 +84,7 @@ def _tool_call_response(
     )
 
 
-class FakeProvider:
+class FakeClient:
     """Mock provider that yields a sequence of responses.
 
     Each entry in *turns* is either a ChatResponse (non-streaming path) or
@@ -199,7 +200,7 @@ def _agent_capabilities():
 
 async def test_simple_text_response() -> None:
     """Provider returns text with no tool calls — single iteration."""
-    provider = FakeProvider([_text_response("Hello!")])
+    provider = FakeClient([_text_response("Hello!")])
     history = ConversationHistory([{"role": "user", "content": "Hi"}])
 
     execution = await AgentExecutor().execute(history=history, agent=_make_agent(), **execution_inputs(provider, 1))
@@ -212,9 +213,30 @@ async def test_simple_text_response() -> None:
     assert history.messages[-1]["content"] == "Hello!"
 
 
+async def test_model_details_from_the_agent_reach_every_request() -> None:
+    details = ModelInfo(name="test-model", inference_controls=["temperature"])
+    calls: list[dict[str, Any]] = []
+
+    class _Recording(FakeClient):
+        async def chat_stream(self, **kwargs: Any) -> AsyncGenerator[ChatDelta | ChatResponse, None]:
+            calls.append(kwargs)
+            async for item in super().chat_stream(**kwargs):
+                yield item
+
+    client = _Recording([_tool_call_response("_dummy_tool", {"x": "a"}), _text_response("done")])
+    history = ConversationHistory([{"role": "user", "content": "Hi"}])
+
+    execution = await AgentExecutor().execute(
+        history=history, agent=_make_agent(model_info=details), **execution_inputs(client, 1),
+    )
+    execution.raise_for_status()
+
+    assert [call["model_info"] for call in calls] == [details, details]
+
+
 async def test_tool_call_then_final_response() -> None:
     """Provider requests a tool call, gets the result, then responds with text."""
-    provider = FakeProvider(
+    provider = FakeClient(
         [
             _tool_call_response("_dummy_tool", {"x": "ping"}),
             _text_response("Got it: result:ping"),
@@ -250,7 +272,7 @@ async def test_multiple_tool_calls_sequential() -> None:
         ),
         usage=TokenUsage(),
     )
-    provider = FakeProvider([response_with_two_tools, _text_response("done")])
+    provider = FakeClient([response_with_two_tools, _text_response("done")])
     history = ConversationHistory([{"role": "user", "content": "go"}])
 
     execution = await AgentExecutor().execute(history=history, agent=_make_agent(), **execution_inputs(provider, 1))
@@ -271,7 +293,7 @@ async def test_streaming_deltas_published(_patch_publish_event: MagicMock) -> No
         ChatDelta(content="lo!"),
         _text_response("Hello!"),
     ]
-    provider = FakeProvider([streamed_turn])
+    provider = FakeClient([streamed_turn])
     history = ConversationHistory([{"role": "user", "content": "Hi"}])
 
     execution = await AgentExecutor().execute(history=history, agent=_make_agent(), **execution_inputs(provider, 1))
@@ -300,7 +322,7 @@ async def test_streaming_deltas_published(_patch_publish_event: MagicMock) -> No
 
 async def test_hooks_fire_in_order_text_only() -> None:
     """For a text-only response, hooks fire: start, before, after, end."""
-    provider = FakeProvider([_text_response("ok")])
+    provider = FakeClient([_text_response("ok")])
     history = ConversationHistory([{"role": "user", "content": "hi"}])
     hook = RecordingHook()
 
@@ -317,7 +339,7 @@ async def test_hooks_fire_in_order_text_only() -> None:
 
 async def test_hooks_fire_in_order_with_tool_call() -> None:
     """Full cycle: start, before, after, before_tool, after_tool, before, after, end."""
-    provider = FakeProvider(
+    provider = FakeClient(
         [
             _tool_call_response("_dummy_tool", {"x": "v"}),
             _text_response("final"),
@@ -350,7 +372,7 @@ async def test_before_tool_intercept_skips_execution() -> None:
         def before_tool(self, name: str, args: dict) -> str | None:
             return "intercepted-result"
 
-    provider = FakeProvider(
+    provider = FakeClient(
         [
             _tool_call_response("_dummy_tool", {"x": "ignored"}),
             _text_response("done"),
@@ -372,7 +394,7 @@ async def test_after_tool_transforms_result() -> None:
         def after_tool(self, name: str, args: dict, result: str) -> str:
             return result.upper()
 
-    provider = FakeProvider(
+    provider = FakeClient(
         [
             _tool_call_response("_dummy_tool", {"x": "hello"}),
             _text_response("done"),
@@ -399,7 +421,7 @@ async def test_after_model_can_rewrite_response() -> None:
                 usage=response.usage,
             )
 
-    provider = FakeProvider([_text_response("original")])
+    provider = FakeClient([_text_response("original")])
     history = ConversationHistory([{"role": "user", "content": "hi"}])
 
     execution = await AgentExecutor().execute(history=history, hooks=[RewriteHook()], agent=_make_agent(), **execution_inputs(provider, 1))
@@ -416,7 +438,7 @@ async def test_after_model_can_rewrite_response() -> None:
 
 
 async def test_on_turn_end_fires_on_success() -> None:
-    provider = FakeProvider([_text_response("ok")])
+    provider = FakeClient([_text_response("ok")])
     history = ConversationHistory([{"role": "user", "content": "hi"}])
     hook = RecordingHook()
 
@@ -436,7 +458,7 @@ async def test_on_turn_end_fires_on_stop() -> None:
             raise StopRequestedError()
 
     hook = RecordingHook()
-    provider = FakeProvider([_text_response("unreachable")])
+    provider = FakeClient([_text_response("unreachable")])
     history = ConversationHistory([{"role": "user", "content": "hi"}])
 
     with pytest.raises(StopRequestedError):
@@ -454,7 +476,7 @@ async def test_on_turn_end_fires_on_error() -> None:
             raise RuntimeError("boom")
 
     hook = RecordingHook()
-    provider = FakeProvider([_text_response("unreachable")])
+    provider = FakeClient([_text_response("unreachable")])
     history = ConversationHistory([{"role": "user", "content": "hi"}])
 
     with pytest.raises(ToolLoopError):
@@ -477,7 +499,7 @@ async def test_stop_requested_propagates() -> None:
 
     token = _activate_agent_capabilities([_stopping_tool])
     try:
-        provider = FakeProvider(
+        provider = FakeClient(
             [
                 _tool_call_response("_stopping_tool", {"x": "go"}),
             ]
@@ -499,7 +521,7 @@ async def test_tool_error_wrapped_in_tool_loop_error() -> None:
 
     token = _activate_agent_capabilities([_broken_tool])
     try:
-        provider = FakeProvider(
+        provider = FakeClient(
             [
                 _tool_call_response("_broken_tool", {"x": "go"}),
             ]
@@ -535,7 +557,7 @@ async def test_non_retryable_provider_error_raises_immediately() -> None:
 
 
 async def test_assistant_message_includes_agent_name() -> None:
-    provider = FakeProvider([_text_response("hi")])
+    provider = FakeClient([_text_response("hi")])
     history = ConversationHistory([{"role": "user", "content": "hello"}])
 
     execution = await AgentExecutor().execute(history=history, agent=_make_agent(), **execution_inputs(provider, 1))
@@ -546,7 +568,7 @@ async def test_assistant_message_includes_agent_name() -> None:
 
 async def test_tool_calls_serialized_as_dicts() -> None:
     """Tool calls in history are plain dicts, not Pydantic models."""
-    provider = FakeProvider(
+    provider = FakeClient(
         [
             _tool_call_response("_dummy_tool", {"x": "v"}),
             _text_response("done"),
@@ -564,7 +586,7 @@ async def test_tool_calls_serialized_as_dicts() -> None:
 
 
 async def test_tool_result_has_call_id_and_name() -> None:
-    provider = FakeProvider(
+    provider = FakeClient(
         [
             _tool_call_response("_dummy_tool", {"x": "v"}, call_id="call_abc"),
             _text_response("done"),
@@ -582,7 +604,7 @@ async def test_tool_result_has_call_id_and_name() -> None:
 
 async def test_thinking_preserved_in_history() -> None:
     """Model thinking content is stored in the assistant message."""
-    provider = FakeProvider([_text_response("answer", thinking="let me think...")])
+    provider = FakeClient([_text_response("answer", thinking="let me think...")])
     history = ConversationHistory([{"role": "user", "content": "think about it"}])
 
     execution = await AgentExecutor().execute(history=history, agent=_make_agent(), **execution_inputs(provider, 1))
@@ -611,7 +633,7 @@ async def test_parallel_tool_calls(tool_concurrency: MagicMock) -> None:
         ),
         usage=TokenUsage(),
     )
-    provider = FakeProvider([response_with_two_tools, _text_response("done")])
+    provider = FakeClient([response_with_two_tools, _text_response("done")])
     history = ConversationHistory([{"role": "user", "content": "go"}])
 
     execution = await AgentExecutor().execute(history=history, agent=_make_agent(), **execution_inputs(provider, tool_concurrency.max_concurrent if tool_concurrency.enabled else 1))
@@ -645,7 +667,7 @@ async def test_parallel_tool_failure_recorded_as_result(tool_concurrency: MagicM
             ),
             usage=TokenUsage(),
         )
-        provider = FakeProvider([response, _text_response("recovered")])
+        provider = FakeClient([response, _text_response("recovered")])
         history = ConversationHistory([{"role": "user", "content": "go"}])
 
         execution = await AgentExecutor().execute(history=history, agent=_make_agent(), **execution_inputs(provider, tool_concurrency.max_concurrent if tool_concurrency.enabled else 1))
@@ -680,7 +702,7 @@ async def test_parallel_stop_requested_propagates(tool_concurrency: MagicMock) -
             ),
             usage=TokenUsage(),
         )
-        provider = FakeProvider([response])
+        provider = FakeClient([response])
         history = ConversationHistory([{"role": "user", "content": "go"}])
 
         with pytest.raises(StopRequestedError):
@@ -896,7 +918,7 @@ async def test_tool_failure_does_not_republish_completed_iteration(_patch_publis
         ChatDelta(content="calling tool"),
         _tool_call_response("_dummy_tool", {"x": "ping"}, content="calling tool"),
     ]
-    provider = FakeProvider([streamed_turn])
+    provider = FakeClient([streamed_turn])
     history = ConversationHistory([{"role": "user", "content": "go"}])
 
     with patch(f"{_MOD}._run_tool_with_hooks", side_effect=RuntimeError("tool blew up")):

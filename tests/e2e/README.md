@@ -2,7 +2,7 @@
 
 Run against a disposable application container with the real server, agent
 runner, SDK loop, tools, persistence, and scheduler. `just e2e` sets `MOCK_LLM=1`
-inside that container to select the existing in-process `FakeProvider`.
+inside that container to select the existing in-process `FakeClient`.
 
 ```sh
 just e2e tests/e2e/ --browser-channel chrome
@@ -33,7 +33,7 @@ directory. Keep manual state outside test output trees entirely.
   Prepare titles/pins/folders through public metadata APIs. Delete fixtures
   through the API after the test.
 - Trigger real compaction with a small-context temporary profile and configured
-  FakeProvider summarizer. Assert a compaction was produced before comparing
+  FakeClient summarizer. Assert a compaction was produced before comparing
   its persisted statistics/summary with the UI. Assert structural behavior
   (agent identity, ordering, scope, continued execution) separately.
 

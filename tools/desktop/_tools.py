@@ -211,8 +211,8 @@ async def describe_screen() -> str:
     Returns:
         Text description of the desktop from the vision model.
     """
-    from agent_core.providers import ProviderError
-    from providers import vision_generate
+    from llm import ProviderError
+    from utility_models import vision_generate
     from settings import load_settings
 
     await ensure_desktop_running()

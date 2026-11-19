@@ -328,7 +328,7 @@ e2e *args:
     # ENABLE_DESKTOP=false (explicit) skips xfce + VNC + noVNC so ports 5900/6080
     # stay free for a concurrently-running dev container.
     # PORT=$port picks a non-8080 app port so the two aiohttp servers coexist.
-    # MOCK_LLM=1 swaps in the in-process FakeProvider so the suite runs
+    # MOCK_LLM=1 swaps in the in-process FakeClient so the suite runs
     # without a real LLM backend (no Ollama, no GPU). Tests drive agent behaviour
     # via the directive protocol the fake understands.
     # --network=host is kept for the browser-tool test (Chrome under the container).

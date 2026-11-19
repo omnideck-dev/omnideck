@@ -12,7 +12,7 @@ from agent_runtime import AgentRuntime, AgentRunRequest
 from agents import AgentProfile
 from agents._agent_profiles import save_agent_profile
 from agent_core.events import AgentEvent, get_current_agent_id
-from agent_core.providers import ChatDelta, ChatMessage, ChatResponse, TokenUsage, ToolCall, ToolCallFunction
+from llm import ChatDelta, ChatMessage, ChatResponse, TokenUsage, ToolCall, ToolCallFunction, build_model_info
 from skills._store import SkillRecord, save_skill_record
 from skills._tool_categories import ToolCategory
 from agent_core.turn import get_conversation_id
@@ -33,7 +33,7 @@ def call(tool_name, **arguments):
     return ToolCall(function=ToolCallFunction(name=tool_name, arguments=arguments))
 
 
-class ScriptedProvider:
+class ScriptedClient:
     def __init__(self):
         self.scripts = defaultdict(deque)
         self.requests = []
@@ -53,7 +53,7 @@ class ScriptedProvider:
         }
         self.requests.append(request)
         if not self.scripts[kwargs["model"]]:
-            raise RuntimeError(f"Unscripted provider call: {kwargs['model']}")
+            raise RuntimeError(f"Unscripted client call: {kwargs['model']}")
         return request, self.scripts[kwargs["model"]].popleft()
 
     async def chat_stream(self, **kwargs):
@@ -75,11 +75,19 @@ class ScriptedProvider:
             raise step
         return step
 
+    async def list_models(self):
+        # Report each scripted model the way a Chat Completions provider
+        # would, so runs apply real model details.
+        return [build_model_info(name, "openai_chat", {"supports_thinking": True}) for name in self.scripts]
+
+    def invalidate_model_cache(self):
+        pass
+
 
 @dataclass
 class Harness:
     manager: AgentRuntime
-    provider: ScriptedProvider
+    client: ScriptedClient
     home: Path
     store: FileTaskStore
     config: object
@@ -118,7 +126,7 @@ class Harness:
         info, stream = await self.start(profile, **kwargs)
         records = await collect(stream)
         assert all(record.run_id == info.run_id for record in records)
-        matching = [r for r in self.provider.requests if r["conversation_id"] == info.conversation_id]
+        matching = [r for r in self.client.requests if r["conversation_id"] == info.conversation_id]
         assert matching[-1]["run_id"] == info.run_id
         assert [r.seq for r in records] == list(range(1, len(records) + 1))
         return [r.event for r in records]

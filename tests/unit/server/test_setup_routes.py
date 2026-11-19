@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 import server._setup_routes as setup_routes
-from agent_core.providers import ModelInfo
+from llm import ModelInfo
 from server._setup_routes import handle_complete, handle_defaults
 
 
@@ -57,7 +57,7 @@ async def test_repeated_setup_completion_does_not_offer_welcome_content(
     welcome_payload = MagicMock()
 
     monkeypatch.setattr(setup_routes, "load_settings", lambda: {"setup_complete": True})
-    monkeypatch.setattr(setup_routes, "get_provider", lambda _provider: object())
+    monkeypatch.setattr(setup_routes, "get_client", lambda _provider: object())
     monkeypatch.setattr(setup_routes, "save_settings", lambda values: values)
     monkeypatch.setattr(setup_routes, "apply_llm_config_to_profiles", MagicMock())
     monkeypatch.setattr(setup_routes, "mark_ready", MagicMock())
@@ -94,7 +94,7 @@ async def test_setup_keeps_a_context_size_only_when_the_model_lets_users_set_one
     apply_config = MagicMock()
 
     monkeypatch.setattr(setup_routes, "load_settings", lambda: {"setup_complete": True})
-    monkeypatch.setattr(setup_routes, "get_provider", lambda _provider: provider)
+    monkeypatch.setattr(setup_routes, "get_client", lambda _provider: provider)
     monkeypatch.setattr(setup_routes, "save_settings", lambda values: values)
     monkeypatch.setattr(setup_routes, "apply_llm_config_to_profiles", apply_config)
     monkeypatch.setattr(setup_routes, "mark_ready", MagicMock())

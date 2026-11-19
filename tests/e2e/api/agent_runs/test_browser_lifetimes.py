@@ -1,4 +1,4 @@
-"""Browser ownership through actual FakeProvider runs and public APIs."""
+"""Browser ownership through actual FakeClient runs and public APIs."""
 
 from uuid import uuid4
 

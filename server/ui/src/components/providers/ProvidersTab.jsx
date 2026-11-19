@@ -11,17 +11,6 @@ import { invalidateModelCache } from '../ModelPicker.jsx';
 import AddProviderModal from './AddProviderModal.jsx';
 import styles from './ProvidersTab.module.css';
 
-// Per-name display data. Same labels the backend uses; icons chosen from
-// Bootstrap Icons that read at-a-glance for each provider kind.
-const PROVIDER_META = {
-    ollama: { label: 'Ollama', icon: 'bi-cpu' },
-    openai_compat: { label: 'OpenAI-compatible', icon: 'bi-hdd-network' },
-    anthropic: { label: 'Anthropic', icon: 'bi-cloud' },
-    openai: { label: 'OpenAI', icon: 'bi-cloud' },
-    openrouter: { label: 'OpenRouter', icon: 'bi-router' },
-    aperture: { label: 'Tailscale Aperture', icon: 'bi-diagram-3' },
-};
-
 // Backend status → shared status tone + user-facing label. The supervisor
 // reports brokered states (running / auth_failed / broken); direct
 // providers are always "configured" at rest and "connected" after a probe.
@@ -34,15 +23,22 @@ const STATUS_VIEW = {
     unreachable: { tone: 'warning', label: "Couldn't connect" },
 };
 
-function _meta(name) {
-    return PROVIDER_META[name] ?? { label: name, icon: 'bi-plug' };
+// Prefer the label the provider list carries; the catalog supplies the icon.
+// A provider whose kind the catalog leaves out still gets a generic icon.
+function _meta(provider, catalog) {
+    const entry = catalog.find(c => c.name === provider.name);
+    return {
+        label: provider.label || entry?.label || provider.name,
+        icon: entry?.icon || 'bi-plug',
+    };
 }
 function _statusView(status) {
     return STATUS_VIEW[status] ?? { tone: 'warning', label: 'Status unknown' };
 }
 
 export default function ProvidersTab() {
-    const { providersHook, features } = useAppData();
+    const { providersHook, providerCatalogHook } = useAppData();
+    const { catalog } = providerCatalogHook;
     const {
         providers,
         loading,
@@ -143,6 +139,7 @@ export default function ProvidersTab() {
                     <SplitPanel.List>
                         <ListPane
                             providers={providers}
+                            catalog={catalog}
                             statusOverrides={statusOverrides}
                             modelCounts={modelCounts}
                             selectedName={selectedName}
@@ -155,6 +152,7 @@ export default function ProvidersTab() {
                             <DetailPane
                                 key={selected.name}
                                 provider={selected}
+                                meta={_meta(selected, catalog)}
                                 status={statusOverrides[selected.name] || selected.status}
                                 modelCount={modelCounts[selected.name]}
                                 onSaved={(probeResult) => {
@@ -186,8 +184,8 @@ export default function ProvidersTab() {
 
             {modalOpen && (
                 <AddProviderModal
+                    providerCatalog={providerCatalogHook}
                     existingNames={providers.map(p => p.name)}
-                    apertureEnabled={!!features?.aperture}
                     onClose={() => setModalOpen(false)}
                     onAdded={handleAdded}
                 />
@@ -199,7 +197,7 @@ export default function ProvidersTab() {
 
 /* ── List pane ─────────────────────────────────────────────────────── */
 
-function ListPane({ providers, statusOverrides, modelCounts, selectedName, onSelect, onAdd }) {
+function ListPane({ providers, catalog, statusOverrides, modelCounts, selectedName, onSelect, onAdd }) {
     return (
         <>
             <SplitPanel.Header actions={
@@ -213,7 +211,7 @@ function ListPane({ providers, statusOverrides, modelCounts, selectedName, onSel
             }>Providers · {providers.length}</SplitPanel.Header>
             <div className={styles.listBody}>
                 {providers.map((p) => {
-                    const meta = _meta(p.name);
+                    const meta = _meta(p, catalog);
                     const effectiveStatus = statusOverrides[p.name] || p.status;
                     const view = _statusView(effectiveStatus);
                     const count = modelCounts[p.name];
@@ -242,8 +240,7 @@ function ListPane({ providers, statusOverrides, modelCounts, selectedName, onSel
 
 /* ── Detail pane ───────────────────────────────────────────────────── */
 
-function DetailPane({ provider, status, modelCount, onSaved, onTested, onRemove }) {
-    const meta = _meta(provider.name);
+function DetailPane({ provider, meta, status, modelCount, onSaved, onTested, onRemove }) {
     const view = _statusView(status);
     const isDirect = provider.kind === 'direct';
     const isAperture = provider.name === 'aperture';

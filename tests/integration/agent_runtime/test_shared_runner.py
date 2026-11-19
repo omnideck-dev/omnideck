@@ -1,4 +1,4 @@
-"""Shared application execution with the real FakeProvider instruction protocol."""
+"""Shared application execution with the real FakeClient instruction protocol."""
 
 import asyncio
 from copy import deepcopy
@@ -7,7 +7,7 @@ import pytest
 
 from agent_runtime import AgentRunRequest
 from conversations import load_events_jsonl, load_loaded_skills, list_conversations
-from providers._fake import FakeProvider
+from provider_catalog._fake import FakeClient
 from agent_core.turn._models import _current_execution
 from tasks import TaskExecutor
 from tools.memory import remember
@@ -19,7 +19,7 @@ async def _run(runtime, request):
     return await handle.wait()
 
 
-class ObservedFakeProvider(FakeProvider):
+class ObservedFakeClient(FakeClient):
     """Observe ownership and model inputs without replacing provider behavior."""
 
     def __init__(self, runtime):
@@ -81,8 +81,8 @@ async def test_shared_runner_preserves_delegation_ownership_and_real_tool_result
         runtime = h.manager
     else:
         runtime = h.manager
-    provider = ObservedFakeProvider(runtime)
-    monkeypatch.setattr("agent_runtime._factory.get_provider", lambda _: provider)
+    provider = ObservedFakeClient(runtime)
+    monkeypatch.setattr("agent_runtime._factory.get_client", lambda _: provider)
 
     if entry == "routine":
         output, _ = await executor.run(task_result, task)
@@ -131,8 +131,8 @@ async def test_spawn_tool_rejects_use_from_a_different_live_parent(harness, monk
     h.profile("child", skills=["ownership"], allow_spawn=True)
     h.profile("leaf")
     runtime = h.manager
-    provider = ObservedFakeProvider(runtime)
-    monkeypatch.setattr("agent_runtime._factory.get_provider", lambda _: provider)
+    provider = ObservedFakeClient(runtime)
+    monkeypatch.setattr("agent_runtime._factory.get_client", lambda _: provider)
     rejected = []
 
     async def use_parent_tool() -> str:
@@ -199,8 +199,8 @@ async def test_child_preparation_failure_leaves_no_unpaired_spawn_or_registered_
     h.profile("parent", allow_spawn=True)
     h.profile("child", provider="", model="")
     runtime = h.manager
-    provider = ObservedFakeProvider(runtime)
-    monkeypatch.setattr("agent_runtime._factory.get_provider", lambda _: provider)
+    provider = ObservedFakeClient(runtime)
+    monkeypatch.setattr("agent_runtime._factory.get_client", lambda _: provider)
 
     await _run(runtime, AgentRunRequest(
         conversation_id="child-setup-failure", profile_id="parent", attachments=None,

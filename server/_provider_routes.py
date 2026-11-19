@@ -3,6 +3,7 @@
 Three handlers:
 
 - ``GET /api/providers`` — list configured providers (direct + brokered).
+- ``GET /api/providers/catalog`` — the providers a user can connect right now.
 - ``POST /api/providers`` — add/configure a provider. For direct kinds
   (Ollama, Aperture, no-auth OpenAI-compatible) writes to ``settings.direct_providers``;
   for brokered kinds creates an ``llm_<name>`` model-provider connection via the
@@ -23,33 +24,19 @@ from aiohttp import web
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from brokering.supervisor_client import SupervisorError
-from providers import get_provider, normalize_base_url, reset_provider
-from agent_core.providers import ProviderError
+from llm import ProviderError
+from provider_catalog import (
+    PROVIDERS,
+    available_providers,
+    get_client,
+    normalize_base_url,
+    provider_available,
+    reset_client,
+)
 from server._brokering import supervisor_call as _supervisor_call
-from settings import _validate_base_url, aperture_enabled, load_settings, save_settings
+from settings import _validate_base_url, load_settings, save_settings
 
 logger = logging.getLogger(__name__)
-
-# Provider catalog. Anything else gets rejected at add time.
-_KNOWN_PROVIDERS: set[str] = {
-    "ollama",
-    "openai",
-    "anthropic",
-    "openrouter",
-    "openai_compat",
-    "aperture",
-}
-
-# Provider name → display label. Used for the integration's ``label`` field
-# on brokered creates and for surfacing the provider in the UI.
-_PROVIDER_LABELS: dict[str, str] = {
-    "ollama": "Ollama",
-    "openai": "OpenAI API",
-    "anthropic": "Anthropic API",
-    "openrouter": "OpenRouter",
-    "openai_compat": "OpenAI-compatible",
-    "aperture": "Tailscale Aperture",
-}
 
 # Patterns that could contain credentials — scrubbed before the message
 # leaves the process. Same shape as the model routes' sanitizer.
@@ -77,7 +64,8 @@ def _sanitize(msg: str) -> str:
 
 
 def _label(name: str) -> str:
-    return _PROVIDER_LABELS.get(name, name)
+    entry = PROVIDERS.get(name)
+    return entry.label if entry else name
 
 
 async def _brokered_provider_connections() -> list[dict[str, object]]:
@@ -86,10 +74,15 @@ async def _brokered_provider_connections() -> list[dict[str, object]]:
     return list(result["connections"])
 
 
-_APERTURE_DISABLED = "Tailscale Aperture is experimental. Turn it on in Settings under Experimental first."
+def _turned_off_error(name: str) -> web.Response:
+    return web.json_response(
+        {"error": f"{_label(name)} is experimental. Turn it on in Settings under Experimental first."},
+        status=403,
+    )
 
-# Direct providers that authenticate by network identity and take no API key.
-_KEYLESS_PROVIDERS: set[str] = {"aperture"}
+
+def _takes_no_key(name: str) -> bool:
+    return PROVIDERS[name].api_key == "none"
 
 
 def _keyless_error(name: str) -> web.Response:
@@ -97,11 +90,6 @@ def _keyless_error(name: str) -> web.Response:
         {"error": f"{_label(name)} does not use an API key"},
         status=400,
     )
-
-
-def _provider_available(name: str) -> bool:
-    """Experimental providers cannot be listed, added, or edited until switched on."""
-    return name != "aperture" or aperture_enabled()
 
 
 # ── GET ──────────────────────────────────────────────────────────────────
@@ -119,7 +107,7 @@ async def handle_list_providers(_request: web.Request) -> web.Response:
     providers: list[dict[str, object]] = []
 
     for name, entry in (settings.get("direct_providers") or {}).items():
-        if not _provider_available(name):
+        if not provider_available(name):
             continue
         providers.append({
             "name": name,
@@ -157,6 +145,23 @@ async def handle_list_providers(_request: web.Request) -> web.Response:
     })
 
 
+async def handle_provider_catalog(_request: web.Request) -> web.Response:
+    """Return the providers a user can connect right now, in display order."""
+    return web.json_response({"providers": [
+        {
+            "name": entry.name,
+            "label": entry.label,
+            "description": entry.description,
+            "icon": entry.icon,
+            "base_url": entry.base_url,
+            "api_key": entry.api_key,
+            "key_hint": entry.key_hint,
+            "url_hint": entry.url_hint,
+        }
+        for entry in available_providers()
+    ]})
+
+
 # ── POST ─────────────────────────────────────────────────────────────────
 
 
@@ -192,17 +197,17 @@ async def handle_add_provider(request: web.Request) -> web.Response:
         return web.json_response({"error": "Unknown or invalid field"}, status=400)
 
     name = spec.name
-    if name not in _KNOWN_PROVIDERS:
+    if name not in PROVIDERS:
         return web.json_response(
             {"error": f"Unknown provider: {name!r}. "
-                     f"Choose one of: {sorted(_KNOWN_PROVIDERS)}"},
+                     f"Choose one of: {sorted(PROVIDERS)}"},
             status=400,
         )
 
-    if not _provider_available(name):
-        return web.json_response({"error": _APERTURE_DISABLED}, status=403)
+    if not provider_available(name):
+        return _turned_off_error(name)
 
-    if name in _KEYLESS_PROVIDERS and spec.api_key:
+    if _takes_no_key(name) and spec.api_key:
         return _keyless_error(name)
     base_url = spec.base_url
     if base_url:
@@ -249,10 +254,10 @@ async def handle_add_provider(request: web.Request) -> web.Response:
         direct[name] = {"base_url": base_url}
         save_settings({"direct_providers": direct})
 
-    # Force the next get_provider(name) to re-build, then probe.
-    reset_provider(name)
+    # Force the next get_client(name) to re-build, then probe.
+    reset_client(name)
     try:
-        models = await get_provider(name).list_models()
+        models = await get_client(name).list_models()
     except ProviderError as exc:
         return web.json_response(
             {
@@ -299,7 +304,7 @@ async def handle_remove_provider(request: web.Request) -> web.Response:
     configured provider.
     """
     name = request.match_info["name"]
-    if name not in _KNOWN_PROVIDERS:
+    if name not in PROVIDERS:
         return web.json_response({"error": f"Unknown provider: {name!r}"}, status=400)
 
     settings = load_settings()
@@ -307,7 +312,7 @@ async def handle_remove_provider(request: web.Request) -> web.Response:
     if name in direct:
         del direct[name]
         save_settings({"direct_providers": direct})
-        reset_provider(name)
+        reset_client(name)
         return web.json_response({"ok": True})
 
     try:
@@ -331,7 +336,7 @@ async def handle_remove_provider(request: web.Request) -> web.Response:
                 )
             except SupervisorError as exc:
                 return web.json_response({"error": _sanitize(exc.message)}, status=400)
-            reset_provider(name)
+            reset_client(name)
             return web.json_response({"ok": True})
 
     return web.json_response({"error": f"Provider {name!r} is not configured"}, status=404)
@@ -359,10 +364,10 @@ async def handle_update_provider(request: web.Request) -> web.Response:
     probe is run; the response shape matches ``POST /api/providers``.
     """
     name = request.match_info["name"]
-    if name not in _KNOWN_PROVIDERS:
+    if name not in PROVIDERS:
         return web.json_response({"error": f"Unknown provider: {name!r}"}, status=400)
-    if not _provider_available(name):
-        return web.json_response({"error": _APERTURE_DISABLED}, status=403)
+    if not provider_available(name):
+        return _turned_off_error(name)
     try:
         body = await request.json()
     except (json.JSONDecodeError, UnicodeDecodeError):
@@ -380,7 +385,7 @@ async def handle_update_provider(request: web.Request) -> web.Response:
 
     if name in direct:
         # Direct kind — update the base_url.
-        if name in _KEYLESS_PROVIDERS and spec.api_key:
+        if _takes_no_key(name) and spec.api_key:
             return _keyless_error(name)
         if not spec.base_url:
             return web.json_response(
@@ -444,9 +449,9 @@ async def handle_update_provider(request: web.Request) -> web.Response:
         kind = "brokered"
         stored_base_url = None
 
-    reset_provider(name)
+    reset_client(name)
     try:
-        models = await get_provider(name).list_models()
+        models = await get_client(name).list_models()
     except Exception as exc:  # noqa: BLE001 - any failure here is "couldn't reach"
         return web.json_response(
             {
@@ -472,6 +477,7 @@ async def handle_update_provider(request: web.Request) -> web.Response:
 def register_provider_routes(app: web.Application) -> None:
     """Register provider API routes."""
     app.router.add_route("GET", "/api/providers", handle_list_providers)
+    app.router.add_route("GET", "/api/providers/catalog", handle_provider_catalog)
     app.router.add_route("POST", "/api/providers", handle_add_provider)
     app.router.add_route("PATCH", "/api/providers/{name}", handle_update_provider)
     app.router.add_route("DELETE", "/api/providers/{name}", handle_remove_provider)

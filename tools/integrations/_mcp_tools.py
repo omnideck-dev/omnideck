@@ -5,7 +5,7 @@ import json
 import re
 from typing import Any
 
-from agent_core.tools import SchemaTool
+from tool_schemas import SchemaTool
 from integrations.connection_cache import IntegrationConnection
 from integrations.discovery import DiscoveredOperation
 from integrations.service import integration_service

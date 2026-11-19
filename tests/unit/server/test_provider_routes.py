@@ -8,12 +8,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from agent_core.providers import ModelInfo
+from llm import ModelInfo
 from server._provider_routes import (
     _brokered_provider_connections,
     _sanitize,
     handle_add_provider,
     handle_list_providers,
+    handle_provider_catalog,
     handle_update_provider,
 )
 
@@ -85,8 +86,8 @@ async def test_brokered_provider_add_has_no_integration_permissions(monkeypatch)
             return [SimpleNamespace(model_dump=lambda: {"id": "gpt-test"})]
 
     monkeypatch.setattr("server._provider_routes._supervisor_call", _supervisor)
-    monkeypatch.setattr("server._provider_routes.get_provider", lambda _name: _Provider())
-    monkeypatch.setattr("server._provider_routes.reset_provider", lambda _name: None)
+    monkeypatch.setattr("server._provider_routes.get_client", lambda _name: _Provider())
+    monkeypatch.setattr("server._provider_routes.reset_client", lambda _name: None)
     request = MagicMock()
     request.json = AsyncMock(return_value={"name": "openai", "api_key": "sk-test"})
 
@@ -138,8 +139,8 @@ async def test_brokered_provider_update_uses_transactional_reconnect(monkeypatch
 
     monkeypatch.setattr("server._provider_routes._supervisor_call", _supervisor)
     monkeypatch.setattr("server._provider_routes.load_settings", lambda: {})
-    monkeypatch.setattr("server._provider_routes.get_provider", lambda _name: _Provider())
-    monkeypatch.setattr("server._provider_routes.reset_provider", lambda _name: None)
+    monkeypatch.setattr("server._provider_routes.get_client", lambda _name: _Provider())
+    monkeypatch.setattr("server._provider_routes.reset_client", lambda _name: None)
     request = MagicMock()
     request.match_info = {"name": "openai"}
     request.json = AsyncMock(return_value={"api_key": "sk-new"})
@@ -168,11 +169,11 @@ async def test_add_aperture_normalizes_and_stores_a_direct_provider() -> None:
     provider.list_models = AsyncMock(return_value=[ModelInfo(name="bedrock/claude")])
 
     with (
-        patch("server._provider_routes.aperture_enabled", return_value=True),
+        patch("provider_catalog._catalog.load_settings", return_value={"aperture_enabled": True}),
         patch("server._provider_routes.load_settings", return_value={"direct_providers": {}}),
         patch("server._provider_routes.save_settings") as save_settings,
-        patch("server._provider_routes.get_provider", return_value=provider),
-        patch("server._provider_routes.reset_provider"),
+        patch("server._provider_routes.get_client", return_value=provider),
+        patch("server._provider_routes.reset_client"),
     ):
         response = await handle_add_provider(request)
 
@@ -194,7 +195,7 @@ async def test_add_aperture_rejects_api_keys() -> None:
         "api_key": "not-needed",
     })
 
-    with patch("server._provider_routes.aperture_enabled", return_value=True):
+    with patch("provider_catalog._catalog.load_settings", return_value={"aperture_enabled": True}):
         response = await handle_add_provider(request)
 
     assert response.status == 400
@@ -210,7 +211,7 @@ async def test_add_aperture_is_refused_until_the_experiment_is_on() -> None:
     })
 
     with (
-        patch("server._provider_routes.aperture_enabled", return_value=False),
+        patch("provider_catalog._catalog.load_settings", return_value={"aperture_enabled": False}),
         patch("server._provider_routes.save_settings") as save_settings,
     ):
         response = await handle_add_provider(request)
@@ -227,7 +228,7 @@ async def test_update_aperture_is_refused_until_the_experiment_is_on() -> None:
     request.json = AsyncMock(return_value={"base_url": "http://ai.example.ts.net"})
 
     with (
-        patch("server._provider_routes.aperture_enabled", return_value=False),
+        patch("provider_catalog._catalog.load_settings", return_value={"aperture_enabled": False}),
         patch("server._provider_routes.save_settings") as save_settings,
     ):
         response = await handle_update_provider(request)
@@ -249,10 +250,49 @@ async def test_provider_list_shows_aperture_only_when_the_experiment_is_on(
     }
 
     with (
-        patch("server._provider_routes.aperture_enabled", return_value=enabled),
+        patch("provider_catalog._catalog.load_settings", return_value={"aperture_enabled": enabled}),
         patch("server._provider_routes.load_settings", return_value=settings),
         patch("server._provider_routes._brokered_provider_connections", new=AsyncMock(return_value=[])),
     ):
         response = await handle_list_providers(MagicMock())
 
     assert [provider["name"] for provider in json.loads(response.body)["providers"]] == expected
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("enabled", [False, True])
+async def test_catalog_lists_connectable_providers_in_display_order(enabled: bool) -> None:
+    with patch("provider_catalog._catalog.load_settings", return_value={"aperture_enabled": enabled}):
+        response = await handle_provider_catalog(MagicMock())
+
+    providers = json.loads(response.body)["providers"]
+    expected = ["ollama", "openai_compat", "anthropic", "openai", "openrouter"]
+    if enabled:
+        expected.insert(1, "aperture")
+    assert [provider["name"] for provider in providers] == expected
+    anthropic = next(provider for provider in providers if provider["name"] == "anthropic")
+    assert anthropic == {
+        "name": "anthropic",
+        "label": "Anthropic",
+        "description": "Claude models via API",
+        "icon": "bi-cloud",
+        "base_url": "none",
+        "api_key": "required",
+        "key_hint": "sk-ant-...",
+        "url_hint": None,
+    }
+
+
+@pytest.mark.unit
+async def test_add_rejects_a_key_for_providers_that_take_none() -> None:
+    request = MagicMock()
+    request.json = AsyncMock(return_value={
+        "name": "ollama",
+        "base_url": "http://localhost:11434",
+        "api_key": "not-needed",
+    })
+
+    response = await handle_add_provider(request)
+
+    assert response.status == 400
+    assert json.loads(response.body)["error"] == "Ollama does not use an API key"

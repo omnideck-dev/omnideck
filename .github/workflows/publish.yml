@@ -118,7 +118,7 @@ jobs:
   # Full-stack e2e against the image that was just built, by digest, before
   # any tag points at it — so a commit that fails here never becomes the image
   # anyone pulls. `just e2e` runs the app with MOCK_LLM=1 (in-process
-  # FakeProvider — no Ollama, GPU, or API keys) and drives the real UI with
+  # FakeClient — no Ollama, GPU, or API keys) and drives the real UI with
   # Playwright from the host. The image was built from this same commit, so its
   # baked source/deps/UI already match the checkout.
   e2e-tests:

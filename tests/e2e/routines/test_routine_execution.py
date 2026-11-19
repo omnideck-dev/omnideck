@@ -2,7 +2,7 @@
 
 The interactive agent creates the routine through the planning tool. The UI
 then triggers it, and the real background runner executes its task through the
-same FakeProvider used by the rest of the hermetic E2E suite.
+same FakeClient used by the rest of the hermetic E2E suite.
 """
 
 from __future__ import annotations

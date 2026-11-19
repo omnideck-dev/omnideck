@@ -7,8 +7,8 @@ import re
 
 from aiohttp import web
 
-from agent_core.providers import Provider
-from providers import get_provider
+from llm import ModelClient
+from provider_catalog import get_client
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +25,8 @@ def _sanitize(msg: str) -> str:
     return msg
 
 
-def _resolve_provider(request: web.Request) -> tuple[Provider | None, web.Response | None]:
-    """Resolve the ``?provider=`` query to a provider, or build an error response.
+def _resolve_client(request: web.Request) -> tuple[ModelClient | None, web.Response | None]:
+    """Resolve the ``?provider=`` query to its client, or build an error response.
 
     Exactly one of the two return values is non-None.
     """
@@ -34,7 +34,7 @@ def _resolve_provider(request: web.Request) -> tuple[Provider | None, web.Respon
     if not name:
         return None, web.json_response({"error": "provider query parameter is required"}, status=400)
     try:
-        return get_provider(name), None
+        return get_client(name), None
     except ValueError as exc:
         return None, web.json_response({"error": _sanitize(str(exc))}, status=400)
 
@@ -46,13 +46,13 @@ async def handle_list_models(request: web.Request) -> web.Response:
     if it's configured but unreachable, so the setup wizard / Providers page
     can show a clear message instead of a silent empty list.
     """
-    provider, err = _resolve_provider(request)
+    client, err = _resolve_client(request)
     if err is not None:
         return err
-    assert provider is not None
+    assert client is not None
     provider_name = request.query["provider"]
     try:
-        models = await provider.list_models()
+        models = await client.list_models()
     except Exception as exc:  # noqa: BLE001 - any failure means "couldn't reach the provider"
         safe_msg = _sanitize(str(exc))
         logger.warning("Provider %s error listing models: %s", provider_name, safe_msg)
@@ -65,11 +65,11 @@ async def handle_list_models(request: web.Request) -> web.Response:
 
 async def handle_refresh_models(request: web.Request) -> web.Response:
     """Invalidate the cached model list for ``?provider=X`` so the next fetch re-queries it."""
-    provider, err = _resolve_provider(request)
+    client, err = _resolve_client(request)
     if err is not None:
         return err
-    assert provider is not None
-    provider.invalidate_model_cache()
+    assert client is not None
+    client.invalidate_model_cache()
     return web.json_response({"ok": True})
 
 

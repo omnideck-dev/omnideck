@@ -10,9 +10,10 @@ APPLICATION_MODULES = {
     p.stem if p.is_file() else p.name
     for p in ROOT.iterdir()
     if (p.is_file() and p.suffix == ".py") or (p.is_dir() and (p / "__init__.py").exists())
-# Tool schemas are a reusable leaf dependency, not an application package.
-# Their own boundary test blocks every consumer, including the agent core.
-} - {"agent_core", "tool_schemas"}
+# Tool schemas and the model client library are reusable leaf dependencies,
+# not application packages. Their own boundary tests block every consumer,
+# including the agent core.
+} - {"agent_core", "llm", "tool_schemas"}
 
 
 def test_agent_core_imports_do_not_cross_into_application_packages():
@@ -36,7 +37,7 @@ def test_agent_core_imports_do_not_cross_into_application_packages():
 
 def test_agent_core_imports_and_executes_with_application_imports_blocked():
     # A fresh interpreter catches indirect imports hidden behind agent core package
-    # exports. Its provider is supplied by this consumer, with no app setup.
+    # exports. Its client is supplied by this consumer, with no app setup.
     code = r"""
 import asyncio
 import importlib
@@ -54,10 +55,10 @@ sys.meta_path.insert(0, ApplicationBlocker())
 import agent_core
 for module in pkgutil.walk_packages(agent_core.__path__, "agent_core."):
     importlib.import_module(module.name)
-from agent_core.providers import ChatResponse, ChatMessage
+from llm import ChatResponse, ChatMessage
 from agent_core.events import AgentEvent, UserMessagePayload, agent_span, publish_event
 
-class Provider:
+class Client:
     async def chat_stream(self, **kwargs):
         assert kwargs["messages"][-1]["content"] == "input"
         yield ChatResponse(message=ChatMessage(content="standalone output"), done_reason="stop")
@@ -69,7 +70,7 @@ async def main():
     context = agent_core.ExecutionContext(execution_id="root.test.1", conversation_id="standalone", run_id="run", event_sink=history, control=agent_core.ExecutionControl())
     async with agent_span(agent.name, agent_capabilities=capabilities, execution=context):
         publish_event(AgentEvent(payload=UserMessagePayload(type="user_message", content="input")))
-        result = await agent_core.AgentExecutor().execute(agent=agent, capabilities=capabilities, history=history, provider=Provider(), context=context)
+        result = await agent_core.AgentExecutor().execute(agent=agent, capabilities=capabilities, history=history, client=Client(), context=context)
     assert result.status == "success" and result.output == "standalone output"
 asyncio.run(main())
 """

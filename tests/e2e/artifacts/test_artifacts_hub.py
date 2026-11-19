@@ -1,6 +1,6 @@
 """E2E tests for the global Artifacts Hub.
 
-Every artifact here is produced through the real pipeline: the FakeProvider
+Every artifact here is produced through the real pipeline: the FakeClient
 drives the actual ``write_file`` + ``send_file`` tools, which emit a
 ``file_output`` event that the subscribed index writer records — exactly what
 happens when a model sends a file. The hub then reads those entries back over

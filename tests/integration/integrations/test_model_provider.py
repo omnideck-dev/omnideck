@@ -8,8 +8,8 @@ from aiohttp.test_utils import TestServer
 from brokering import supervisor_client
 from brokering.brokers.llm_proxy.catalog import ModelProviderCatalogEntry
 from brokering.drivers import BrokerDriver
-from agent_core.providers._models import ChatDelta, ChatResponse
-from agent_core.providers._openai import OpenAIProvider
+from llm._types import ChatDelta, ChatResponse
+from llm.clients._openai_chat import OpenAIChatClient
 
 
 async def test_model_requests_use_replaced_credentials_without_tool_grants(integration_app):
@@ -78,7 +78,7 @@ async def test_model_requests_use_replaced_credentials_without_tool_grants(integ
                     "auth_blob": {"api_key": "old-local-key"},
                 },
             )
-            provider = OpenAIProvider(proxy_socket=added["socket"])
+            provider = OpenAIChatClient(proxy_socket=added["socket"])
             proc = h.supervisor._registry.get(entry.slug).broker.proc
             messages = [{"role": "user", "content": "Hello"}]
             try:

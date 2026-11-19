@@ -7,15 +7,17 @@ import { OmnideckHostProvider } from '../../features/app/OmnideckHost.jsx';
 
 const refreshFeatures = vi.fn();
 const providersHook = { providers: [], refresh: vi.fn() };
+const providerCatalogHook = { catalog: [], refresh: vi.fn() };
 
 vi.mock('../../contexts/AppData.jsx', () => ({
-    useAppData: () => ({ providersHook, refreshFeatures }),
+    useAppData: () => ({ providersHook, providerCatalogHook, refreshFeatures }),
 }));
 
 describe('SystemSettings', () => {
     beforeEach(() => {
         providersHook.providers = [];
         providersHook.refresh.mockReset();
+        providerCatalogHook.refresh.mockReset();
         invalidateModelCache();
         refreshFeatures.mockReset();
         globalThis.fetch = vi.fn((url, init = {}) => {
@@ -83,7 +85,7 @@ describe('SystemSettings', () => {
         expect(toggle).toBeChecked();
     });
 
-    it('persists Tailscale Aperture and refreshes features and providers', async () => {
+    it('persists Tailscale Aperture and refreshes the provider catalog and list', async () => {
         await act(async () => {
             render(
                 <OmnideckHostProvider host={null}>
@@ -107,8 +109,9 @@ describe('SystemSettings', () => {
                 body: JSON.stringify({ aperture_enabled: true }),
             }),
         ));
-        await waitFor(() => expect(refreshFeatures).toHaveBeenCalledOnce());
+        await waitFor(() => expect(providerCatalogHook.refresh).toHaveBeenCalledOnce());
         expect(providersHook.refresh).toHaveBeenCalledOnce();
+        expect(refreshFeatures).not.toHaveBeenCalled();
         expect(toggle).toBeChecked();
     });
 
@@ -165,6 +168,8 @@ describe('SystemSettings', () => {
         expect(within(experimental).getByRole('switch', { name: 'Apps' })).toBeInTheDocument();
         expect(within(experimental).getByRole('switch', { name: 'Custom Tools' })).toBeInTheDocument();
 
+        expect(screen.getByText('Utility Models')).toBeInTheDocument();
+        expect(screen.queryByText('Model Defaults')).not.toBeInTheDocument();
         const models = screen.getByTestId('model-defaults-group');
         expect(within(models).getByText('Vision')).toBeInTheDocument();
         expect(within(models).getByText('Compaction')).toBeInTheDocument();
@@ -186,7 +191,7 @@ describe('SystemSettings', () => {
             compaction_options: {},
             title_provider: 'aperture',
             title_model: 'openai.gpt-5.6-luna',
-            role_output_caps: { vision: 512, compaction: 8192, title: 50 },
+            utility_output_caps: { vision: 512, compaction: 8192, title: 50 },
         };
         globalThis.fetch = vi.fn((url) => {
             if (url.startsWith('/api/models')) {

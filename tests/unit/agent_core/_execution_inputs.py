@@ -8,10 +8,10 @@ from agent_core.events._context import _context_stack, get_current_conversation
 from agent_core.turn import ExecutionContext
 
 
-def execution_inputs(provider, max_parallel_tools=1):
+def execution_inputs(client, max_parallel_tools=1):
     stack = _context_stack.get()
     return dict(
-        provider=provider,
+        client=client,
         capabilities=get_active_agent_capabilities() or AgentCapabilities([]),
         max_parallel_tools=max_parallel_tools,
         context=ExecutionContext(

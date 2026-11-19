@@ -2,7 +2,8 @@
  * Provider-step UI coverage for the setup wizard.
  *
  * Verifies the conditional-field visibility on step 1: which input
- * fields show up when each provider option is selected. (The wizard's
+ * fields show up when each provider option is selected, and that the
+ * choices and labels come from the server's provider catalog. (The wizard's
  * end-to-end flow is exercised by the autouse e2e fixture; these are
  * focused unit tests so the conditional logic stays covered without
  * needing wizard re-entry, which doesn't exist anymore.)
@@ -11,10 +12,15 @@
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
+import { PROVIDER_CATALOG, PROVIDER_CATALOG_WITHOUT_APERTURE } from '../../__tests__/providerCatalogFixture.js';
+import useProviderCatalog from '../../hooks/useProviderCatalog.js';
 import SetupWizard from '../SetupWizard.jsx';
 
-function _mockFetch({ ollamaHost, providerResponse } = {}) {
+function _mockFetch({ ollamaHost, providerResponse, catalog = PROVIDER_CATALOG } = {}) {
     return vi.fn((url) => {
+        if (url === '/api/providers/catalog') {
+            return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: catalog }) });
+        }
         if (url === '/api/setup/defaults') {
             return Promise.resolve({
                 ok: true,
@@ -31,10 +37,16 @@ function _mockFetch({ ollamaHost, providerResponse } = {}) {
     });
 }
 
+function WizardWithCatalog(props) {
+    const providerCatalog = useProviderCatalog();
+    return <SetupWizard providerCatalog={providerCatalog} {...props} />;
+}
+
 async function _advanceToProviderStep() {
     // Step 0 is the welcome; clicking "Get Started" advances to the provider step.
     fireEvent.click(screen.getByRole('button', { name: 'Get Started' }));
     await screen.findByText('Choose your LLM provider');
+    await screen.findByText('Ollama');
 }
 
 describe('SetupWizard provider-step field visibility', () => {
@@ -43,11 +55,11 @@ describe('SetupWizard provider-step field visibility', () => {
     });
 
     it('shows only the Ollama URL field when Ollama is selected', async () => {
-        const { container } = render(<SetupWizard onComplete={vi.fn()} />);
+        const { container } = render(<WizardWithCatalog onComplete={vi.fn()} />);
         await _advanceToProviderStep();
 
         await act(async () => {
-            fireEvent.click(screen.getByText('Ollama (local)'));
+            fireEvent.click(screen.getByText('Ollama'));
         });
 
         expect(container.querySelector('#ollama-url')).toBeInTheDocument();
@@ -59,11 +71,11 @@ describe('SetupWizard provider-step field visibility', () => {
 
     it('prefills the Ollama URL from OLLAMA_HOST setup defaults', async () => {
         globalThis.fetch = _mockFetch({ ollamaHost: 'http://host-gateway:11434' });
-        render(<SetupWizard onComplete={vi.fn()} />);
+        render(<WizardWithCatalog onComplete={vi.fn()} />);
         await _advanceToProviderStep();
 
         await act(async () => {
-            fireEvent.click(screen.getByText('Ollama (local)'));
+            fireEvent.click(screen.getByText('Ollama'));
         });
 
         expect(await screen.findByDisplayValue('http://host-gateway:11434')).toBeInTheDocument();
@@ -71,11 +83,11 @@ describe('SetupWizard provider-step field visibility', () => {
     });
 
     it('does not default Ollama to localhost when OLLAMA_HOST is missing', async () => {
-        render(<SetupWizard onComplete={vi.fn()} />);
+        render(<WizardWithCatalog onComplete={vi.fn()} />);
         await _advanceToProviderStep();
 
         await act(async () => {
-            fireEvent.click(screen.getByText('Ollama (local)'));
+            fireEvent.click(screen.getByText('Ollama'));
         });
 
         const input = screen.getByLabelText('Ollama URL');
@@ -85,11 +97,11 @@ describe('SetupWizard provider-step field visibility', () => {
     });
 
     it('prompts for a URL and does not probe Ollama when no host is configured', async () => {
-        render(<SetupWizard onComplete={vi.fn()} />);
+        render(<WizardWithCatalog onComplete={vi.fn()} />);
         await _advanceToProviderStep();
 
         await act(async () => {
-            fireEvent.click(screen.getByText('Ollama (local)'));
+            fireEvent.click(screen.getByText('Ollama'));
         });
         await act(async () => {
             fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
@@ -108,11 +120,11 @@ describe('SetupWizard provider-step field visibility', () => {
                 json: () => Promise.resolve({ message: 'Could not connect to Ollama' }),
             },
         });
-        render(<SetupWizard onComplete={vi.fn()} />);
+        render(<WizardWithCatalog onComplete={vi.fn()} />);
         await _advanceToProviderStep();
 
         await act(async () => {
-            fireEvent.click(screen.getByText('Ollama (local)'));
+            fireEvent.click(screen.getByText('Ollama'));
         });
         await screen.findByDisplayValue('http://host-gateway:11434');
         await act(async () => {
@@ -125,11 +137,11 @@ describe('SetupWizard provider-step field visibility', () => {
     });
 
     it('shows the URL and optional API key when OpenAI-compatible is selected', async () => {
-        const { container } = render(<SetupWizard onComplete={vi.fn()} />);
+        const { container } = render(<WizardWithCatalog onComplete={vi.fn()} />);
         await _advanceToProviderStep();
 
         await act(async () => {
-            fireEvent.click(screen.getByText('OpenAI-compatible endpoint'));
+            fireEvent.click(screen.getByText('OpenAI-compatible'));
         });
 
         expect(container.querySelector('#compat-url')).toBeInTheDocument();
@@ -139,16 +151,28 @@ describe('SetupWizard provider-step field visibility', () => {
         expect(container.querySelector('#cloud-key')).not.toBeInTheDocument();
     });
 
-    it('hides Aperture until the experimental switch is on', async () => {
-        render(<SetupWizard onComplete={vi.fn()} />);
+    it('lists the provider choices with catalog labels and descriptions', async () => {
+        render(<WizardWithCatalog onComplete={vi.fn()} />);
+        await _advanceToProviderStep();
+
+        const names = Array.from(document.querySelectorAll('[aria-pressed]'))
+            .map((card) => card.querySelector('span:not([aria-hidden])').textContent);
+        expect(names).toEqual(['Ollama', 'Tailscale Aperture', 'OpenAI-compatible', 'Cloud API']);
+        expect(screen.getByText('Run models on your own machine')).toBeInTheDocument();
+        expect(screen.getByText('Anthropic, OpenAI, or OpenRouter')).toBeInTheDocument();
+    });
+
+    it('hides Aperture when the catalog does not list it', async () => {
+        globalThis.fetch = _mockFetch({ catalog: PROVIDER_CATALOG_WITHOUT_APERTURE });
+        render(<WizardWithCatalog onComplete={vi.fn()} />);
         await _advanceToProviderStep();
 
         expect(screen.queryByText('Tailscale Aperture')).not.toBeInTheDocument();
-        expect(screen.getByText('Ollama (local)')).toBeInTheDocument();
+        expect(screen.getByText('Ollama')).toBeInTheDocument();
     });
 
     it('asks Aperture for only its gateway URL', async () => {
-        const { container } = render(<SetupWizard apertureEnabled onComplete={vi.fn()} />);
+        const { container } = render(<WizardWithCatalog onComplete={vi.fn()} />);
         await _advanceToProviderStep();
 
         await act(async () => {
@@ -162,7 +186,7 @@ describe('SetupWizard provider-step field visibility', () => {
     });
 
     it('posts an Aperture direct-provider connection with no API key', async () => {
-        render(<SetupWizard apertureEnabled onComplete={vi.fn()} />);
+        render(<WizardWithCatalog onComplete={vi.fn()} />);
         await _advanceToProviderStep();
 
         fireEvent.click(screen.getByText('Tailscale Aperture'));
@@ -183,7 +207,7 @@ describe('SetupWizard provider-step field visibility', () => {
     });
 
     it('shows the provider select and API key when Cloud API is selected', async () => {
-        const { container } = render(<SetupWizard onComplete={vi.fn()} />);
+        const { container } = render(<WizardWithCatalog onComplete={vi.fn()} />);
         await _advanceToProviderStep();
 
         await act(async () => {
@@ -197,16 +221,60 @@ describe('SetupWizard provider-step field visibility', () => {
         expect(container.querySelector('#compat-key')).not.toBeInTheDocument();
     });
 
-    it('Cloud API offers Anthropic, OpenAI, and OpenRouter as choices', async () => {
-        const { container } = render(<SetupWizard onComplete={vi.fn()} />);
+    it('Cloud API offers the catalog providers that need a key, in catalog order', async () => {
+        const { container } = render(<WizardWithCatalog onComplete={vi.fn()} />);
         await _advanceToProviderStep();
 
         await act(async () => {
             fireEvent.click(screen.getByText('Cloud API'));
         });
 
+        expect(screen.getByLabelText('API Key')).toHaveAttribute('placeholder', 'sk-ant-...');
+        fireEvent.click(container.querySelector('#cloud-provider'));
+        const options = screen.getAllByRole('option');
+        expect(options.map((option) => option.dataset.value)).toEqual(['anthropic', 'openai', 'openrouter']);
+        ['Anthropic', 'OpenAI', 'OpenRouter'].forEach((label, i) => expect(options[i]).toHaveTextContent(label));
+    });
+
+    it('builds the cloud choices from whatever the catalog lists', async () => {
+        globalThis.fetch = _mockFetch({
+            catalog: PROVIDER_CATALOG.filter((c) => c.name !== 'anthropic'),
+        });
+        const { container } = render(<WizardWithCatalog onComplete={vi.fn()} />);
+        await _advanceToProviderStep();
+
+        expect(screen.getByText('OpenAI or OpenRouter')).toBeInTheDocument();
+        await act(async () => {
+            fireEvent.click(screen.getByText('Cloud API'));
+        });
+
         fireEvent.click(container.querySelector('#cloud-provider'));
         const values = screen.getAllByRole('option').map((option) => option.dataset.value);
-        expect(values).toEqual(['anthropic', 'openai', 'openrouter']);
+        expect(values).toEqual(['openai', 'openrouter']);
+        fireEvent.change(screen.getByLabelText('API Key'), { target: { value: 'sk-test' } });
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+        });
+
+        expect(globalThis.fetch).toHaveBeenCalledWith('/api/providers', expect.objectContaining({
+            body: JSON.stringify({ name: 'openai', api_key: 'sk-test' }),
+        }));
+    });
+
+    it('sends the catalog URL hint when the OpenAI-compatible URL is left blank', async () => {
+        render(<WizardWithCatalog onComplete={vi.fn()} />);
+        await _advanceToProviderStep();
+
+        await act(async () => {
+            fireEvent.click(screen.getByText('OpenAI-compatible'));
+        });
+        expect(screen.getByLabelText('Server URL')).toHaveAttribute('placeholder', 'http://localhost:1234/v1');
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+        });
+
+        expect(globalThis.fetch).toHaveBeenCalledWith('/api/providers', expect.objectContaining({
+            body: JSON.stringify({ name: 'openai_compat', base_url: 'http://localhost:1234/v1' }),
+        }));
     });
 });

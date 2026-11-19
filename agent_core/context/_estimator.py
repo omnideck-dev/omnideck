@@ -13,7 +13,7 @@ import json
 from collections.abc import Callable
 from typing import Any
 
-from agent_core.tools import estimate_tool_tokens
+from tool_schemas import estimate_tool_tokens
 
 # Average chars per token across English-heavy LLM tokenizers.
 _CHARS_PER_TOKEN = 4

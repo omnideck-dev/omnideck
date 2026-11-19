@@ -7,8 +7,7 @@ to generate concise titles (3-5 words) that capture the essence of the conversat
 
 import logging
 
-from providers import get_provider, resolve_role_options
-from settings import load_settings
+from utility_models import prepare_utility_call
 
 logger = logging.getLogger(__name__)
 
@@ -32,29 +31,24 @@ async def generate_conversation_title(first_message: str) -> str:
         A generated title string (3-5 words recommended).
     """
     try:
-        settings = load_settings()
-        title_model = settings.get("title_model")
-        title_provider = settings.get("title_provider")
-        if not title_model or not title_provider:
+        # Titles are tiny, so the call caps output. Sampling stays
+        # provider-native; some reasoning models reject temperature overrides.
+        call = await prepare_utility_call("title")
+        if call is None:
             logger.debug("No title model/provider configured, skipping title generation")
             return _truncate_for_title(first_message)
-
-        provider = get_provider(title_provider)
 
         messages = [
             {"role": "system", "content": _TITLE_GENERATION_PROMPT},
             {"role": "user", "content": f"Generate a title for this conversation: {first_message}"}
         ]
 
-        # Titles are tiny, so cap output. Sampling stays provider-native; some
-        # reasoning models reject temperature overrides entirely.
-        request = await resolve_role_options(provider, title_model, "title")
-
-        response = await provider.chat(
-            model=title_model,
+        response = await call.client.chat(
+            model=call.model,
             messages=messages,
-            options=request.options,
-            think=request.think,
+            options=call.options,
+            think=call.think,
+            model_info=call.model_info,
         )
         
         if response and response.message and response.message.content:

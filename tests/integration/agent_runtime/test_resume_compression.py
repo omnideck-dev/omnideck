@@ -21,7 +21,7 @@ _RESUME_PATH = "/api/conversations/sessions/contract/resume"
 @pytest.fixture
 async def resume_http(harness, aiohttp_client):
     harness.profile()
-    harness.provider.plan("leaf", reply("Saved answer: résumé 🧭\n" * 4000))
+    harness.client.plan("leaf", reply("Saved answer: résumé 🧭\n" * 4000))
     await harness.run(message="Keep the full answer when reopening this conversation.")
     app = web.Application()
     app[AGENT_RUNTIME_KEY] = harness.manager

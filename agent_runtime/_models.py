@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 from agent_core.turn import ExecutionResult
-from agent_core.providers import TokenUsage
+from llm import TokenUsage
 from agent_core.events import FileOutputPayload
 
 from agent_core.events import AgentEvent

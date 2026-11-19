@@ -6,7 +6,7 @@ import pytest
 
 from agent_core.agent_capabilities import AgentCapabilities
 from agent_core.context import ContextManager, ConversationHistory, TriggerPoint
-from agent_core.providers import ChatMessage, ChatResponse, TokenUsage
+from llm import ChatMessage, ChatResponse, TokenUsage
 
 
 def _empty_state() -> AgentCapabilities:

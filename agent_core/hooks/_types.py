@@ -8,7 +8,7 @@ synchronous, matching the executor's dispatch contract.
 from typing import Any, Protocol, TypeAlias
 
 from agent_core.context import ConversationHistory
-from agent_core.providers import ChatResponse
+from llm import ChatResponse
 
 
 class TurnStartHook(Protocol):

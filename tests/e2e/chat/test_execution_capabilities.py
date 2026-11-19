@@ -62,7 +62,7 @@ def test_child_load_does_not_grant_tools_to_parent(page: Page):
                 profile_id=parent["id"],
             )
             assert "child-capability-proof" in tool_results(first, "run_bash_cmd")[0]["content"]
-            # FakeProvider auto-loads missing tool skills, including for MODEL
+            # FakeClient auto-loads missing tool skills, including for MODEL
             # scripts. Explicitly request the load and verify it is fresh; an
             # inherited or persisted child skill would report already loaded.
             second = run_turn(

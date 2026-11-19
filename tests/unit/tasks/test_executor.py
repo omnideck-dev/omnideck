@@ -8,7 +8,7 @@ import pytest
 from agents import AgentProfile
 from agent_runtime import RunResult
 from agent_core.events import FileOutputPayload
-from agent_core.providers import TokenUsage
+from llm import TokenUsage
 from agent_core.turn import ExecutionResult, ToolLoopError
 from tasks._executor import TaskExecutor
 from tasks._models import Routine, Run, Task, TaskResult

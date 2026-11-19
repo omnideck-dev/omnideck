@@ -65,8 +65,8 @@ async def describe_image(
 
     encoded = base64.b64encode(raw).decode("ascii")
 
-    from agent_core.providers import ProviderError
-    from providers import vision_generate
+    from llm import ProviderError
+    from utility_models import vision_generate
 
     try:
         answer = await vision_generate(prompt, encoded, media_type=content_type or "image/png")

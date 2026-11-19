@@ -20,7 +20,7 @@ from tests.unit.agent_core._execution_inputs import execution_inputs
 from agent_core.context import ConversationHistory
 from agent_core.events import agent_span
 from agent_core.agent_capabilities import AgentCapabilities
-from agent_core.providers._models import ChatMessage, ChatResponse, TokenUsage
+from llm._types import ChatMessage, ChatResponse, TokenUsage
 from agent_core.turn import AgentExecutor
 from agent_core.agent import Agent
 from tools.virtual_computer.models import ApplyPatchResult
@@ -32,7 +32,7 @@ def _make_response(
     tool_calls: list[dict[str, Any]] | None = None,
 ) -> ChatResponse:
     """Build a normalized ChatResponse for testing."""
-    from agent_core.providers._models import ToolCall, ToolCallFunction
+    from llm._types import ToolCall, ToolCallFunction
 
     tc_list = None
     if tool_calls:

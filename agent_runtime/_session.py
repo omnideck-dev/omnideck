@@ -14,7 +14,7 @@ from conversations import BrowserTabsWriter, ConversationScope, ConversationStor
 from agent_core.context import ConversationHistory
 from agent_core.control import ExecutionControl
 from agent_core.events import AgentEvent, FileOutputPayload, TurnEndPayload
-from agent_core.providers import TokenUsage
+from llm import TokenUsage
 from agent_core.turn import ExecutionContext, ExecutionResult, get_execution_context
 
 from ._models import AgentRunRequest, RunResult, RunSnapshot, SequencedEvent

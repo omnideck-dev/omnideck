@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from agent_core.providers._models import ModelInfo, ProviderError
+from llm._types import ModelInfo, ProviderError
 from server._model_routes import handle_list_models, handle_refresh_models
 
 
@@ -33,7 +33,7 @@ class TestHandleListModels:
 
     async def test_unknown_provider_is_400(self):
         """A provider name that can't be resolved → 400, not 503."""
-        with patch("server._model_routes.get_provider", side_effect=ValueError("not configured")):
+        with patch("server._model_routes.get_client", side_effect=ValueError("not configured")):
             resp = await handle_list_models(_make_request())
         assert resp.status == 400
 
@@ -49,7 +49,7 @@ class TestHandleListModels:
             ),
             ModelInfo(name="gpt-3.5"),
         ]
-        with patch("server._model_routes.get_provider") as mock_get:
+        with patch("server._model_routes.get_client") as mock_get:
             mock_provider = AsyncMock()
             mock_provider.list_models.return_value = models
             mock_get.return_value = mock_provider
@@ -65,7 +65,7 @@ class TestHandleListModels:
     async def test_provider_error_message_is_sanitized(self):
         """Provider errors pass through with credential-shaped tokens redacted."""
         exc = ProviderError("Connection refused to api.key=sk-secret-abc123", retryable=True)
-        with patch("server._model_routes.get_provider") as mock_get:
+        with patch("server._model_routes.get_client") as mock_get:
             mock_provider = AsyncMock()
             mock_provider.list_models.side_effect = exc
             mock_get.return_value = mock_provider
@@ -86,7 +86,7 @@ class TestHandleListModels:
             retryable=False,
             status_code=401,
         )
-        with patch("server._model_routes.get_provider") as mock_get:
+        with patch("server._model_routes.get_client") as mock_get:
             mock_provider = AsyncMock()
             mock_provider.list_models.side_effect = exc
             mock_get.return_value = mock_provider
@@ -101,7 +101,7 @@ class TestHandleListModels:
 
     async def test_generic_exception_message_is_sanitized(self):
         """Unexpected exceptions also pass through a sanitized message."""
-        with patch("server._model_routes.get_provider") as mock_get:
+        with patch("server._model_routes.get_client") as mock_get:
             mock_provider = AsyncMock()
             mock_provider.list_models.side_effect = RuntimeError("internal error with Bearer sk-top-secret")
             mock_get.return_value = mock_provider
@@ -122,7 +122,7 @@ class TestHandleRefreshModels:
 
     async def test_calls_invalidate_model_cache(self):
         """POST /api/models/refresh invalidates the provider's model cache."""
-        with patch("server._model_routes.get_provider") as mock_get:
+        with patch("server._model_routes.get_client") as mock_get:
             mock_provider = MagicMock()
             mock_get.return_value = mock_provider
 

@@ -27,7 +27,7 @@ from agent_core.events import (
     set_current_conversation,
 )
 from agent_core.agent_capabilities import AgentCapabilities
-from agent_core.providers._models import ChatMessage, ChatResponse, TokenUsage, ToolCall, ToolCallFunction
+from llm._types import ChatMessage, ChatResponse, TokenUsage, ToolCall, ToolCallFunction
 from agent_core.turn import AgentExecutor, turn_scope
 from agent_core.agent import Agent
 

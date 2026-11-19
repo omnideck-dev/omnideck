@@ -6,7 +6,7 @@ from collections.abc import Callable, Iterable
 from typing import Any
 import hashlib
 
-from agent_core.tools import SchemaTool, callable_to_json_schema
+from tool_schemas import SchemaTool, callable_to_json_schema
 
 from integrations.connection_cache import IntegrationConnection
 from tools.integrations._mcp_tools import build_mcp_tool

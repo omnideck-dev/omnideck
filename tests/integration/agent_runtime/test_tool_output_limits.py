@@ -1,4 +1,4 @@
-"""Real tools, FakeProvider, persisted history, and interruptible grep workers."""
+"""Real tools, FakeClient, persisted history, and interruptible grep workers."""
 
 import asyncio
 import json
@@ -8,12 +8,12 @@ import re
 import pytest
 
 from conversations import load_events_jsonl
-from providers._fake import FakeProvider
+from provider_catalog._fake import FakeClient
 from tests.e2e._protocol import call_tool, say, spawn
 from tools.virtual_computer import grep, read_file
 
 
-class RecordingFakeProvider(FakeProvider):
+class RecordingFakeClient(FakeClient):
     def __init__(self):
         super().__init__()
         self.requests = []
@@ -30,8 +30,8 @@ async def test_large_results_spill_before_persistence_and_followup_can_read_them
     harness, monkeypatch, tmp_path, tool, delegated,
 ):
     h = harness
-    provider = RecordingFakeProvider()
-    monkeypatch.setattr("agent_runtime._factory.get_provider", lambda _: provider)
+    provider = RecordingFakeClient()
+    monkeypatch.setattr("agent_runtime._factory.get_client", lambda _: provider)
     monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
     h.skill("files", grep, read_file)
     h.profile("leaf", skills=["files"], context_window=1_048_576)

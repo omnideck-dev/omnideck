@@ -1,4 +1,4 @@
-"""Exercise the public agent core directly with the real FakeProvider protocol."""
+"""Exercise the public agent core directly with the real FakeClient protocol."""
 
 import asyncio
 from copy import deepcopy
@@ -13,13 +13,13 @@ from agent_core.turn._models import _current_execution
 from agent_core.context import ConversationHistory
 from agent_core.events import AgentEvent, AgentStartedPayload, UserMessagePayload, publish_event
 from agent_core.hooks import LoadedSkillHook, NudgeHook
-from providers._fake import FakeProvider
+from provider_catalog._fake import FakeClient
 from agent_core.skills._registry import Skill
 from tests.e2e._protocol import call_tool, say
 
 
-class RecordingProvider(FakeProvider):
-    """Record requests at the model boundary, retaining FakeProvider behavior."""
+class RecordingProvider(FakeClient):
+    """Record requests at the model boundary, retaining FakeClient behavior."""
 
     def __init__(self):
         self.requests = []
@@ -81,12 +81,12 @@ async def test_standalone_executor_loads_tools_and_guidance_for_next_request():
         call_tool("enable_skill") + call_tool("echo", value="verified") + say("done"), AgentCapabilities([enable_skill])
     )
     provider = RecordingProvider()
-    result = await AgentExecutor().execute(**inputs, provider=provider, hooks=[LoadedSkillHook()])
+    result = await AgentExecutor().execute(**inputs, client=provider, hooks=[LoadedSkillHook()])
 
     assert result.status == "success"
     assert result.output == "done"
     assert result.finish_reason is not None
-    assert result.usage.prompt_tokens == 0  # FakeProvider reports no token usage.
+    assert result.usage.prompt_tokens == 0  # FakeClient reports no token usage.
     assert calls == ["verified"]
     assert "echo" not in provider.requests[0]["tools"]
     assert "echo" in provider.requests[1]["tools"]
@@ -109,11 +109,11 @@ async def test_same_executor_keeps_concurrent_capabilities_control_and_events_is
     first = prepare(call_tool("pause") + say("first"), AgentCapabilities([pause]), identity="first")
     second = prepare(say("second"), identity="second")
     first_provider, second_provider = RecordingProvider(), RecordingProvider()
-    first_task = asyncio.create_task(executor.execute(**first, provider=first_provider))
+    first_task = asyncio.create_task(executor.execute(**first, client=first_provider))
     try:
         await asyncio.wait_for(reached.wait(), 5)
         first["context"].control.stop()
-        other = await executor.execute(**second, provider=second_provider)
+        other = await executor.execute(**second, client=second_provider)
     finally:
         release.set()
     stopped = await asyncio.wait_for(first_task, 5)
@@ -130,7 +130,7 @@ async def test_nudge_uses_supplied_inbox_and_is_consumed_once():
     inputs = prepare(say("original"))
     inputs["context"].control.nudge(say("nudged"))
     provider = RecordingProvider()
-    result = await AgentExecutor().execute(**inputs, provider=provider, hooks=[NudgeHook()])
+    result = await AgentExecutor().execute(**inputs, client=provider, hooks=[NudgeHook()])
     assert result.status == "success" and result.output == "nudged"
     assert inputs["context"].control.drain_nudges() == []
     assert any("nudged" in m.get("content", "") for m in provider.requests[0]["messages"])
@@ -140,7 +140,7 @@ async def test_stop_before_execution_makes_no_provider_request():
     inputs = prepare(say("never"))
     inputs["context"].control.stop()
     provider = RecordingProvider()
-    result = await AgentExecutor().execute(**inputs, provider=provider)
+    result = await AgentExecutor().execute(**inputs, client=provider)
     assert result.status == "stopped" and result.output is None
     assert provider.requests == []
     assert result.usage.prompt_tokens == 0
@@ -149,7 +149,7 @@ async def test_stop_before_execution_makes_no_provider_request():
 async def test_provider_failure_returns_partial_output_and_typed_error():
     inputs = prepare("<<PROVIDERFAIL mid>>quota exhausted<<END>>")
     provider = RecordingProvider()
-    result = await AgentExecutor().execute(**inputs, provider=provider)
+    result = await AgentExecutor().execute(**inputs, client=provider)
     assert result.status == "error"
     assert result.error and "quota exhausted" in result.error
     assert result.output
@@ -169,7 +169,7 @@ async def test_cancellation_restores_scoped_capabilities():
 
     async def execute_and_verify_cleanup():
         try:
-            return await AgentExecutor().execute(**inputs, provider=FakeProvider())
+            return await AgentExecutor().execute(**inputs, client=FakeClient())
         finally:
             assert get_active_agent_capabilities() is None
             assert _current_control.get() is None

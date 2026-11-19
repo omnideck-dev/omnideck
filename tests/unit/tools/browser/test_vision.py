@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from agent_core.providers import ProviderError
+from llm import ProviderError
 from browser.core.document import Document
 from browser.core.rendering import RenderedDocument
 from tools.browser import BrowserToolError
@@ -151,7 +151,7 @@ async def test_inspect_page_preserves_provider_error(monkeypatch):
     monkeypatch.setattr("tools.browser.vision.get_document", _make_fake_get_document(browser))
     cause = ProviderError("vision-model was retired (status code: 410)")
     generate = AsyncMock(side_effect=cause)
-    monkeypatch.setattr("providers.vision_generate", generate)
+    monkeypatch.setattr("utility_models.vision_generate", generate)
 
     with pytest.raises(BrowserToolError) as caught:
         await inspect_page("Describe the page", tab="1")
@@ -181,7 +181,7 @@ async def test_inspect_page_success(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(module, "get_document", _make_fake_get_document(browser))
     monkeypatch.setattr(settings_module, "load_settings", lambda: dict(_FAKE_SETTINGS))
 
-    with patch("providers.vision_generate", _fake_vision_generate):
+    with patch("utility_models.vision_generate", _fake_vision_generate):
         answer = await inspect_page("What is in the header?", tab="1")
 
     assert answer == "Mock answer"
@@ -242,7 +242,7 @@ async def test_inspect_page_ref_mode(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(module, "get_document", _make_fake_get_document(browser))
     monkeypatch.setattr(settings_module, "load_settings", lambda: dict(_FAKE_SETTINGS))
 
-    with patch("providers.vision_generate", _fake_vision_generate):
+    with patch("utility_models.vision_generate", _fake_vision_generate):
         answer = await inspect_page("Describe the hero", mode="ref", ref="7", tab="1")
 
     assert answer == "Mock answer"

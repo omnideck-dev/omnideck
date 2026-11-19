@@ -1,4 +1,4 @@
-"""Real FakeProvider, runner, conversation store, and browser pool ownership.
+"""Real FakeClient, runner, conversation store, and browser pool ownership.
 
 Only the Chromium host/session boundary is replaced; browser preparation,
 lookup, resource registration, release, delegation, and task execution are real.
@@ -14,7 +14,7 @@ from agent_runtime import AgentRunRequest, AgentRunner, AgentRuntime
 from browser.profile_store import BrowserProfileStore
 from browser.runtime import BrowserRuntime, get_browser
 from browser.session_pool import BrowserSessionPool
-from providers._fake import FakeProvider
+from provider_catalog._fake import FakeClient
 from tasks import TaskExecutor
 from tests.e2e._protocol import call_tool, fail, say, spawn
 
@@ -50,8 +50,8 @@ class BrowserHost:
 
 @pytest.fixture
 async def browsers(harness, monkeypatch, tmp_path):
-    provider = FakeProvider()
-    monkeypatch.setattr("agent_runtime._factory.get_provider", lambda _: provider)
+    provider = FakeClient()
+    monkeypatch.setattr("agent_runtime._factory.get_client", lambda _: provider)
     created = []
 
     def create(*, supplied_runner=False):
@@ -210,8 +210,8 @@ async def test_http_application_uses_its_own_browser_service_and_closes_it_after
     from server._agent_runtime import AGENT_RUNTIME_KEY
     from server._browser_runtime import BROWSER_RUNTIME_KEY
 
-    provider = FakeProvider()
-    monkeypatch.setattr("agent_runtime._factory.get_provider", lambda _: provider)
+    provider = FakeClient()
+    monkeypatch.setattr("agent_runtime._factory.get_client", lambda _: provider)
     apps = [create_app(), create_app()]
     hosts = []
     for app in apps:

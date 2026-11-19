@@ -8,7 +8,7 @@ from aiohttp.test_utils import TestClient, TestServer
 
 from agent_core.turn import get_execution_context
 from conversations import archive_conversation, load_events_jsonl
-from providers._fake import FakeProvider
+from provider_catalog._fake import FakeClient
 from server._task_routes import ROUTINE_SERVICE_KEY, register_task_routes
 from tasks import RoutineService, TaskExecutor, TaskRunner
 from tests.e2e._protocol import call_tool, say, spawn
@@ -17,7 +17,7 @@ from tests.e2e._protocol import call_tool, say, spawn
 @pytest.mark.parametrize("target", ["routine", "run"])
 async def test_deletion_awaits_owned_trees_and_preserves_unrelated_work(harness, monkeypatch, target):
     h = harness
-    monkeypatch.setattr("agent_runtime._factory.get_provider", lambda _: FakeProvider())
+    monkeypatch.setattr("agent_runtime._factory.get_client", lambda _: FakeClient())
     monkeypatch.setattr("server._task_routes.get_store", lambda: h.store)
     entered, cleaning = asyncio.Queue(), asyncio.Queue()
     release_work, release_cleanup = asyncio.Event(), asyncio.Event()
@@ -166,7 +166,7 @@ async def test_deletion_awaits_owned_trees_and_preserves_unrelated_work(harness,
 
 async def test_shutdown_waits_for_cleanup_already_started_by_deletion(harness, monkeypatch):
     h = harness
-    monkeypatch.setattr("agent_runtime._factory.get_provider", lambda _: FakeProvider())
+    monkeypatch.setattr("agent_runtime._factory.get_client", lambda _: FakeClient())
     entered, cleaning, release = (asyncio.Event() for _ in range(3))
 
     async def delayed_cleanup() -> str:
@@ -213,7 +213,7 @@ async def test_shutdown_waits_for_cleanup_already_started_by_deletion(harness, m
 async def test_store_deletes_history_and_preserves_references_for_retry(harness, monkeypatch, target):
     """The storage API cascades active/archived history without returning cleanup work."""
     h = harness
-    monkeypatch.setattr("agent_runtime._factory.get_provider", lambda _: FakeProvider())
+    monkeypatch.setattr("agent_runtime._factory.get_client", lambda _: FakeClient())
     h.profile()
     routine = h.store.create_routine("persistent owner", auto_run=False)
     h.store.create_task(routine.id, "one", say("first history"), agent_profile="leaf")
@@ -273,7 +273,7 @@ async def test_http_deletion_service_is_available_without_a_started_scheduler(ha
     from server.aiohttp_app import _configure_routines
 
     h = harness
-    monkeypatch.setattr("agent_runtime._factory.get_provider", lambda _: FakeProvider())
+    monkeypatch.setattr("agent_runtime._factory.get_client", lambda _: FakeClient())
     monkeypatch.setattr("tasks.get_store", lambda: h.store)
     monkeypatch.setattr("server.aiohttp_app.load_config", lambda: h.config)
     h.config.routines.enabled = enabled

@@ -8,7 +8,7 @@ from aiohttp import web
 
 from conversations import load_events_jsonl
 from agent_core.events import get_current_agent_id
-from agent_core.providers import ChatDelta, ProviderError
+from llm import ChatDelta, ProviderError
 from agent_core.turn import get_conversation_id
 from server._agent_run_routes import register_agent_run_routes
 from server._agent_runtime import AGENT_RUNTIME_KEY
@@ -34,9 +34,9 @@ async def test_http_disconnect_replay_control_and_next_turn(harness, aiohttp_cli
 
     h.skill("checkpoint", checkpoint)
     h.profile(skills=["checkpoint"])
-    h.provider.plan("leaf", stream)
+    h.client.plan("leaf", stream)
     if outcome == "success":
-        h.provider.plan("leaf", reply("finished"))
+        h.client.plan("leaf", reply("finished"))
     app = web.Application()
     app[AGENT_RUNTIME_KEY] = h.manager
     register_agent_run_routes(app)
@@ -86,7 +86,7 @@ async def test_http_disconnect_replay_control_and_next_turn(harness, aiohttp_cli
     assert [r["content"] for r in persisted if r["type"] == "iteration"][0] == expected_partial
     assert types.count("error") == (1 if outcome == "error" else 0)
     if outcome == "success":
-        assert "new priority" in json.dumps(h.provider.requests[-1]["messages"])
+        assert "new priority" in json.dumps(h.client.requests[-1]["messages"])
         assert len([e for e in persisted if e["type"] == "user_message" and e.get("is_nudge")]) == 1
     assert get_conversation_id() is None
     assert get_current_agent_id() is None
@@ -95,7 +95,7 @@ async def test_http_disconnect_replay_control_and_next_turn(harness, aiohttp_cli
 
     # The same conversation must be usable after every terminal outcome. This
     # also detects leaked stop signals, observers, or duplicate persistence.
-    h.provider.plan("leaf", reply("fresh turn"))
+    h.client.plan("leaf", reply("fresh turn"))
     later = await h.run(message="continue")
     assert_lifecycle(later, {"LEAF": "success"})
     all_persisted = load_events_jsonl("contract")
@@ -121,8 +121,8 @@ async def test_parallel_children_overlap_without_crossing_state_or_results(harne
     for name in entered:
         h.skill(name)
         h.profile(name, skills=[name])
-        h.provider.plan(name, child_stream(name))
-    h.provider.plan("root", reply(calls=[
+        h.client.plan(name, child_stream(name))
+    h.client.plan("root", reply(calls=[
         call("spawn_agent", profile=name, agent_name=name.upper(), instructions=f"{name} private request")
         for name in entered
     ]), reply("merged"))
@@ -151,7 +151,7 @@ async def test_parallel_children_overlap_without_crossing_state_or_results(harne
     children = {p.agent_name: p for p in payloads(events, "agent_started") if p.agent_name != "ROOT"}
     assert children["LEFT"].agent_id != children["RIGHT"].agent_id
     for name, other in (("left", "right"), ("right", "left")):
-        request = next(r for r in h.provider.requests if r["model"] == name)
+        request = next(r for r in h.client.requests if r["model"] == name)
         assert request["agent_id"] == children[name.upper()].agent_id
         assert f"guidance:{name}" in request["messages"][0]["content"]
         assert f"guidance:{other}" not in json.dumps(request["messages"])
@@ -161,5 +161,5 @@ async def test_parallel_children_overlap_without_crossing_state_or_results(harne
     assert len(spawned) == 2
     for result in payloads(events, "tool_result"):
         assert result.content == f"{spawned[result.tool_call_id]} answer"
-    root_final = next(r for r in reversed(h.provider.requests) if r["model"] == "root")
+    root_final = next(r for r in reversed(h.client.requests) if r["model"] == "root")
     assert {m["content"] for m in root_final["messages"] if m["role"] == "tool"} == {"left answer", "right answer"}

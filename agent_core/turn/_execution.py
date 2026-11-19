@@ -20,7 +20,7 @@ from agent_core.events import (
     ToolResultPayload,
     publish_event,
 )
-from agent_core.providers import ChatDelta, ChatResponse, ProviderError, ToolCall, Provider, TokenUsage
+from llm import ChatDelta, ChatResponse, ModelClient, ModelInfo, ProviderError, TokenUsage, ToolCall
 from agent_core.agent_capabilities import AgentCapabilities
 from agent_core.tools import _execute_tool_call
 
@@ -82,13 +82,14 @@ def _persist_partial(
 
 
 async def _stream_chat_with_retries(
-    provider: Any,
+    client: ModelClient,
     *,
     model: str,
     messages: list[dict[str, Any]],
     tools: list[Callable[..., Any]],
     options: dict[str, Any] | None = None,
     think: bool = False,
+    model_info: ModelInfo | None = None,
     retries: int = 2,
 ) -> AsyncGenerator[ChatDelta | ChatResponse, None]:
     """Yield ChatDelta tokens, then the final ChatResponse. Retries on failure.
@@ -102,36 +103,38 @@ async def _stream_chat_with_retries(
     while attempt < total_attempts:
         try:
             if attempt == 0:
-                async for chunk in provider.chat_stream(
+                async for chunk in client.chat_stream(
                     model=model,
                     messages=messages,
                     options=options,
                     tools=tools,
                     think=think,
+                    model_info=model_info,
                 ):
                     yield chunk
             else:
                 # Retry with non-streaming to avoid content duplication
-                yield await provider.chat(
+                yield await client.chat(
                     model=model,
                     messages=messages,
                     options=options,
                     tools=tools,
                     think=think,
+                    model_info=model_info,
                 )
             return
         except ProviderError as exc:
             attempt += 1
             if not exc.retryable:
                 logger.error(
-                    "provider.chat_stream failed (non-retryable): %s | model=%s",
+                    "client.chat_stream failed (non-retryable): %s | model=%s",
                     exc,
                     model,
                 )
                 raise
             delay = min(2**attempt, 8)
             logger.warning(
-                "provider.chat_stream failed (attempt %s/%s, retryable, backoff %ds): %s | model=%s",
+                "client.chat_stream failed (attempt %s/%s, retryable, backoff %ds): %s | model=%s",
                 attempt,
                 total_attempts,
                 delay,
@@ -143,7 +146,7 @@ async def _stream_chat_with_retries(
             await asyncio.sleep(delay)
         except Exception as exc:
             logger.error(
-                "provider.chat_stream failed (unexpected): %s | model=%s",
+                "client.chat_stream failed (unexpected): %s | model=%s",
                 exc,
                 model,
             )
@@ -207,7 +210,7 @@ class AgentExecutor:
         history: ConversationHistory,
         agent: Agent,
         capabilities: AgentCapabilities,
-        provider: Provider,
+        client: ModelClient,
         context: ExecutionContext,
         hooks: Sequence[Hook] | None = None,
         max_parallel_tools: int = 1,
@@ -219,7 +222,7 @@ class AgentExecutor:
                 history=history,
                 agent=agent,
                 capabilities=capabilities,
-                provider=provider,
+                client=client,
                 hooks=hooks or [],
                 max_parallel_tools=max_parallel_tools,
             )
@@ -230,7 +233,7 @@ class AgentExecutor:
         history: ConversationHistory,
         agent: Agent,
         capabilities: AgentCapabilities,
-        provider: Provider,
+        client: ModelClient,
         hooks: Sequence[Hook],
         max_parallel_tools: int,
     ) -> ExecutionResult:
@@ -272,12 +275,13 @@ class AgentExecutor:
                     response: ChatResponse | None = None
                     streamed_deltas = False
                     async for chunk in _stream_chat_with_retries(
-                        provider,
+                        client,
                         model=agent.model,
                         messages=history.messages,
                         tools=capabilities.tools,
                         options=agent.options,
                         think=agent.think,
+                        model_info=agent.model_info,
                     ):
                         if isinstance(chunk, ChatDelta):
                             streamed_deltas = True

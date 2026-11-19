@@ -18,7 +18,7 @@ from agent_runtime._factory import _base_tools
 from agent_runtime._spawn import make_spawn_tool
 from skills._tool_categories import _custom_tools_category
 from skills._tool_categories import _static_tool_categories, tool_categories
-from agent_core.tools._callable_schema import callable_to_json_schema
+from tool_schemas import callable_to_json_schema
 from tools.integrations._tool_resolution import _BUILDERS
 from integrations.connection_cache import IntegrationConnection
 

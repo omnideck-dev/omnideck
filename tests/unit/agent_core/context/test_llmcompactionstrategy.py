@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import contextmanager
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -17,7 +19,19 @@ from agent_runtime._compaction import (
     _serialize_messages,
 )
 from agent_core.events import CompactionPayload
-from agent_core.providers import ModelInfo, ProviderError
+from llm import ModelInfo, ProviderError
+from utility_models import prepare_utility_call
+
+
+@contextmanager
+def _compaction_model(client: Any = None, **options: Any):
+    """Configure "test-model" on "test-provider" as the compaction model."""
+    if client is None:
+        client = MagicMock(list_models=AsyncMock(return_value=[]))
+    settings = {"compaction_provider": "test-provider", "compaction_model": "test-model", "compaction_options": options}
+    with patch("utility_models._calls.load_settings", return_value=settings), \
+         patch("utility_models._calls.get_client", return_value=client):
+        yield client
 
 
 def _make_stats(fill_ratio: float = 0.8) -> ContextStats:
@@ -35,22 +49,18 @@ async def test_compaction_chunk_size_uses_discovered_model_context():
     strategy = LLMCompactionStrategy(summary_model="large-context-model")
     messages = [{"role": "user", "content": "x" * 40_000}]
 
-    with patch.object(strategy, "_call_summarizer", new_callable=AsyncMock) as call, \
-         patch("agent_runtime._compaction.load_settings", return_value={
-             "compaction_provider": "test-provider",
-             "compaction_model": "large-context-model",
-             "compaction_options": {},
-         }), \
-         patch("agent_runtime._compaction.get_provider", return_value=MagicMock(
-             list_models=AsyncMock(return_value=[
-                 ModelInfo(name="large-context-model", context_window=100_000),
-             ]),
-         )):
-        call.return_value = ("summary", "large-context-model")
-        result = await strategy._summarize(messages)
+    client = MagicMock(list_models=AsyncMock(return_value=[
+        ModelInfo(name="large-context-model", context_window=100_000),
+    ]))
+    with patch.object(strategy, "_call_summarizer", new_callable=AsyncMock) as summarizer, \
+         _compaction_model(client):
+        summarizer.return_value = ("summary", "large-context-model")
+        call = await prepare_utility_call("compaction", model="large-context-model")
+        assert call is not None
+        result = await strategy._summarize(call, messages)
 
     assert result == ("summary", "large-context-model")
-    call.assert_awaited_once()
+    summarizer.assert_awaited_once()
 
 
 @pytest.mark.unit
@@ -73,12 +83,10 @@ async def test_intent_extraction_only_sets_supported_temperature(
         inference_controls=controls,
     )])
 
-    with patch("agent_runtime._compaction.load_settings", return_value={
-        "compaction_provider": "test-provider",
-        "compaction_model": "test-model",
-        "compaction_options": {},
-    }), patch("agent_runtime._compaction.get_provider", return_value=provider):
-        result = await strategy._extract_intent(["first", "second"])
+    with _compaction_model(provider):
+        call = await prepare_utility_call("compaction")
+        assert call is not None
+        result = await strategy._extract_intent(call, ["first", "second"])
 
     assert result == "current intent"
     sent_options = provider.chat.await_args.kwargs["options"]
@@ -111,8 +119,7 @@ async def test_compaction_publishes_payload_and_derived_view_shows_summary():
 
     with patch.object(strategy, "_summarize", new_callable=AsyncMock) as mock_summarize, \
          patch("agent_runtime._compaction.publish_event", captured), \
-         patch("agent_runtime._compaction.load_settings",
-               return_value={"compaction_provider": "test-provider", "compaction_model": "test-model", "compaction_options": {}}):
+         _compaction_model():
         mock_summarize.return_value = ("This is the summary.", "test-model")
         await strategy.apply(history, _make_stats(0.8))
 
@@ -141,8 +148,7 @@ async def test_compaction_failure_raises_with_user_facing_message():
 
     with patch.object(strategy, "_summarize", new_callable=AsyncMock) as mock_summarize, \
          patch("agent_runtime._compaction._unload_model", new_callable=AsyncMock), \
-         patch("agent_runtime._compaction.load_settings",
-               return_value={"compaction_provider": "test-provider", "compaction_model": "test-model", "compaction_options": {}}):
+         _compaction_model():
         mock_summarize.side_effect = ProviderError("rate limited (status code: 429)", retryable=True)
         with pytest.raises(ProviderError) as excinfo:
             await strategy.apply(history, _make_stats(0.8))
@@ -181,8 +187,7 @@ async def test_compaction_does_not_mutate_history_directly():
 
     with patch.object(strategy, "_summarize", new_callable=AsyncMock) as mock_summarize, \
          patch("agent_runtime._compaction.publish_event"), \
-         patch("agent_runtime._compaction.load_settings",
-               return_value={"compaction_provider": "test-provider", "compaction_model": "test-model", "compaction_options": {}}):
+         _compaction_model():
         mock_summarize.return_value = ("Summary text.", "test-model")
         await strategy.apply(history, _make_stats(0.8))
 
@@ -309,8 +314,7 @@ async def test_compaction_payload_carries_audit_fields():
     with patch.object(strategy, "_summarize", new_callable=AsyncMock) as mock_summarize, \
          patch("agent_runtime._compaction.publish_event",
                side_effect=lambda evt: payloads.append(evt.payload)), \
-         patch("agent_runtime._compaction.load_settings",
-               return_value={"compaction_provider": "test-provider", "compaction_model": "test-model", "compaction_options": {"temperature": 0.3}}):
+         _compaction_model(temperature=0.3):
         mock_summarize.return_value = ("Summary.", "test-model")
         await strategy.apply(history, _make_stats(0.8))
 

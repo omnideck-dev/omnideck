@@ -3,7 +3,7 @@
 from aiohttp import web
 
 from config import load_config
-from settings import aperture_enabled, custom_apps_enabled, custom_tools_enabled
+from settings import custom_apps_enabled, custom_tools_enabled
 
 
 async def handle_features(_request: web.Request) -> web.Response:
@@ -13,7 +13,6 @@ async def handle_features(_request: web.Request) -> web.Response:
         "desktop": features.desktop,
         "custom_tools": custom_tools_enabled(),
         "custom_apps": custom_apps_enabled(),
-        "aperture": aperture_enabled(),
     })
 
 

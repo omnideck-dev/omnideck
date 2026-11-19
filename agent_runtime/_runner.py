@@ -170,7 +170,7 @@ class AgentRunner:
                         history=history,
                         agent=agent,
                         capabilities=prepared.capabilities,
-                        provider=prepared.provider,
+                        client=prepared.client,
                         context=context,
                         max_parallel_tools=parallel.max_concurrent if parallel.enabled else 1,
                         hooks=hooks,

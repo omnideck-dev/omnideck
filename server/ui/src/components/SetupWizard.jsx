@@ -11,16 +11,6 @@ const PROVIDER_APERTURE = 'aperture';
 const PROVIDER_OPENAI_COMPAT = 'openai-compat';
 const PROVIDER_CLOUD = 'cloud';
 
-const PROVIDER_LABELS = {
-    openai: 'OpenAI API',
-    anthropic: 'Anthropic API',
-    openrouter: 'OpenRouter',
-    openai_compat: 'OpenAI-compatible',
-    aperture: 'Tailscale Aperture',
-};
-
-const OPENAI_COMPAT_DEFAULT_URL = 'http://localhost:1234/v1';
-
 function ProgressBar({ currentStep }) {
     return (
         <div className={styles.progressBar} role="list" aria-label="Setup progress">
@@ -95,12 +85,21 @@ function ModelCard({ name, value, description, model, selected, onSelect }) {
     );
 }
 
-export default function SetupWizard({ onComplete, apertureEnabled = false }) {
+// Joins names as "A, B, or C".
+const _orList = new Intl.ListFormat('en', { style: 'long', type: 'disjunction' });
+
+export default function SetupWizard({ onComplete, providerCatalog }) {
+    const {
+        catalog,
+        loading: catalogLoading,
+        error: catalogError,
+        refresh: refreshCatalog,
+    } = providerCatalog;
     const [step, setStep] = useState(0);
 
     // Provider step state
     const [selectedProvider, setSelectedProvider] = useState(null);
-    const [cloudProvider, setCloudProvider] = useState('anthropic');
+    const [cloudChoice, setCloudChoice] = useState(null);
     const [providerUrl, setProviderUrl] = useState('');
     const [providerApiKey, setProviderApiKey] = useState('');
     const [providerError, setProviderError] = useState(null);
@@ -116,6 +115,14 @@ export default function SetupWizard({ onComplete, apertureEnabled = false }) {
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState(null);
 
+    const ollamaEntry = catalog.find((c) => c.name === 'ollama');
+    const apertureEntry = catalog.find((c) => c.name === 'aperture');
+    const compatEntry = catalog.find((c) => c.name === 'openai_compat');
+    const cloudEntries = useMemo(() => catalog.filter((c) => c.api_key === 'required'), [catalog]);
+    // The first cloud provider stays selected until the user picks another.
+    const cloudProvider = cloudChoice ?? cloudEntries[0]?.name ?? null;
+    const cloudEntry = cloudEntries.find((c) => c.name === cloudProvider);
+
     // The provider name as stored in settings / on profiles ('ollama',
     // 'openai_compat', 'anthropic', 'openai', ...).
     const resolvedProviderName = useMemo(() => (
@@ -127,6 +134,8 @@ export default function SetupWizard({ onComplete, apertureEnabled = false }) {
                 ? 'openai_compat'
                 : 'ollama'
     ), [selectedProvider, cloudProvider]);
+    const resolvedProviderLabel = catalog.find((c) => c.name === resolvedProviderName)?.label
+        || resolvedProviderName;
 
     // Refs for a11y
     const cardRef = useRef(null);
@@ -197,23 +206,27 @@ export default function SetupWizard({ onComplete, apertureEnabled = false }) {
         setProviderError(null);
 
         const body = { name: resolvedProviderName };
-        if (selectedProvider === PROVIDER_OLLAMA || selectedProvider === PROVIDER_APERTURE) {
-            const endpointUrl = providerUrl.trim();
+        if (selectedProvider === PROVIDER_CLOUD) {
+            body.api_key = providerApiKey.trim();
+        } else {
+            // A blank OpenAI-compatible URL falls back to the catalog's usual local address.
+            const endpointUrl = providerUrl.trim()
+                || (selectedProvider === PROVIDER_OPENAI_COMPAT ? (compatEntry?.url_hint || '') : '');
             if (!endpointUrl) {
                 setProviderError(
                     selectedProvider === PROVIDER_APERTURE
                         ? 'Enter your Aperture gateway URL to continue.'
-                        : 'Enter your Ollama server URL to continue.'
+                        : selectedProvider === PROVIDER_OLLAMA
+                            ? 'Enter your Ollama server URL to continue.'
+                            : 'Enter your server URL to continue.'
                 );
                 setProviderSaving(false);
                 return;
             }
             body.base_url = endpointUrl;
-        } else if (selectedProvider === PROVIDER_OPENAI_COMPAT) {
-            body.base_url = providerUrl.trim() || OPENAI_COMPAT_DEFAULT_URL;
-            if (providerApiKey.trim()) body.api_key = providerApiKey.trim();
-        } else {
-            body.api_key = providerApiKey.trim();
+            if (selectedProvider === PROVIDER_OPENAI_COMPAT && providerApiKey.trim()) {
+                body.api_key = providerApiKey.trim();
+            }
         }
 
         try {
@@ -225,11 +238,7 @@ export default function SetupWizard({ onComplete, apertureEnabled = false }) {
             const data = await res.json().catch(() => ({}));
             if (!res.ok) {
                 const message = data.message || data.error || `Failed to connect (${res.status})`;
-                if (
-                    (selectedProvider === PROVIDER_OLLAMA || selectedProvider === PROVIDER_APERTURE)
-                    && body.base_url
-                    && !message.includes(body.base_url)
-                ) {
+                if (body.base_url && !message.includes(body.base_url)) {
                     setProviderError(`${message} Tried ${body.base_url}.`);
                 } else {
                     setProviderError(message);
@@ -238,7 +247,7 @@ export default function SetupWizard({ onComplete, apertureEnabled = false }) {
             }
             setStep((s) => s + 1);
         } catch (err) {
-            if ((selectedProvider === PROVIDER_OLLAMA || selectedProvider === PROVIDER_APERTURE) && body.base_url) {
+            if (body.base_url) {
                 setProviderError(`${err.message} Tried ${body.base_url}.`);
             } else {
                 setProviderError(err.message);
@@ -246,7 +255,7 @@ export default function SetupWizard({ onComplete, apertureEnabled = false }) {
         } finally {
             setProviderSaving(false);
         }
-    }, [selectedProvider, resolvedProviderName, providerUrl, providerApiKey]);
+    }, [selectedProvider, resolvedProviderName, compatEntry, providerUrl, providerApiKey]);
 
     // ── Final save: server-side orchestration ───────────────────────
     const handleFinish = useCallback(async () => {
@@ -355,39 +364,42 @@ export default function SetupWizard({ onComplete, apertureEnabled = false }) {
                             Connect to a local model server or a cloud API.
                         </p>
 
-                        <div className={styles.modelList}>
-                            {[
-                                {
-                                    key: PROVIDER_OLLAMA,
-                                    name: 'Ollama (local)',
-                                    desc: 'Run models on your own machine or in the cloud',
-                                },
-                                ...(apertureEnabled ? [{
-                                    key: PROVIDER_APERTURE,
-                                    name: 'Tailscale Aperture',
-                                    desc: 'Discover models managed by your organization',
-                                }] : []),
-                                {
-                                    key: PROVIDER_OPENAI_COMPAT,
-                                    name: 'OpenAI-compatible endpoint',
-                                    desc: 'LM Studio, vLLM, Groq, Together AI, and others',
-                                },
-                                {
-                                    key: PROVIDER_CLOUD,
-                                    name: 'Cloud API',
-                                    desc: 'Anthropic, OpenAI, or OpenRouter',
-                                },
-                            ].map(({ key, name, desc }) => (
-                                <ModelCard
-                                    key={key}
-                                    name={name}
-                                    value={key}
-                                    description={desc}
-                                    selected={selectedProvider === key}
-                                    onSelect={(k) => { setSelectedProvider(k); setProviderError(null); }}
-                                />
-                            ))}
-                        </div>
+                        {catalog.length === 0 && catalogError ? (
+                            <>
+                                <div className={styles.providerError} role="alert">
+                                    Couldn't load providers. {catalogError}
+                                </div>
+                                <button type="button" className={styles.skipBtn} onClick={refreshCatalog}>
+                                    Try again
+                                </button>
+                            </>
+                        ) : catalog.length === 0 && catalogLoading ? (
+                            <p className={styles.subtitle}>Loading providers…</p>
+                        ) : (
+                            <div className={styles.modelList}>
+                                {[
+                                    ollamaEntry && { key: PROVIDER_OLLAMA, entry: ollamaEntry },
+                                    apertureEntry && { key: PROVIDER_APERTURE, entry: apertureEntry },
+                                    compatEntry && { key: PROVIDER_OPENAI_COMPAT, entry: compatEntry },
+                                    cloudEntries.length > 0 && {
+                                        key: PROVIDER_CLOUD,
+                                        entry: {
+                                            label: 'Cloud API',
+                                            description: _orList.format(cloudEntries.map((c) => c.label)),
+                                        },
+                                    },
+                                ].filter(Boolean).map(({ key, entry }) => (
+                                    <ModelCard
+                                        key={key}
+                                        name={entry.label}
+                                        value={key}
+                                        description={entry.description}
+                                        selected={selectedProvider === key}
+                                        onSelect={(k) => { setSelectedProvider(k); setProviderError(null); }}
+                                    />
+                                ))}
+                            </div>
+                        )}
 
                         {/* Conditional fields */}
                         {selectedProvider === PROVIDER_OLLAMA && (
@@ -449,7 +461,7 @@ export default function SetupWizard({ onComplete, apertureEnabled = false }) {
                                         className={styles.fieldInput}
                                         value={providerUrl}
                                         onChange={(e) => setProviderUrl(e.target.value)}
-                                        placeholder="http://localhost:1234/v1"
+                                        placeholder={compatEntry?.url_hint || ''}
                                         aria-describedby="compat-url-hint"
                                     />
                                     <div id="compat-url-hint" className={styles.fieldHint}>
@@ -483,13 +495,9 @@ export default function SetupWizard({ onComplete, apertureEnabled = false }) {
                                         id="cloud-provider"
                                         className={styles.cloudSelect}
                                         value={cloudProvider}
-                                        onChange={setCloudProvider}
+                                        onChange={setCloudChoice}
                                         ariaLabelledBy="cloud-provider-label"
-                                        options={[
-                                            { value: 'anthropic', label: 'Anthropic' },
-                                            { value: 'openai', label: 'OpenAI' },
-                                            { value: 'openrouter', label: 'OpenRouter' },
-                                        ]}
+                                        options={cloudEntries.map((c) => ({ value: c.name, label: c.label }))}
                                     />
                                 </div>
                                 <div className={styles.field}>
@@ -502,7 +510,7 @@ export default function SetupWizard({ onComplete, apertureEnabled = false }) {
                                         className={styles.fieldInput}
                                         value={providerApiKey}
                                         onChange={(e) => setProviderApiKey(e.target.value)}
-                                        placeholder="sk-..."
+                                        placeholder={cloudEntry?.key_hint || ''}
                                         autoComplete="new-password"
                                         aria-describedby="cloud-key-hint"
                                     />
@@ -537,7 +545,7 @@ export default function SetupWizard({ onComplete, apertureEnabled = false }) {
                             profiles. You can change individual profiles later in Settings.
                         </p>
                         <ModelPicker
-                            providers={[{ name: resolvedProviderName, label: PROVIDER_LABELS[resolvedProviderName] || resolvedProviderName }]}
+                            providers={[{ name: resolvedProviderName, label: resolvedProviderLabel }]}
                             selectedProvider={resolvedProviderName}
                             selectedModel={selectedMain}
                             onSelect={(_p, m, meta) => {
@@ -568,7 +576,7 @@ export default function SetupWizard({ onComplete, apertureEnabled = false }) {
                         </p>
 
                         <ModelPicker
-                            providers={[{ name: resolvedProviderName, label: PROVIDER_LABELS[resolvedProviderName] || resolvedProviderName }]}
+                            providers={[{ name: resolvedProviderName, label: resolvedProviderLabel }]}
                             selectedProvider={resolvedProviderName}
                             selectedModel={selectedVision || null}
                             onSelect={(_p, m) => setSelectedVision(m)}
@@ -603,12 +611,7 @@ export default function SetupWizard({ onComplete, apertureEnabled = false }) {
                         <div className={styles.summary}>
                             <div className={styles.summaryRow}>
                                 <span className={styles.summaryLabel}>Provider</span>
-                                <span className={styles.summaryValue}>
-                                    {selectedProvider === PROVIDER_OLLAMA ? 'Ollama'
-                                        : selectedProvider === PROVIDER_APERTURE ? 'Tailscale Aperture'
-                                        : selectedProvider === PROVIDER_OPENAI_COMPAT ? 'OpenAI-compatible'
-                                            : cloudProvider === 'anthropic' ? 'Anthropic' : 'OpenAI'}
-                                </span>
+                                <span className={styles.summaryValue}>{resolvedProviderLabel}</span>
                             </div>
                             <div className={styles.summaryRow}>
                                 <span className={styles.summaryLabel}>Main model</span>

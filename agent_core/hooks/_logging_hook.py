@@ -11,6 +11,8 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from llm import llm_runtime_stats
+
 logger = logging.getLogger(__name__)
 
 
@@ -65,8 +67,6 @@ class LoggingHook:
         stats_table = None
         raw = getattr(response, "raw", None)
         if raw is not None and hasattr(raw, "done") and getattr(raw, "done", False):
-            from agent_core.providers import llm_runtime_stats
-
             stats = llm_runtime_stats(raw)
             stats_table = Table(show_header=False, expand=False, padding=(0, 1))
             stats_table.add_column("Metric", style="bold")

@@ -1,4 +1,4 @@
-"""Run ownership, completion, and control using real FakeProvider executions."""
+"""Run ownership, completion, and control using real FakeClient executions."""
 
 import asyncio
 
@@ -6,17 +6,17 @@ import pytest
 
 from agent_runtime import AgentRunRequest
 from conversations import load_events_jsonl
-from providers._fake import FakeProvider
+from provider_catalog._fake import FakeClient
 from agent_core.events import AgentEvent, FileOutputPayload, publish_event
-from agent_core.providers import ChatResponse, TokenUsage
+from llm import ChatResponse, TokenUsage
 from agent_core.turn import get_execution_context
 from tasks import TaskExecutor
 from tests.e2e._protocol import call_tool, say, spawn
 
 
 def use_fake(monkeypatch, provider=None):
-    provider = provider if provider is not None else FakeProvider()
-    monkeypatch.setattr("agent_runtime._factory.get_provider", lambda _: provider)
+    provider = provider if provider is not None else FakeClient()
+    monkeypatch.setattr("agent_runtime._factory.get_client", lambda _: provider)
     return provider
 
 
@@ -61,7 +61,7 @@ async def test_cancelling_a_waiter_does_not_cancel_the_runtime_owned_execution(h
 async def test_result_aggregates_child_usage_and_file_artifacts_once(harness, monkeypatch):
     h = harness
 
-    class MeteredFake(FakeProvider):
+    class MeteredFake(FakeClient):
         async def chat_stream(self, **kwargs):
             async for chunk in super().chat_stream(**kwargs):
                 if isinstance(chunk, ChatResponse):
@@ -172,7 +172,7 @@ async def test_cancellation_before_task_scheduling_does_not_leak_admission(harne
     def unexpected_provider(_):
         raise AssertionError("Early cancellation must skip provider setup")
 
-    monkeypatch.setattr("agent_runtime._factory.get_provider", unexpected_provider)
+    monkeypatch.setattr("agent_runtime._factory.get_client", unexpected_provider)
     handle = await h.manager.start(request("early-cancel", say("never")))
     handle.cancel()
     result = await handle.wait()

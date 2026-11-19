@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { catalogHook, PROVIDER_CATALOG_WITHOUT_APERTURE } from '../../../__tests__/providerCatalogFixture.js';
 import { useAppData } from '../../../contexts/AppData.jsx';
 import rowStyles from '../../ListItem.module.css';
 import buttonStyles from '../../primitives/Button.module.css';
@@ -10,10 +11,13 @@ import ProvidersTab from '../ProvidersTab.jsx';
 vi.mock('../../../contexts/AppData.jsx', () => ({ useAppData: vi.fn() }));
 
 beforeEach(() => {
-    useAppData.mockReturnValue({ providersHook: {
-        providers: [{ name: 'ollama', kind: 'direct', status: 'configured', base_url: 'http://localhost:11434' }],
-        loading: false, refresh: vi.fn(),
-    } });
+    useAppData.mockReturnValue({
+        providersHook: {
+            providers: [{ name: 'ollama', label: 'Ollama', kind: 'direct', status: 'configured', base_url: 'http://localhost:11434' }],
+            loading: false, refresh: vi.fn(),
+        },
+        providerCatalogHook: catalogHook(),
+    });
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
         ok: true, json: async () => ({ models: [{ id: 'test-model' }] }),
     }));
@@ -57,5 +61,42 @@ describe('ProvidersTab shared presentation', () => {
         expect(remove).toHaveTextContent('Confirm remove?');
         expect(remove).toHaveClass(confirmStyles.confirming);
         expect(fetch).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ method: 'DELETE' }));
+    });
+});
+
+describe('ProvidersTab catalog labels and icons', () => {
+    it('labels rows from the provider list and takes icons from the catalog', async () => {
+        useAppData.mockReturnValue({
+            providersHook: {
+                providers: [
+                    { name: 'openrouter', label: 'OpenRouter', kind: 'brokered', status: 'running' },
+                    { name: 'aperture', label: 'Tailscale Aperture', kind: 'direct', status: 'configured', base_url: 'http://ai.example.ts.net' },
+                ],
+                loading: false, refresh: vi.fn(),
+            },
+            providerCatalogHook: catalogHook(PROVIDER_CATALOG_WITHOUT_APERTURE),
+        });
+        render(<ProvidersTab />);
+
+        const openrouter = screen.getByTestId('provider-row-openrouter');
+        expect(openrouter).toHaveTextContent('OpenRouter');
+        expect(openrouter.querySelector('.bi-router')).toBeInTheDocument();
+        expect(within(screen.getByTestId('provider-detail')).getByText('OpenRouter')).toBeInTheDocument();
+
+        // A kind the catalog leaves out keeps its server label and gets the generic icon.
+        const aperture = screen.getByTestId('provider-row-aperture');
+        expect(aperture).toHaveTextContent('Tailscale Aperture');
+        expect(aperture.querySelector('.bi-plug')).toBeInTheDocument();
+        await waitFor(() => expect(openrouter).toHaveTextContent('1 model'));
+    });
+
+    it('opens the add modal with the catalog entries not yet configured', async () => {
+        render(<ProvidersTab />);
+        fireEvent.click(screen.getByTestId('providers-add-btn'));
+
+        const cards = screen.getAllByTestId(/^provider-catalog-card-/)
+            .map((card) => card.dataset.testid.replace('provider-catalog-card-', ''));
+        expect(cards).toEqual(['aperture', 'openai_compat', 'anthropic', 'openai', 'openrouter']);
+        await within(screen.getByTestId('provider-row-ollama')).findByText('1 model');
     });
 });

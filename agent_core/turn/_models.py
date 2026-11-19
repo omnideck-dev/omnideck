@@ -11,7 +11,7 @@ from typing import Literal
 from agent_core.agent_capabilities import AgentCapabilities, _active_agent_capabilities
 from agent_core.control import ExecutionControl, StopRequestedError, _current_control
 from agent_core.events._context import EventSink, _context_stack, reset_current_conversation, set_current_conversation
-from agent_core.providers import TokenUsage
+from llm import TokenUsage
 
 
 _current_execution: ContextVar[ExecutionContext | None] = ContextVar("execution_context", default=None)

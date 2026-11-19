@@ -686,8 +686,8 @@ The broker reconnects automatically when the upstream server drops an idle conne
 and the connection discovery cache.
 `brokering` owns credential storage, process lifecycle, transport clients, and
 all concrete brokers under `brokering.brokers`, including the separate LLM HTTP
-proxy. Model adapters remain in `agent_core.providers`,
-with configured provider selection in `providers`; LLM requests do not use
+proxy. Model clients live in `llm`,
+and the providers a user can connect live in `provider_catalog`; LLM requests do not use
 integration operations or the HTTP API broker.
 
 `brokering.catalog` is the composition boundary that combines the two preset

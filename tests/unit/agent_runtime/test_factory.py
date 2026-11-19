@@ -3,7 +3,7 @@
 import pytest
 
 from agents import AgentProfile
-from agent_core.providers import ModelInfo
+from llm import ModelInfo
 from agent_runtime._factory import AgentFactory
 
 
@@ -96,6 +96,7 @@ async def test_runtime_metadata_drives_cloud_context_and_sanitizes_options():
     assert resolved.context_window == 1_050_000
     assert resolved.options == {"reasoning_effort": "high"}
     assert resolved.think is True
+    assert resolved.model_info is not None and resolved.model_info.context_window == 1_050_000
 
 
 @pytest.mark.unit

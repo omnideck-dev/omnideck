@@ -1,4 +1,4 @@
-"""E2E conversation management using actual FakeProvider turns and public APIs."""
+"""E2E conversation management using actual FakeClient turns and public APIs."""
 
 import time
 

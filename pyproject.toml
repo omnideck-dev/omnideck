@@ -144,7 +144,9 @@ include = [
     "integrations*",
     "agent_runtime*",
     "agent_core*",
-    "providers*",
+    "llm*",
+    "provider_catalog*",
+    "utility_models*",
     "skills*",
     "agents*",
     "browser*",
@@ -165,5 +167,5 @@ exclude = [
 
 [tool.setuptools.package-data]
 "agent_core.skills" = ["default_skills/*.json"]
-"agent_core.providers" = ["model_metadata.json"]
+"llm" = ["model_metadata.json"]
 "tools.browser" = ["capability.json"]

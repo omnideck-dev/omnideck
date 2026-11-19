@@ -4,6 +4,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from llm import ModelInfo
+
 
 class Agent(BaseModel):
     """Represents the configuration for a generic agent.
@@ -18,6 +20,7 @@ class Agent(BaseModel):
         context_window: Model's context window in tokens, used as the compaction denominator.
         compaction_threshold: Fill ratio (0.0–1.0) at which compaction fires.
         max_iterations: Maximum tool-call loop iterations before forced stop.
+        model_info: What the model accepts, looked up once when the run starts.
     """
 
     name: str
@@ -30,3 +33,4 @@ class Agent(BaseModel):
     context_window: int = 0
     compaction_threshold: float = 0.75
     max_iterations: int = 0
+    model_info: ModelInfo | None = None
