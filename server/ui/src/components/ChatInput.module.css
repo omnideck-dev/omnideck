@@ -1,21 +1,21 @@
 .inputAreaWrapper {
+  --composer-max-width: 760px;
+  container: composer / inline-size;
   padding: 14px 18px 18px;
 }
 
 .offlineNotice {
-  max-width: 760px;
+  max-width: var(--composer-max-width);
   margin: 0 auto var(--sp-2);
 }
 
 /* ── Composer card ───────────────────────────────────── */
 .inputArea {
-  /* Positioning context for the corner expand button, so the button stays
-     pinned to the card's top-right corner regardless of the attachment tray. */
   position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--sp-1);
-  max-width: 760px;
+  max-width: var(--composer-max-width);
   margin: 0 auto;
   padding: 6px 6px 6px 14px;
   background: var(--elevated);
@@ -30,9 +30,8 @@
   box-shadow: var(--shadow-md), var(--shadow-glow);
 }
 
-/* Groups the textarea with the corner expand button. In expanded mode this is
-   the flex child that stretches to fill the card. */
 .textareaWrapper {
+  position: relative;
   min-width: 0;
 }
 
@@ -108,32 +107,18 @@
   padding-right: var(--sp-1);
 }
 
+.leftActions { display: flex; flex: 1; align-items: center; gap: var(--sp-1); min-width: 0; }
+.leftActions > button { flex-shrink: 0; }
+.sendActions { display: flex; gap: var(--sp-1); margin-left: var(--sp-2); }
+
 .actionButtons {
   display: flex;
+  margin-left: auto;
   gap: var(--sp-1);
   align-items: center;
 }
 
-/* Ghost icon button — attach */
-.iconButton {
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-full);
-  background: none;
-  color: var(--text-secondary);
-  border: none;
-  cursor: pointer;
-  transition: background 120ms ease, color 120ms ease;
-}
-.iconButton svg { width: 16px; height: 16px; display: block; }
-.iconButton:hover:not(:disabled) { background: var(--accent-muted); color: var(--text-primary); }
-.iconButton:active:not(:disabled) { transform: translateY(1px); }
-.iconButton:disabled { opacity: 0.4; cursor: not-allowed; }
-.iconButton:focus-visible { outline: none; box-shadow: var(--shadow-glow); }
+.composerNote { margin: 0; padding: var(--sp-2) var(--sp-2) 0 0; color: var(--text-secondary); font-size: var(--font-size-small); }
 
 /* Filled circular send button */
 .sendButton {

@@ -28,6 +28,11 @@ def _get_conversations_dir() -> Path:
     return Path(cfg.settings.home_dir) / "conversations"
 
 
+def conversations_dir() -> Path:
+    """The folder that holds every conversation's folder."""
+    return _get_conversations_dir()
+
+
 # Archived conversations live in a reserved sibling folder under the
 # conversations root. Its leading underscore keeps it out of the normal
 # listing scan (which recognises conversations by an events.jsonl directly
@@ -330,6 +335,20 @@ def list_archived_conversations() -> list[ConversationSummary]:
 def conversation_exists(conversation_id: str) -> bool:
     """Report whether a conversation has a persisted event log on disk."""
     return (_get_conv_dir(conversation_id) / "events.jsonl").exists()
+
+
+def ensure_conversation(conversation_id: str, *, title: str, profile_id: str) -> None:
+    """Persist an empty conversation before its first agent execution."""
+    if _get_archived_conv_dir(conversation_id).exists():
+        raise ValueError("This conversation is archived. Restore it first.")
+    conv_dir = _get_conv_dir(conversation_id)
+    conv_dir.mkdir(parents=True, exist_ok=True)
+    events_path = conv_dir / "events.jsonl"
+    if not events_path.exists():
+        events_path.touch()
+    if not load_conversation_metadata(conversation_id).get("title"):
+        save_conversation_title(conversation_id, title[:50])
+    save_conversation_profile(conversation_id, profile_id)
 
 
 def _prune_empty_parents(conv_dir: Path) -> None:

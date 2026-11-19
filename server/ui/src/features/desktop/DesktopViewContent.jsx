@@ -1,3 +1,4 @@
+import GoalDesktopView from '../goals/GoalDesktopAdapter.jsx';
 import AgentsView from '../../components/agents/AgentsView.jsx';
 import { useDesktopNavigationCommands } from '../navigation/DesktopNavigation.jsx';
 import SettingsView from '../../components/SettingsView.jsx';
@@ -8,6 +9,7 @@ import ConversationDesktopView from '../conversation/ConversationDesktopView.jsx
 import AppsDesktopView from '../customApps/AppsDesktopView.jsx';
 import BrowserView from '../browser/BrowserView.jsx';
 import CustomAppDesktopView from '../customApps/CustomAppDesktopAdapter.jsx';
+import GoalsDesktopView from '../goals/GoalsDesktopView.jsx';
 import RoutinesDesktopView from '../routines/RoutinesDesktopView.jsx';
 import WorkspaceResourceDesktopView from
     '../workspace/WorkspaceResourceDesktopAdapter.jsx';
@@ -47,6 +49,8 @@ export default function DesktopViewContent({
         return <ArtifactFileDesktopView view={view} />;
     }
 
+    if (view.type === 'goal') return <GoalDesktopView view={view} />;
+
     if (view.type === 'conversation') {
         return (
             <ConversationDesktopView
@@ -68,6 +72,7 @@ export default function DesktopViewContent({
         onOpenIntegration={connectionId => openSettings('integrations', { connectionId })}
         onOpenSkill={skillId => openSettings('skills', { skillId })} />;
     if (view.type === 'routines') return <RoutinesDesktopView />;
+    if (view.type === 'goals') return <GoalsDesktopView />;
     if (view.type === 'artifacts') {
         return (
             <ArtifactsHubDesktopView

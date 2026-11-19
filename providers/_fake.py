@@ -58,6 +58,7 @@ import re
 from collections.abc import AsyncGenerator, Callable
 from typing import Any
 
+from agent_core.context import APP_TEXT_PREFIX
 from agent_core.providers import (
     ChatDelta,
     ChatMessage,
@@ -300,27 +301,51 @@ def _chunks(text: str, size: int = 24) -> list[str]:
     return [text[i : i + size] for i in range(0, len(text), size)]
 
 
+def _instruction(messages: list[dict[str, Any]]) -> tuple[str, int] | None:
+    """The instruction to follow and the index after which its progress counts.
+
+    A typed message is its own instruction. An app notice, such as a goal
+    wakeup, is followed by a goal read; the instruction is then the title of
+    the plan step the run works on. None means the goal must be read first.
+    """
+    last_user = max((i for i, m in enumerate(messages) if m.get("role") == "user"), default=-1)
+    if last_user < 0:
+        return "", -1
+    content = messages[last_user].get("content")
+    if not isinstance(content, str):
+        return "", last_user
+    if not content.startswith(APP_TEXT_PREFIX):
+        return content, last_user
+    for index in range(last_user + 1, len(messages)):
+        message = messages[index]
+        if message.get("role") == "tool" and message.get("tool_name") == "read_goal":
+            return _working_step(str(message.get("content") or "")), index
+    return None
+
+
+def _working_step(read_result: str) -> str:
+    try:
+        plan = json.loads(read_result).get("plan") or []
+    except (ValueError, AttributeError):
+        return ""
+    step = next((item for item in plan if item.get("status") == "in_progress"), None) or next(
+        (item for item in plan if item.get("status", "pending") == "pending"), None)
+    return str(step.get("title", "")) if step else ""
+
+
 def _latest_task(messages: list[dict[str, Any]]) -> str:
-    """Return the most recent user instruction in the history."""
-    for msg in reversed(messages):
-        if msg.get("role") == "user":
-            content = msg.get("content")
-            if isinstance(content, str):
-                return content
-    return ""
+    """Return the most recent instruction in the history."""
+    found = _instruction(messages)
+    return found[0] if found is not None else ""
 
 
-def _completed_step_count(messages: list[dict[str, Any]]) -> int:
-    """Count completed *logical* tool steps since the latest user instruction.
+def _completed_step_count(messages: list[dict[str, Any]], start: int) -> int:
+    """Count completed *logical* tool steps since the instruction started.
 
     load_skill calls are infrastructure the fake injects to make a gated tool
     available; they don't advance the directive sequence, so they're excluded.
     """
-    last_user = -1
-    for i, msg in enumerate(messages):
-        if msg.get("role") == "user":
-            last_user = i
-    progress = messages[last_user + 1 :] if last_user >= 0 else []
+    progress = messages[start + 1 :] if start >= 0 else []
     return sum(
         1 for m in progress
         if m.get("role") == "tool" and m.get("tool_name") != "load_skill"
@@ -401,7 +426,12 @@ def _plan(
     tools: list[Callable[..., Any]] | None,
 ) -> tuple[str, Any]:
     """Plan the next step. Returns ("tools", [ToolCall]) or ("final", text)."""
-    task = _latest_task(messages)
+    found = _instruction(messages)
+    if found is None:
+        if "read_goal" in {getattr(t, "__name__", "") for t in (tools or [])}:
+            return "tools", [_tool_call("read_goal", {})]
+        found = ("", len(messages) - 1)
+    task, start = found
     directives = _iter_directives(task)
 
     # No protocol in the prompt: echo it back verbatim.
@@ -410,7 +440,7 @@ def _plan(
 
     for kind, _arg, body in directives:
         if kind == "MODEL":
-            return "response", _model_response(body, messages, tools)
+            return "response", _model_response(body, messages, tools, start)
 
     rounds, say_parts, provider_fail, fail_after = _build_rounds(directives)
 
@@ -419,7 +449,7 @@ def _plan(
     if provider_fail is not None:
         return "provider_error", provider_fail
 
-    completed = _completed_step_count(messages)
+    completed = _completed_step_count(messages, start)
     # FAIL makes the agent raise once it has completed the tool steps that
     # precede it, driving a genuine error status through the real agent loop
     # (the caller propagates the failed result so agent_span records an error).
@@ -447,6 +477,7 @@ def _model_response(
     body: str,
     messages: list[dict[str, Any]],
     tools: list[Callable[..., Any]] | None,
+    start: int,
 ) -> ChatResponse:
     """Select a scripted model response using completed, stable tool-call IDs.
 
@@ -463,10 +494,7 @@ def _model_response(
         raise ValueError("Every non-final MODEL response must include a tool call")
     prefix = f"fake_{hashlib.sha256(body.encode()).hexdigest()[:12]}_step_"
     pattern = re.compile(re.escape(prefix) + r"(\d+)_call_\d+$")
-    # A new user input starts a new script even when identical text was used in
-    # an earlier turn. A compaction retains the pinned input and recent results.
-    last_user = max((i for i, m in enumerate(messages) if m.get("role") == "user"), default=-1)
-    completed = [int(match.group(1)) for m in messages[last_user + 1:]
+    completed = [int(match.group(1)) for m in messages[start + 1:]
                  if m.get("role") == "tool"
                  and (match := pattern.fullmatch(str(m.get("tool_call_id", ""))))]
     index = max(completed, default=-1) + 1

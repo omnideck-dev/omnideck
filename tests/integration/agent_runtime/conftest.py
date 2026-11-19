@@ -11,6 +11,7 @@ import pytest
 import pytest_asyncio
 
 from agent_runtime import AgentRuntime, AgentRunner
+from goals import GoalRunExtension, GoalStore
 from config import load_config
 from agent_core.events import get_current_agent_id
 from agent_core.turn import get_conversation_id
@@ -37,6 +38,7 @@ async def harness(tmp_path, monkeypatch):
         "tools.virtual_computer.receive_file.load_config",
         "tools.scratchpad.scratchpad.load_config",
         "artifacts._store.load_config",
+        "server.aiohttp_app.load_config",
     ):
         monkeypatch.setattr(target, lambda: config)
     monkeypatch.setattr("conversations._store._get_conversations_dir", lambda: tmp_path / "conversations")
@@ -50,8 +52,9 @@ async def harness(tmp_path, monkeypatch):
         "compaction_provider": "scripted", "compaction_model": "summary", "compaction_options": {},
     })
 
-    manager = AgentRuntime(shutdown_timeout=0.1)
-    h = Harness(manager, provider, home, FileTaskStore(tmp_path / "routines"), config)
+    goals = GoalStore(tmp_path / "conversations")
+    manager = AgentRuntime(shutdown_timeout=0.1, extensions=[GoalRunExtension(goals, enabled=lambda: True)])
+    h = Harness(manager, provider, home, FileTaskStore(tmp_path / "routines"), config, goals)
 
     async def categories(*_args):
         return h.categories

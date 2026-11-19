@@ -245,7 +245,6 @@ describe('projectTurns', () => {
     });
 });
 
-
 describe('projectTurns with inflight iteration appended (live streaming)', () => {
     // Simulates the session's turns model: when the stream is
     // mid-iteration, it appends a synthetic iteration event built from
@@ -344,5 +343,97 @@ describe('projectTurns with inflight iteration appended (live streaming)', () =>
         ]);
         const iter = turns[0].children.find((c) => c.kind === 'iteration');
         expect(iter.content).toBe('partial');
+    });
+});
+
+describe('projectTurns — goal chats', () => {
+    const at = (day, hour) => new Date(2026, 9, day, hour).toISOString();
+    const root = (n, timestamp) => ({ ..._agentStarted(n), depth: 0, timestamp });
+    const wakeup = (id, reason, step, timestamp) => ({
+        id, type: 'goal', goal_id: 'g1', agent_id: 'root.test.1', depth: 0, timestamp,
+        data: { kind: 'wakeup', wake_id: `w-${id}`, reason, step },
+    });
+    const transition = (id, kind, timestamp, extra = {}) => ({
+        id, type: 'goal', goal_id: 'g1', timestamp,
+        data: { kind, objective: 'Book the pavilion', resume_at: null, question_count: 0, ...extra },
+    });
+    const completed = (n) => ({ id: `evt_done_${n}`, type: 'agent_completed', agent_id: `root.test.${n}`, depth: 0, status: 'success' });
+    const reply = (id, n) => ({ ..._iter(id, { content: id }), agent_id: `root.test.${n}`, depth: 0 });
+    const dividers = (turns) => turns.flatMap((turn) => turn.children).filter((child) => child.kind === 'goal_transition');
+
+    it('gives every wakeup a run divider with its step, whatever started it', () => {
+        const turns = projectTurns([
+            root(1, at(23, 9)),
+            wakeup('planned', 'planned', 'Call the parks office', at(23, 9)),
+            root(2, at(23, 10)),
+            wakeup('now', 'run_now', 'Call the parks office', at(23, 10)),
+            root(3, at(23, 11)),
+            wakeup('retry', 'retry', 'Book the pavilion', at(23, 11)),
+            root(4, at(23, 12)),
+            wakeup('restart', 'interrupted', '', at(23, 12)),
+        ]);
+        expect(dividers(turns).map((divider) => [divider.transition, divider.step])).toEqual([
+            ['run', 'Call the parks office'], ['run', 'Call the parks office'], ['run', 'Book the pavilion'], ['run', ''],
+        ]);
+    });
+
+    it('keeps state notices out of the transcript', () => {
+        const turns = projectTurns([
+            root(1, at(23, 9)),
+            { id: 'notice', type: 'goal', goal_id: 'g1', timestamp: at(23, 9), data: { kind: 'state_notice', revision: 3, reason: 'state_changed' } },
+        ]);
+        expect(turns[0].children.filter((child) => child.kind !== 'day_header')).toEqual([]);
+    });
+
+    it('adds a day header before the first message or divider of each new day', () => {
+        const turns = projectTurns([
+            root(1, at(23, 9)),
+            { ..._userMsg('Find a Saturday', { id: 'ask' }), agent_id: 'root.test.1', depth: 0, timestamp: at(23, 9) },
+            transition('scheduled', 'scheduled', at(23, 10), { resume_at: at(24, 9) }),
+            root(2, at(24, 9)),
+            wakeup('next-day', 'planned', 'Call the parks office', at(24, 9)),
+            transition('done', 'completed', at(24, 10)),
+            completed(2),
+        ]);
+        const children = turns.flatMap((turn) => turn.children);
+        expect(children.map((child) => child.kind === 'day_header' ? `day:${new Date(child.timestamp).getDate()}` : child.id)).toEqual([
+            'day:23', 'ask', 'scheduled', 'day:24', 'next-day', 'done',
+        ]);
+    });
+
+    it('shows a new goal as the run divider, the agent\'s reply, then done', () => {
+        const events = [
+            root(1, at(23, 9)),
+            wakeup('run', 'planned', '', at(23, 9)),
+            reply('tools', 1),
+            reply('reply', 1),
+            transition('done', 'completed', at(23, 9)),
+            completed(1),
+        ];
+        const visible = (turns) => turns.flatMap((turn) => turn.children).filter((child) => child.kind !== 'day_header').map((child) => child.id);
+        expect(visible(projectTurns(events))).toEqual(['run', 'tools', 'reply', 'done']);
+    });
+
+    it('renders nothing for edited, state_notice, an unknown kind and an old paused divider', () => {
+        const turns = projectTurns([
+            transition('before', 'paused', at(23, 8)),
+            root(1, at(23, 9)),
+            transition('edited', 'edited', at(23, 9)),
+            transition('notice', 'state_notice', at(23, 9)),
+            transition('mystery', 'mystery', at(23, 9)),
+            transition('paused', 'paused', at(23, 9)),
+            reply('reply', 1),
+        ]);
+        expect(turns.flatMap((turn) => turn.children).filter((child) => child.kind !== 'day_header').map((child) => child.id)).toEqual(['reply']);
+    });
+
+    it('adds no day headers to a chat without a goal', () => {
+        const turns = projectTurns([
+            root(1, at(23, 9)),
+            { ..._userMsg('Hello', { id: 'hi' }), agent_id: 'root.test.1', depth: 0, timestamp: at(23, 9) },
+            root(2, at(24, 9)),
+            { ..._userMsg('Again', { id: 'again' }), agent_id: 'root.test.2', depth: 0, timestamp: at(24, 9) },
+        ]);
+        expect(turns.flatMap((turn) => turn.children).some((child) => child.kind === 'day_header')).toBe(false);
     });
 });

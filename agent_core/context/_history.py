@@ -79,7 +79,7 @@ class ConversationHistory:
 
     @property
     def messages(self) -> list[dict[str, Any]]:
-        """LLM-ready message list: system message + derived conversation."""
+        """LLM-ready messages derived from the append-only conversation."""
         body = self.derived_messages
         if self._system_message is None:
             return body
@@ -144,7 +144,7 @@ class ConversationHistory:
         event regardless of type; persistence and the UI stream also handle
         types the in-memory log doesn't retain.
         """
-        if self._conversation_id is not None and event.payload.type in _RETAINED_EVENT_TYPES:
+        if self._conversation_id is not None and (event.payload.type in _RETAINED_EVENT_TYPES or event.model_text):
             self._events.append(event.to_flat_dict(self._conversation_id))
         for obs in tuple(self._observers):
             try:

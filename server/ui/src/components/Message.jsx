@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import styles from './Message.module.css';
 import MarkdownContent from './MarkdownContent.jsx';
+import GoalAnswerQuote from '../features/goals/GoalAnswerQuote.jsx';
 import AgentOutput from './AgentOutput.jsx';
 import AttachmentChip from './AttachmentChip.jsx';
 
@@ -150,8 +151,9 @@ function AssistantMessage({ entries, onPreview, streaming, stalled = false,
     );
 }
 
-function UserMessage({ content, attachments }) {
+function UserMessage({ content, attachments, context = [] }) {
     const list = Array.isArray(attachments) ? attachments : [];
+    const replies = context.filter(item => item.type === 'goal_question');
     return (
         <div className={`${styles.message} ${styles.user}`} data-testid="message-user">
             <div className={styles.bubble}>
@@ -167,7 +169,8 @@ function UserMessage({ content, attachments }) {
                         ))}
                     </div>
                 )}
-                {content && <MarkdownContent>{content}</MarkdownContent>}
+                {replies.map((item) => <GoalAnswerQuote key={`${item.goal_id}:${item.question_id}`} item={item} />)}
+                {!replies.length && content && <MarkdownContent>{content}</MarkdownContent>}
             </div>
         </div>
     );

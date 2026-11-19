@@ -1,0 +1,19 @@
+.description { color: var(--text-secondary); font-size: var(--font-size-small); line-height: 1.6; margin: 0; overflow-wrap: anywhere; }
+.block { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.label { margin: 0; font-family: var(--font-brand); font-size: var(--font-size-caption); color: var(--text-tertiary); text-transform: uppercase; }
+.progressRow { display: flex; align-items: center; gap: var(--sp-3); color: var(--text-secondary); font-size: var(--font-size-small); font-variant-numeric: tabular-nums; }
+.bar { flex: 1; height: 4px; border-radius: var(--radius-sm); background: var(--border); overflow: hidden; }
+.barFill { display: block; height: 100%; background: var(--accent); }
+.progressCount { flex-shrink: 0; }
+.plan { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
+.planItem { display: flex; gap: var(--sp-2); align-items: baseline; }
+.planItem > div { min-width: 0; overflow-wrap: anywhere; }
+.planItem > i { flex-shrink: 0; color: var(--text-tertiary); }
+.done, .skipped { color: var(--text-secondary); }
+.planItem.done > i { color: var(--success); }
+.planItem.in_progress > i { color: var(--accent); }
+.planItem.blocked > i { color: var(--warning); }
+.nowTag { margin-left: var(--sp-2); color: var(--accent); font-size: var(--font-size-caption); font-weight: 600; }
+.stepState { margin-left: var(--sp-2); color: var(--text-tertiary); font-size: var(--font-size-caption); }
+.stepNote { display: block; color: var(--text-tertiary); font-size: var(--font-size-small); white-space: pre-wrap; }
+.hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }

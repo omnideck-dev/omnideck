@@ -26,6 +26,20 @@
     text-align: left;
 }
 .sectionToggle:hover { color: var(--text-secondary); }
+.sectionLabel {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    height: 26px;
+    padding: 0 4px;
+    font-family: var(--font-body);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--text-tertiary);
+}
 .sectionToggle i { font-size: 9px; }
 .sectionToggle .chev { color: var(--text-tertiary); width: 9px; flex-shrink: 0; }
 .sectionName {

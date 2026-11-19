@@ -1,13 +1,13 @@
 """Application operations spanning routine execution and persistent state."""
 
-from tasks._runner import TaskRunner
+from tasks._scheduling import RoutineWorkSource
 from tasks._store import TaskStore
 
 
 class RoutineService:
     """Coordinate routine deletion without exposing execution storage details."""
 
-    def __init__(self, store: TaskStore, runner: TaskRunner | None) -> None:
+    def __init__(self, store: TaskStore, runner: RoutineWorkSource | None) -> None:
         self._store = store
         self._runner = runner
 

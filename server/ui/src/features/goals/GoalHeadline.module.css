@@ -1,0 +1,7 @@
+.headline { flex: 0 0 auto; max-width: 100%; border: none; }
+.full, .short { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.short { display: none; }
+@container conversation (max-width: 640px) {
+    .full { display: none; }
+    .short { display: inline; }
+}

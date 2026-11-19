@@ -414,3 +414,29 @@ def test_estimate_tool_tokens_matches_json_dumps_length():
     schema = callable_to_json_schema(fn)
     expected = len(json.dumps(schema, default=str)) // _CHARS_PER_TOKEN
     assert estimate_tool_tokens(fn) == expected
+
+
+@pytest.mark.unit
+def test_pydantic_tool_arguments_expose_fields_and_hoist_referenced_definitions():
+    from pydantic import BaseModel, Field
+
+    class Address(BaseModel):
+        city: str = Field(description="City to visit")
+
+    class Visit(BaseModel):
+        address: Address
+
+    def book(visits: list[Visit]) -> None:
+        """Book visits.
+
+        Args:
+            visits: Visits to arrange.
+        """
+
+    schema = callable_to_json_schema(book)["function"]["parameters"]
+    item = schema["properties"]["visits"]["items"]
+    assert item["type"] == "object"
+    assert item["required"] == ["address"]
+    assert item["properties"]["address"]["$ref"] == "#/$defs/Address"
+    assert schema["$defs"]["Address"]["properties"]["city"]["description"] == "City to visit"
+    assert "$defs" not in item

@@ -4,6 +4,9 @@ import {
     isRootAgentEvent,
     isSubAgentEvent,
 } from './eventTypes.js';
+import { addDayHeaders, goalDividerItem } from './goalTranscript.js';
+
+const TRANSCRIPT_PASSES = [placeCompactions, addDayHeaders];
 
 /**
  * Build the chat transcript from the persisted conversation event log.
@@ -23,6 +26,7 @@ import {
  * A sub-agent's events are omitted here because its detailed output appears in
  * the agent network/activity view. The root transcript can still contain the
  * `spawn_requested` item that links to that sub-agent.
+ *
  *
  * @param {Array<import('./conversationEvents.generated').ConversationEvent>|null|undefined} events
  * @returns {Array<import('./frontendTypes').ConversationTurn>}
@@ -58,6 +62,11 @@ export function projectTurns(events) {
         // the transcript's visible children.
         if (t === EVENT.AGENT_COMPLETED) continue;
         if (t === EVENT.CONTEXT_USAGE) continue;
+        if (t === EVENT.GOAL) {
+            const item = goalDividerItem(ev);
+            if (item && currentTurn) currentTurn.children.push(item);
+            continue;
+        }
 
         if (!currentTurn) {
             // A root error with no turn yet means the turn failed before
@@ -88,7 +97,9 @@ export function projectTurns(events) {
                 id: ev.id,
                 content: ev.content || '',
                 attachments: ev.attachments || [],
+                context: ev.context || [],
                 isNudge: !!ev.is_nudge,
+                timestamp: ev.timestamp || null,
             });
         } else if (t === EVENT.ITERATION) {
             currentTurn.children.push({
@@ -146,20 +157,26 @@ export function projectTurns(events) {
         }
     }
 
-    // Keep the source event log in chronological order. Only rearrange these
-    // derived transcript children so a compaction chip marks the semantic
-    // boundary between summarized context and the iterations kept verbatim.
-    // The backend emits the compaction after doing the work, while keptFromId
-    // identifies the first iteration on the kept side of the boundary:
-    //
-    //     event order:      iter-1, iter-2, compaction(keptFromId=iter-2)
-    //     transcript order: iter-1, [compaction], iter-2
-    //                               summarized | kept verbatim
-    //
-    // This is presentation logic over newly-created children; persisted events
-    // are neither mutated nor rewritten.
-    for (const turn of turns) {
-        const children = turn.children;
+    return TRANSCRIPT_PASSES.reduce((list, pass) => pass(list), turns);
+}
+
+/**
+ * Keep the source event log in chronological order. Only rearrange these
+ * derived transcript children so a compaction chip marks the semantic
+ * boundary between summarized context and the iterations kept verbatim.
+ * The backend emits the compaction after doing the work, while keptFromId
+ * identifies the first iteration on the kept side of the boundary:
+ *
+ *     event order:      iter-1, iter-2, compaction(keptFromId=iter-2)
+ *     transcript order: iter-1, [compaction], iter-2
+ *                               summarized | kept verbatim
+ *
+ * @param {Array<import('./frontendTypes').ConversationTurn>} turns
+ * @returns {Array<import('./frontendTypes').ConversationTurn>}
+ */
+export function placeCompactions(turns) {
+    return turns.map((turn) => {
+        const children = [...turn.children];
         const compactions = children.filter((c) => c.kind === ITEM.COMPACTION);
         for (const comp of compactions) {
             if (!comp.keptFromId) continue;
@@ -175,7 +192,6 @@ export function projectTurns(events) {
                 : targetIdx;
             children.splice(newTargetIdx, 0, comp);
         }
-    }
-
-    return turns;
+        return { ...turn, children };
+    });
 }

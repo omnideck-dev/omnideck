@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from agent_runtime import AgentRuntime, AgentRunner, AgentRunRequest, RunAttachment
+from agent_runtime import AgentRuntime, AgentRunner, AgentRunRequest, RunAdditions, RunAttachment
 from agent_runtime import _runner as runner_module
 from agent_runtime import _factory as factory_module
 from agents._agent_profiles import AgentProfile
@@ -296,3 +296,121 @@ async def test_stopped_root_lifecycle_precedes_turn_end(
     assert root_completed[-1].payload.status == "stopped"
     assert seen.index(root_completed[-1]) < len(seen) - 1
     assert seen[-1].payload.type == "turn_end"
+
+
+class _Extension:
+    def __init__(self, additions=None, closing=(), stop=False):
+        self.additions = additions
+        self.closing = closing
+        self.stop = stop
+        self.ended: list[tuple[str, bool]] = []
+
+    async def before_run(self, request, run):
+        if self.stop:
+            raise StopRequestedError()
+        return self.additions
+
+    def after_run(self, request, run, result, *, shutting_down):
+        self.ended.append((result.status, shutting_down))
+        return self.closing
+
+
+def _skill():
+    from agent_core.skills import Skill
+
+    async def check_the_calendar() -> str:
+        """Check the calendar."""
+        return "Free on Saturday"
+
+    return Skill(id="calendar", name="Calendar", description="Read the calendar.", prompt="Use the calendar.",
+                 tools=[check_the_calendar])
+
+
+async def _run_with(monkeypatch, conversation_id: str, extension: _Extension, execute=None):
+    async def default_execute(self, **kwargs):
+        return ExecutionResult("success", output="done")
+
+    monkeypatch.setattr(factory_module, "get_agent_profile", lambda _pid: _profile())
+    monkeypatch.setattr(runner_module, "get_agent_profile", lambda _pid: _profile())
+    monkeypatch.setattr(runner_module.AgentExecutor, "execute", execute or default_execute)
+    runtime = AgentRuntime(extensions=[extension])
+    try:
+        handle = await runtime.start(_request(conversation_id))
+        result = await handle.wait()
+        return result, [record.event async for record in handle.events()]
+    finally:
+        await runtime.close()
+
+
+async def test_run_with_no_extensions_works_as_before(monkeypatch) -> None:
+    monkeypatch.setattr(factory_module, "get_agent_profile", lambda _pid: _profile())
+    monkeypatch.setattr(runner_module.AgentExecutor, "execute", AsyncMock(return_value=ExecutionResult("success")))
+    seen = await _run("runner-no-extensions")
+    assert [event.payload.content for event in seen if event.payload.type == "user_message"] == ["hello"]
+    assert seen[-1].payload.type == "turn_end"
+
+
+async def test_before_run_adds_tools_and_opening_events(monkeypatch) -> None:
+    opening = AgentEvent(payload=ErrorPayload(type="error", message="Opened"), model_text="The calendar changed.")
+    tools: list[set[str]] = []
+
+    async def execute(self, **kwargs):
+        tools.append({tool.__name__ for tool in kwargs["capabilities"].tools})
+        return ExecutionResult("success")
+
+    extension = _Extension(RunAdditions(skills=(_skill(),), opening_events=(opening,)))
+    result, seen = await _run_with(monkeypatch, "runner-opening", extension, execute)
+    assert result.status == "success"
+    assert "check_the_calendar" in tools[0]
+    kinds = [event.payload.type for event in seen]
+    assert kinds.index("error") < kinds.index("user_message")
+    persisted = load_events_jsonl("runner-opening")
+    assert next(event for event in persisted if event["type"] == "error")["model_text"] == "The calendar changed."
+
+
+async def test_before_run_stops_the_run_with_stop_requested(monkeypatch) -> None:
+    execute = AsyncMock(return_value=ExecutionResult("success"))
+    result, seen = await _run_with(monkeypatch, "runner-stopped", _Extension(stop=True), execute)
+    assert result.status == "stopped"
+    execute.assert_not_awaited()
+    assert not any(event.payload.type == "user_message" for event in seen)
+
+
+async def test_after_run_gets_the_result_and_shutting_down(monkeypatch) -> None:
+    extension = _Extension()
+    await _run_with(monkeypatch, "runner-after", extension)
+    assert extension.ended == [("success", False)]
+
+
+async def test_extensions_apply_only_to_the_root_execution(monkeypatch) -> None:
+    seen: list[tuple[str, set[str]]] = []
+
+    async def execute(self, **kwargs):
+        context = kwargs["context"]
+        names = {tool.__name__ for tool in kwargs["capabilities"].tools}
+        if context.parent_execution_id is not None:
+            seen.append(("child", names))
+            return ExecutionResult("success", output="child done")
+        seen.append(("root", names))
+        with context.bind("TEST", kwargs["capabilities"]):
+            tools = {tool.__name__: tool for tool in kwargs["capabilities"].tools}
+            await tools["spawn_agent"]("Check dates", "profile-1", "HELPER")
+        return ExecutionResult("success")
+
+    extension = _Extension(RunAdditions(skills=(_skill(),)))
+    await _run_with(monkeypatch, "runner-root-only", extension, execute)
+    found = dict(seen)
+    assert "check_the_calendar" in found["root"]
+    assert "check_the_calendar" not in found["child"]
+    assert len(extension.ended) == 1
+
+
+async def test_closing_events_publish_before_turn_end(monkeypatch) -> None:
+    closing = AgentEvent(payload=ErrorPayload(type="error", message="Closed"))
+    _, seen = await _run_with(monkeypatch, "runner-closing", _Extension(closing=(closing,)))
+    kinds = [event.payload.type for event in seen]
+    assert kinds[-2:] == ["error", "turn_end"]
+    closed = seen[-2]
+    assert closed.depth == 0 and closed.agent_name == "TEST"
+    assert any(event["type"] == "error" and event["message"] == "Closed"
+               for event in load_events_jsonl("runner-closing"))

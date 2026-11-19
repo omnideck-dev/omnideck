@@ -12,7 +12,7 @@ from __future__ import annotations
 from tasks._executor import TaskExecutor
 from tasks._file_store import ROUTINES_SUBDIR
 from tasks._notifier import TelegramNotifier
-from tasks._runner import TaskRunner
+from tasks._scheduling import RoutineWorkSource
 from tasks._service import RoutineService
 from tasks._singleton import get_store
 from tasks._store import TaskStore
@@ -22,7 +22,7 @@ __all__ = [
     "ROUTINES_SUBDIR",
     "RoutineService",
     "TaskExecutor",
-    "TaskRunner",
+    "RoutineWorkSource",
     "TaskStore",
     "TelegramNotifier",
     "add_task",

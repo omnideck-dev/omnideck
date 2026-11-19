@@ -296,6 +296,27 @@ def test_add_event_retains_warm_resume_types():
     assert [e["type"] for e in h.recorded_events] == ["file_output", "spawn_requested"]
 
 
+@pytest.mark.unit
+def test_add_event_retains_any_event_with_model_text():
+    from agent_core.events import GoalEventPayload, GoalTransitionData
+    h = ConversationHistory(conversation_id="c1")
+    h.add_event(AgentEvent(
+        payload=GoalEventPayload(type="goal", goal_id="g1", data=GoalTransitionData(kind="edited")),
+        model_text="The user edited the goal.",
+    ))
+    assert [e["type"] for e in h.recorded_events] == ["goal"]
+
+
+@pytest.mark.unit
+def test_add_event_skips_feature_events_without_model_text():
+    from agent_core.events import GoalEventPayload, GoalTransitionData
+    h = ConversationHistory(conversation_id="c1")
+    h.add_event(AgentEvent(
+        payload=GoalEventPayload(type="goal", goal_id="g1", data=GoalTransitionData(kind="edited")),
+    ))
+    assert h.recorded_events == []
+
+
 # ── observer fan-out edge cases ───────────────────────────────────────
 
 

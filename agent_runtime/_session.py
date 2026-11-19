@@ -13,10 +13,13 @@ from artifacts import ArtifactsIndexWriter
 from conversations import BrowserTabsWriter, ConversationScope, ConversationStore, EventsLogWriter, TerminalWriter
 from agent_core.context import ConversationHistory
 from agent_core.control import ExecutionControl
-from agent_core.events import AgentEvent, FileOutputPayload, TurnEndPayload
+from agent_core.events import (
+    AgentEvent, FileOutputPayload, GoalQuestionContext, NudgeQueuedPayload, NudgeRemovedPayload, TurnEndPayload,
+)
 from agent_core.providers import TokenUsage
 from agent_core.turn import ExecutionContext, ExecutionResult, get_execution_context
 
+from ._extensions import RunAdditions
 from ._models import AgentRunRequest, RunResult, RunSnapshot, SequencedEvent
 
 logger = logging.getLogger(__name__)
@@ -32,7 +35,9 @@ class RunSession:
     def __init__(
         self, request: AgentRunRequest, run_id: str, conversations: ConversationStore,
         *, integration_connections: ConnectionSnapshot = (),
+        event_observers: set[Callable[[str, AgentEvent], None]] | None = None,
     ) -> None:
+        self._event_observers = event_observers if event_observers is not None else set()
         self.integration_connections = integration_connections
         self.request = request
         self.run_id = run_id
@@ -53,6 +58,8 @@ class RunSession:
         self._resources = AsyncExitStack()
         self._artifacts: list[FileOutputPayload] = []
         self._results: dict[str, ExecutionResult] = {}
+        self.additions: list[RunAdditions] = []
+        self.root_agent_name = ""
         # Preserve the dotted identity contract used by persisted conversation readers.
         self.root_context = ExecutionContext(
             execution_id=f"root.agent.{uuid4().hex}",
@@ -129,6 +136,11 @@ class RunSession:
             self._artifacts.append(event.payload)
         for waiter in tuple(self.waiters):
             waiter.set()
+        for observer in tuple(self._event_observers):
+            try:
+                observer(self.conversation_id, event)
+            except Exception:
+                logger.exception("Event observer failed for run %s", self.run_id)
 
     def end_events(self) -> None:
         if not self._terminal_sent:
@@ -160,11 +172,45 @@ class RunSession:
         self.executions.pop(execution.execution_id, None)
         self._results[execution.execution_id] = result
 
-    def nudge(self, message: str, execution_id: str | None = None) -> None:
+    def nudge(self, message: str, execution_id: str | None = None) -> str:
+        """Queue a message for any execution in this run and return its nudge ID."""
         target = self.executions.get(execution_id or self.root_context.execution_id)
         if target is None or self.completed:
             raise ValueError("No active execution with that identity in this run")
-        target.control.nudge(message)
+        return target.control.nudge(message)
+
+    def accepts_root_messages(self) -> bool:
+        """Whether a message queued now will reach the root agent."""
+        return (
+            not self.completed and not self.stop_event.is_set()
+            and self.root_context.execution_id in self.executions
+            and self.root_context.control.accepting_nudges
+        )
+
+    def queue_root_message(
+        self, message: str, context: tuple[GoalQuestionContext, ...] = (), model_text: str | None = None,
+    ) -> str:
+        """Queue a user message for the root agent and announce it to watchers."""
+        nudge_id = self.root_context.control.nudge(message, context=context, model_text=model_text)
+        self.add_event(AgentEvent(payload=NudgeQueuedPayload(
+            type="nudge_queued", nudge_id=nudge_id, content=message, context=list(context),
+        )))
+        return nudge_id
+
+    def remove_root_message(self, nudge_id: str) -> bool:
+        """Remove a queued root message the agent has not read yet."""
+        if not self.root_context.control.remove_nudge(nudge_id):
+            return False
+        self.add_event(AgentEvent(payload=NudgeRemovedPayload(type="nudge_removed", nudge_id=nudge_id, reason="removed")))
+        return True
+
+    def return_unread(self) -> None:
+        """Close the root queue and hand every unread message back to its sender."""
+        for message in self.root_context.control.return_unread():
+            if message.nudge_id is not None:
+                self.add_event(AgentEvent(payload=NudgeRemovedPayload(
+                    type="nudge_removed", nudge_id=message.nudge_id, reason="returned",
+                )))
 
     def finish(self, root: ExecutionResult) -> RunResult:
         self.end_events()

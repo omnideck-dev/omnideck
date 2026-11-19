@@ -313,3 +313,19 @@ def test_llm_view_augments_first_user_message_with_attachments():
             "look at this\n\n[Attached files written to virtual computer]\n"
             "  - a.txt (text/plain) -> /home/computron/uploads/a.txt"},
     ]
+
+
+def test_earlier_messages_render_the_same_as_new_events_arrive():
+    events = [_started(ROOT, "Agent"), _user(ROOT, "Plan the reunion", evt_id="u1"),
+              _iter(ROOT, 0, content="Started.", evt_id="i1")]
+    before = build_llm_view(events)
+    events += [
+        _user(ROOT, "Book the pavilion", evt_id="u2"),
+        _iter(ROOT, 1, tool_calls=[{"id": "c1", "name": "search", "arguments": {}}], evt_id="i2"),
+        _tool(ROOT, "search", "Found two parks", call_id="c1", evt_id="t1"),
+        {**_user(ROOT, "", evt_id="n1"), "type": "notice", "model_text": "Something changed."},
+        {**_user(ROOT, "Saturday", evt_id="u3"), "model_text": "The answer is Saturday."},
+    ]
+    after = build_llm_view(events)
+    assert after[:len(before)] == before
+    assert len(after) == len(before) + 5

@@ -104,7 +104,8 @@ def test_deleting_active_conversation_opens_a_new_one(page: Page):
 
         # Deleting the active conversation starts a fresh, empty one.
         recent.item_by_id(conv_id).delete()
-        expect(page.get_by_text(title)).not_to_be_visible()
+        expect(page.locator(f'[data-conversation-id="{conv_id}"]')).to_have_count(0)
+        expect(page.get_by_test_id("chat-title")).not_to_have_text(title)
         expect(page.get_by_test_id("message-user")).to_have_count(0)
     finally:
         delete_conversation(conv_id)

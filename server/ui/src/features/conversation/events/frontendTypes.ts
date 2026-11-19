@@ -3,6 +3,7 @@ import type {
     CompactionStats,
     ConversationEvent,
     FileOutputPayload,
+    GoalQuestionContext,
 } from './conversationEvents.generated';
 
 export type AgentActivityEntry =
@@ -131,7 +132,15 @@ export type SessionAction =
     | { type: 'FINALIZE_ITERATION' }
     | { type: 'UPDATE_IN_PROGRESS_ITERATION'; event: ConversationEvent }
     | { type: 'SET_ROOT_AGENT'; agentId: string }
-    | { type: 'FINISH_TURN' };
+    | { type: 'FINISH_TURN' }
+    | { type: 'QUEUE_MESSAGE'; message: QueuedMessage }
+    | { type: 'DROP_QUEUED_MESSAGE'; nudgeId: string; returned: boolean };
+
+export type QueuedMessage = {
+    id: string;
+    content: string;
+    context: Array<import('./conversationEvents.generated').GoalQuestionContext>;
+};
 
 export type ConversationEventActions = {
     session: Array<SessionAction>;
@@ -151,11 +160,23 @@ export type LiveIteration = {
 
 export type TranscriptItem =
     | {
+        kind: 'goal_transition';
+        id: string;
+        transition: 'run' | 'scheduled' | 'waiting' | 'error' | 'completed';
+        step: string;
+        questionCount: number;
+        timestamp: string;
+        resumeAt: string | null;
+    }
+    | { kind: 'day_header'; id: string; timestamp: string }
+    | {
         kind: 'user_prompt';
         id: string;
         content: string;
         attachments: Array<unknown>;
+        context: Array<GoalQuestionContext>;
         isNudge: boolean;
+        timestamp: string | null;
     }
     | {
         kind: 'iteration';

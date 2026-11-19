@@ -7,7 +7,6 @@ from typing import Any
 
 from agent_core.events import (
     AgentEvent,
-    UserMessagePayload,
     publish_event,
 )
 from agent_core.control import _current_control
@@ -26,12 +25,11 @@ class NudgeHook:
         """Publish any queued nudge messages as a user message event."""
         control = _current_control.get()
         nudges = control.drain_nudges() if control is not None else []
-        if nudges:
-            combined = "\n\n".join(nudges)
+        for message in nudges:
             try:
-                publish_event(AgentEvent(payload=UserMessagePayload(
-                    type="user_message", content=combined, is_nudge=True,
-                )))
+                model_text = control.model_texts.pop(message.nudge_id, None) if control and message.nudge_id else None
+                publish_event(AgentEvent(payload=message, model_text=model_text))
             except Exception:  # pragma: no cover - defensive
                 logger.exception("Failed to publish nudge user_message event")
+        if nudges:
             logger.info("Injected %d nudge(s) for agent '%s'", len(nudges), agent_name)

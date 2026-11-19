@@ -170,4 +170,4 @@ def test_open_agent_views_remain_bound_while_returning_to_chat(
     expect(
         isolation_page.locator(f"[data-view-type='workspace-resource'][data-view-owner-id='{bravo_id}']")
     ).to_have_count(1)
-    expect(isolation_page.get_by_test_id("chat-title-bar")).to_be_visible()
+    expect(isolation_page.get_by_test_id("chat-panel")).to_be_visible()

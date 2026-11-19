@@ -1,4 +1,4 @@
-"""Nudge UI drives actual running/completed agents through the public API."""
+"""The sub-agent message bar drives actual running/completed agents through the public API."""
 
 from playwright.sync_api import Page, expect
 
@@ -18,7 +18,7 @@ def test_nudge_sends_correct_agent_id(page: Page):
         expect(network.indicator).to_be_visible(timeout=10_000)
         network.open()
         activity = network.select_agent(1)
-        nudge_input = activity.root.locator("input[placeholder*='Send a nudge']")
+        nudge_input = activity.root.locator("input[placeholder='Message this agent…']")
         nudge_input.fill("hey focus on the API")
         with page.expect_response(lambda r: r.request.method == "POST" and r.url.endswith("/api/nudge")) as sent:
             nudge_input.press("Enter")
@@ -26,7 +26,7 @@ def test_nudge_sends_correct_agent_id(page: Page):
         assert response.status == 200, response.text()
         assert response.request.post_data_json["agent_id"] == activity.agent_id
         assert response.request.post_data_json["message"] == "hey focus on the API"
-        expect(page.locator("[role='region'][aria-label='Notifications']")).to_contain_text("Nudge sent")
+        expect(page.locator("[role='region'][aria-label='Notifications']")).not_to_contain_text("sent")
         expect(activity.root).to_contain_text("hey focus on the API", timeout=15_000)
         network.back_to_chat()
         chat.wait_streaming(timeout=15_000)
@@ -49,7 +49,7 @@ def test_nudge_shows_error_toast_on_409(page: Page):
         chat.send(spawn(say("finished"), name="research_agent") + say("parent done")).wait_streaming()
         network = NetworkView(page).open()
         activity = network.select_agent(1)
-        nudge_input = activity.root.locator("input[placeholder*='Send a nudge']")
+        nudge_input = activity.root.locator("input[placeholder='Message this agent…']")
         nudge_input.fill("hello")
         with page.expect_response(lambda r: r.request.method == "POST" and r.url.endswith("/api/nudge")) as sent:
             nudge_input.press("Enter")

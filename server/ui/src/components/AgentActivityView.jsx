@@ -59,7 +59,7 @@ export default function AgentActivityView({
     const nudgeDisabled = isOffline || stopRequested;
     const nudgePlaceholder = stopRequested
         ? 'Stopping...'
-        : `Send a nudge to ${formatAgentName(agent.name)}...`;
+        : 'Message this agent…';
 
     return (
         <div className={styles.container} data-testid="agent-activity-view">
@@ -155,10 +155,10 @@ export default function AgentActivityView({
 
             <div className={styles.nudgeArea}>
                 {isOffline && (
-                    <OfflineNotice description="Nudges are unavailable." />
+                    <OfflineNotice description="Messages are unavailable." />
                 )}
                 <div className={styles.nudgeBar}>
-                    <span className={styles.nudgeLabel}>Nudge</span>
+                    <span className={styles.nudgeLabel}>Message</span>
                     <input
                         className={styles.nudgeInput}
                         type="text"

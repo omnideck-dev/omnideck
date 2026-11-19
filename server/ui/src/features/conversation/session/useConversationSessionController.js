@@ -12,8 +12,12 @@ import { projectTurns } from '../events/projectTurns.js';
 import { accumulateLiveIteration } from '../events/liveIteration.js';
 import { mapConversationEventToActions } from '../events/mapConversationEventToActions.js';
 import { getConversationRestorePlan } from '../events/conversationRestore.js';
+import { clearQueue, consumeReturned, dropQueued, queueMessage } from './queueState.js';
 import {
     ChatStreamHttpError,
+    openChatTurn,
+    readQueuedReply,
+    removeQueuedTurn,
     streamAgentRun,
     streamChatTurn,
 } from '../transport/chatClient.js';
@@ -132,6 +136,8 @@ const INITIAL_CONVERSATION_STATE = {
     events: [],
     inflightIteration: null,
     pendingUserPrompt: null,
+    queue: [],
+    returned: [],
 };
 
 function conversationReducer(state, action) {
@@ -154,14 +160,21 @@ function conversationReducer(state, action) {
                 ),
             };
         case 'FINISH_TURN':
-            return { ...state, inflightIteration: null, pendingUserPrompt: null };
+            return clearQueue({ ...state, inflightIteration: null, pendingUserPrompt: null });
         case 'START_PENDING_USER_PROMPT':
             return { ...state, pendingUserPrompt: action.prompt };
+        case 'CLEAR_PENDING_USER_PROMPT':
+            return { ...state, pendingUserPrompt: null };
+        case 'QUEUE_MESSAGE':
+            return queueMessage(state, action.message);
+        case 'DROP_QUEUED_MESSAGE':
+            return dropQueued(state, action.nudgeId, action.returned);
+        case 'CONSUME_RETURNED':
+            return consumeReturned(state, action.ids);
         case 'RESTORE_CONVERSATION':
             return {
+                ...INITIAL_CONVERSATION_STATE,
                 events: action.events,
-                inflightIteration: null,
-                pendingUserPrompt: null,
             };
         case 'RESET_CONVERSATION':
             return INITIAL_CONVERSATION_STATE;
@@ -204,7 +217,7 @@ export default function useConversationSessionController({
         conversationReducer,
         INITIAL_CONVERSATION_STATE,
     );
-    const { events, inflightIteration, pendingUserPrompt } = conversationState;
+    const { events, inflightIteration, pendingUserPrompt, queue, returned } = conversationState;
     const eventsRef = useRef(events);
     // Unlike eventsRef, this includes canonical records owned only by the
     // agent/workspace views. It lets ambiguous-start recovery distinguish new
@@ -234,6 +247,7 @@ export default function useConversationSessionController({
     }, []);
     const abortControllerRef = useRef(null);
     const requestControllerRef = useRef(null);
+    const backgroundRefreshControllerRef = useRef(null);
     const loadControllerRef = useRef(null);
     const [isOffline, setIsOffline] = useState(browserIsOffline);
     useEffect(() => {
@@ -259,6 +273,8 @@ export default function useConversationSessionController({
         abortControllerRef.current = null;
         requestControllerRef.current?.abort();
         requestControllerRef.current = null;
+        backgroundRefreshControllerRef.current?.abort();
+        backgroundRefreshControllerRef.current = null;
         controller?.abort();
         loadControllerRef.current?.abort();
         loadControllerRef.current = null;
@@ -277,6 +293,8 @@ export default function useConversationSessionController({
         _setActiveConversationId(id);
     }, []);
     const rootAgentIdRef = useRef(null);
+    const followNextRunRef = useRef(false);
+    const runConnectionRef = useRef(null);
 
     const createEventDelivery = useCallback(() => createLiveEventDelivery({
         dispatch: {
@@ -475,11 +493,12 @@ export default function useConversationSessionController({
                 startRequest = null;
                 const requestAttempt = createRequestController(controller.signal);
                 requestControllerRef.current = requestAttempt.controller;
+                let followQueuedRun = false;
 
                 try {
                     const records = source === 'start'
                         ? streamChatTurn({
-                            ...request,
+                            request: request.request,
                             conversationId,
                             signal: requestAttempt.controller.signal,
                         })
@@ -490,6 +509,17 @@ export default function useConversationSessionController({
                         });
                     for await (const data of records) {
                         if (controller.signal.aborted) throw abortError();
+                        if (source === 'start' && data?.nudge) {
+                            dispatchConversation({ type: 'CLEAR_PENDING_USER_PROMPT' });
+                            if (typeof data.nudge.run_id === 'string') {
+                                runId = data.nudge.run_id;
+                                lastRunId = runId;
+                                lastSeq = 0;
+                                followQueuedRun = true;
+                            }
+                            sawRunEvidence = true;
+                            break;
+                        }
                         const recordRunId = typeof data?.run_id === 'string'
                             ? data.run_id
                             : null;
@@ -532,7 +562,7 @@ export default function useConversationSessionController({
                         }
                     }
 
-                    if (!reachedTurnEnd) {
+                    if (!reachedTurnEnd && !followQueuedRun) {
                         if (source === 'start' && !sawRunEvidence) {
                             startFailure = new Error(
                                 'The conversation stream closed before the run started.',
@@ -614,6 +644,16 @@ export default function useConversationSessionController({
                 setStopRequested(false);
                 setIsOffline(browserIsOffline());
                 dispatchConversation({ type: 'FINALIZE_ITERATION' });
+                if (followNextRunRef.current) {
+                    followNextRunRef.current = false;
+                    const next = new AbortController();
+                    abortControllerRef.current = next;
+                    void runConnectionRef.current?.({
+                        conversationId,
+                        controller: next,
+                        persistedEvents: eventsRef.current,
+                    });
+                }
             }
         }
     }, [
@@ -623,12 +663,53 @@ export default function useConversationSessionController({
         setStopRequested,
     ]);
 
+    useEffect(() => {
+        runConnectionRef.current = runConnection;
+    }, [runConnection]);
+
+    const submitTurn = useCallback(async (request, prompt) => {
+        if (browserIsOffline() || stopRequestedRef.current) return null;
+        const conversationId = conversationIdRef.current;
+        if (isStreamingRef.current) {
+            let response;
+            try {
+                response = await openChatTurn({ request, conversationId });
+            } catch {
+                return { ok: false, status: 0, error: 'Could not reach the server' };
+            }
+            if (await readQueuedReply(response)) return { ok: true, queued: true };
+            if (!response.ok) {
+                const body = await response.json().catch(() => ({}));
+                return { ok: false, status: response.status, error: body?.error };
+            }
+            void response.body?.cancel().catch(() => {});
+            followNextRunRef.current = true;
+            if (!isStreamingRef.current && !abortControllerRef.current) {
+                followNextRunRef.current = false;
+                const controller = new AbortController();
+                abortControllerRef.current = controller;
+                void runConnection({ conversationId, controller, persistedEvents: eventsRef.current });
+            }
+            return { ok: true, queued: false };
+        }
+
+        dispatchConversation({ type: 'START_PENDING_USER_PROMPT', prompt });
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+        await runConnection({
+            conversationId,
+            controller,
+            initialRequest: { request },
+            persistedEvents: eventsRef.current,
+        });
+        return { ok: true, queued: false };
+    }, [runConnection]);
+
     const sendMessage = useCallback(async (message, attachments, profileId) => {
-        if (
-            (!message && !attachments?.length)
-            || isStreamingRef.current
-            || browserIsOffline()
-        ) return;
+        if (!message && !attachments?.length) return null;
+        if (isStreamingRef.current && attachments?.length) {
+            return { ok: false, status: 409, error: 'Files can be sent after the agent finishes.' };
+        }
 
         // The pending attachment list keeps upload order
         // and carries filename + content_type for every entry (images too), so
@@ -643,25 +724,40 @@ export default function useConversationSessionController({
                 src: isImage ? (a.preview || `data:${a.content_type};base64,${a.base64}`) : undefined,
             };
         });
+        return submitTurn(
+            { kind: 'message', message, attachments, profileId },
+            { id: pendingUserId, content: message || '', attachments: pendingAttachments, context: [] },
+        );
+    }, [submitTurn]);
 
-        dispatchConversation({
-            type: 'START_PENDING_USER_PROMPT',
-            prompt: {
+    const sendAnswers = useCallback(async (goalId, answers, profileId) => {
+        if (!goalId || !answers?.length) return null;
+        const pendingUserId = `u_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+        return submitTurn(
+            { kind: 'answers', goalId, answers, profileId },
+            {
                 id: pendingUserId,
-                content: message || '',
-                attachments: pendingAttachments,
+                content: '',
+                attachments: [],
+                context: answers.map((answer) => ({ type: 'goal_question', goal_id: goalId, ...answer })),
             },
-        });
+        );
+    }, [submitTurn]);
 
-        const controller = new AbortController();
-        abortControllerRef.current = controller;
-        await runConnection({
-            conversationId: conversationIdRef.current,
-            controller,
-            initialRequest: { message, attachments, profileId },
-            persistedEvents: eventsRef.current,
-        });
-    }, [runConnection]);
+    const removeQueuedMessage = useCallback(async (nudgeId) => {
+        let result;
+        try {
+            result = await removeQueuedTurn({ nudgeId, conversationId: conversationIdRef.current });
+        } catch {
+            return { ok: false, status: 0, error: 'Could not reach the server' };
+        }
+        if (result.ok) dispatchConversation({ type: 'DROP_QUEUED_MESSAGE', nudgeId, returned: false });
+        return result;
+    }, []);
+
+    const consumeReturnedMessages = useCallback((ids) => {
+        dispatchConversation({ type: 'CONSUME_RETURNED', ids });
+    }, []);
 
     /** Ask the backend to stop generation, leaving the stream open until
      * turn_end so the backend can flush whatever it streamed so far. */
@@ -690,6 +786,7 @@ export default function useConversationSessionController({
     /** Load a destination before detaching from the current conversation. */
     const loadConversation = useCallback(async (conversationId) => {
         loadControllerRef.current?.abort();
+
         const controller = new AbortController();
         loadControllerRef.current = controller;
         try {
@@ -699,6 +796,7 @@ export default function useConversationSessionController({
             );
             if (loadControllerRef.current !== controller) return null;
             const data = normalizeConversationLoadData(conversationId, rawData);
+            /** @type {Array<import('../events/conversationEvents.generated').ConversationEvent>} */
             const retainedEvents = [];
             let rootAgentId = null;
             for (const event of data.events) {
@@ -711,6 +809,7 @@ export default function useConversationSessionController({
 
             // Commit the switch only after the destination is ready. A failed
             // load must leave the current stream, controls, and draft intact.
+            followNextRunRef.current = false;
             abortControllerRef.current?.abort();
             abortControllerRef.current = null;
             setIsStreaming(false);
@@ -751,6 +850,31 @@ export default function useConversationSessionController({
         });
     }, [runConnection]);
 
+    const refreshingRef = useRef(false);
+    const refreshActiveConversation = useCallback(async () => {
+        if (isStreamingRef.current || abortControllerRef.current || refreshingRef.current || browserIsOffline()) return null;
+        refreshingRef.current = true;
+        const conversationId = conversationIdRef.current;
+        const controller = new AbortController();
+        backgroundRefreshControllerRef.current = controller;
+        try {
+            const raw = await fetchConversationSnapshot(conversationId, controller.signal);
+            if (controller.signal.aborted || conversationId !== conversationIdRef.current || isStreamingRef.current || abortControllerRef.current) return null;
+            const snapshot = normalizeConversationLoadData(conversationId, raw);
+            const delivery = createEventDelivery();
+            applySnapshotGap(snapshot, canonicalEventIdsRef.current, delivery);
+            delivery.flush();
+            delivery.cancel();
+            if (snapshot.activeRun) void reattachActiveRun(snapshot);
+            return snapshot;
+        } catch {
+            return null;
+        } finally {
+            refreshingRef.current = false;
+            if (backgroundRefreshControllerRef.current === controller) backgroundRefreshControllerRef.current = null;
+        }
+    }, [applySnapshotGap, createEventDelivery, reattachActiveRun]);
+
     /** Clear session state and switch to a fresh conversation ID.
      *
      * Detaches from the previous conversation without stopping its run. The server
@@ -760,10 +884,12 @@ export default function useConversationSessionController({
     const newConversation = useCallback(({ draft: seedDraft = '' } = {}) => {
         loadControllerRef.current?.abort();
         loadControllerRef.current = null;
+        followNextRunRef.current = false;
         if (abortControllerRef.current) {
             abortControllerRef.current.abort();
             abortControllerRef.current = null;
         }
+
         setIsStreaming(false);
         setStopRequested(false);
         dispatchConversation({ type: 'RESET_CONVERSATION' });
@@ -806,6 +932,7 @@ export default function useConversationSessionController({
                     id: pendingUserPrompt.id || '_pending_user',
                     content: pendingUserPrompt.content || '',
                     attachments: pendingUserPrompt.attachments || [],
+                    context: pendingUserPrompt.context || [],
                     isNudge: false,
                 }],
             }];
@@ -832,11 +959,17 @@ export default function useConversationSessionController({
         savedConversationId,
         draft,
         setDraft,
+        queue,
+        returned,
         sendMessage,
+        sendAnswers,
+        removeQueuedMessage,
+        consumeReturnedMessages,
         sendNudge,
         stopGeneration,
         loadConversation,
         reattachActiveRun,
+        refreshActiveConversation,
         newConversation,
     };
 }

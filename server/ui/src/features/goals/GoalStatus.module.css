@@ -1,0 +1,9 @@
+.status { display: inline-flex; align-items: center; gap: var(--sp-1); min-width: 0; white-space: nowrap; color: var(--text-secondary); }
+.label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.icon { flex-shrink: 0; }
+.compact { font-size: var(--font-size-small); }
+.neutral { color: var(--text-secondary); }
+.accent { color: var(--accent); }
+.success { color: var(--success); }
+.warning { color: var(--warning); }
+.danger { color: var(--danger); }

@@ -113,9 +113,9 @@ describe('AgentActivityView', () => {
             startAgent(dispatch, 'a1');
 
             expect(screen.getByTestId('connection-status')).toHaveTextContent(
-                'OfflineNudges are unavailable.',
+                'OfflineMessages are unavailable.',
             );
-            expect(screen.getByPlaceholderText('Send a nudge to Omnideck...'))
+            expect(screen.getByPlaceholderText('Message this agent…'))
                 .toBeDisabled();
         });
     });

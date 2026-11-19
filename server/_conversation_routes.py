@@ -44,6 +44,8 @@ from conversations import (
     update_folder,
 )
 from server._agent_runtime import AGENT_RUNTIME_KEY
+from goals import GoalStore
+from server._goals import GOAL_STORE_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -99,16 +101,22 @@ async def delete_conversation_handler(request: Request) -> Response:
     """Delete a conversation and all its turns/history."""
     conversation_id = request.match_info["conversation_id"]
     manager = request.app[AGENT_RUNTIME_KEY]
+    store = request.app[GOAL_STORE_KEY]
     if manager.active_for_conversation(conversation_id) is not None:
-        return web.json_response(
-            {"error": "This conversation is still running. Stop it before deleting."},
-            status=409,
-        )
-    found = delete_conversation(conversation_id)
+        return _still_running(store, conversation_id, "Stop it before deleting.")
+    found = store.delete_conversation(conversation_id, lambda: delete_conversation(conversation_id))
     if not found:
         return web.json_response({"error": "Conversation not found"}, status=404)
     await manager.conversations.evict_conversation(conversation_id)
     return web.Response(status=204)
+
+
+def _still_running(store: GoalStore, conversation_id: str, action: str) -> Response:
+    if store.current(conversation_id) is not None:
+        message = "This chat's goal is working. Pause the goal first, then try again."
+    else:
+        message = f"This conversation is still running. {action}"
+    return web.json_response({"error": message}, status=409)
 
 
 async def list_archived_handler(_request: Request) -> Response:
@@ -122,12 +130,10 @@ async def archive_conversation_handler(request: Request) -> Response:
     """Archive a conversation, moving it out of the active list."""
     conversation_id = request.match_info["conversation_id"]
     manager = request.app[AGENT_RUNTIME_KEY]
+    store = request.app[GOAL_STORE_KEY]
     if manager.active_for_conversation(conversation_id) is not None:
-        return web.json_response(
-            {"error": "This conversation is still running. Stop it before archiving."},
-            status=409,
-        )
-    found = archive_conversation(conversation_id)
+        return _still_running(store, conversation_id, "Stop it before archiving.")
+    found = store.archive_conversation(conversation_id, lambda: archive_conversation(conversation_id))
     if not found:
         return web.json_response({"error": "Conversation not found"}, status=404)
     await manager.conversations.evict_conversation(conversation_id)
@@ -137,7 +143,8 @@ async def archive_conversation_handler(request: Request) -> Response:
 async def unarchive_conversation_handler(request: Request) -> Response:
     """Restore an archived conversation back into the active list."""
     conversation_id = request.match_info["conversation_id"]
-    found = unarchive_conversation(conversation_id)
+    store = request.app[GOAL_STORE_KEY]
+    found = store.unarchive_conversation(conversation_id, lambda: unarchive_conversation(conversation_id))
     if not found:
         return web.json_response({"error": "Conversation not found"}, status=404)
     return web.Response(status=204)
@@ -247,14 +254,13 @@ async def resume_conversation_handler(request: Request) -> Response:
     active_run = None
     if active is not None:
         resume_after_seq = 0
-        for event in reversed(resume_state.events):
+        for event in resume_state.events:
             event_id = event.get("id")
             if not isinstance(event_id, str):
                 continue
             sequence = active.sequence_for_event(event_id)
             if sequence is not None:
-                resume_after_seq = sequence
-                break
+                resume_after_seq = max(resume_after_seq, sequence)
         active_run = {
             "run_id": active.run_id,
             "status": "running",

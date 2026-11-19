@@ -114,7 +114,7 @@ describe('conversation session run reconnection', () => {
             );
         });
 
-        expect(sendResult).toBeUndefined();
+        expect(sendResult).toBeNull();
         expect(result.current.isOffline).toBe(true);
         expect(result.current.isStreaming).toBe(false);
         expect(result.current.turns).toEqual([]);

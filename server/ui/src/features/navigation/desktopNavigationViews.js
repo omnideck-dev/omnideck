@@ -2,7 +2,8 @@ const DESTINATION_METADATA = {
     settings: { label: 'Settings', icon: 'bi-gear' },
     browser: { label: 'Browser', icon: 'bi-globe2' },
     agents: { label: 'Agents', icon: 'bi-robot' },
-    routines: { label: 'Routines', icon: 'bi-bullseye' },
+    routines: { label: 'Routines', icon: 'bi-alarm' },
+    goals: { label: 'Goals', icon: 'bi-bullseye' },
     artifacts: { label: 'Artifacts', icon: 'bi-collection' },
     apps: { label: 'Apps', icon: 'bi-grid' },
 };

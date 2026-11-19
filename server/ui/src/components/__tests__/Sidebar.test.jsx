@@ -7,6 +7,7 @@ import {
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Sidebar from '../Sidebar.jsx';
+import { GoalsTestProvider } from '../../features/goals/__tests__/goalTestProviders.jsx';
 import { ToastProvider } from '../ToastProvider.jsx';
 import { ConversationCatalogProvider } from '../../features/conversation/catalog/ConversationCatalog.jsx';
 import { AppEffectsProvider } from '../../features/app/AppEffects.jsx';
@@ -58,12 +59,14 @@ const Wrapper = ({ children }) => (
     <ToastProvider>
         <AppEffectsProvider>
             <ThemeProvider>
-                <ConversationCatalogProvider>{children}</ConversationCatalogProvider>
+                <GoalsTestProvider goals={sidebarGoals} enabled={sidebarGoalsEnabled}><ConversationCatalogProvider>{children}</ConversationCatalogProvider></GoalsTestProvider>
             </ThemeProvider>
         </AppEffectsProvider>
     </ToastProvider>
 );
 const render = (ui, options) => _render(ui, { wrapper: Wrapper, ...options });
+let sidebarGoals = [];
+let sidebarGoalsEnabled = false;
 
 const COLLAPSE_KEY = 'computron_sidebar_collapsed';
 
@@ -80,6 +83,8 @@ function setup(props = {}) {
 
 beforeEach(() => {
     localStorage.clear();
+    sidebarGoals = [];
+    sidebarGoalsEnabled = false;
     navigationHarness.navigationTarget = { kind: 'chat', conversationId: 'conversation-1' };
     navigationHarness.customApps.enabled = false;
     navigationHarness.customApps.catalog.apps = [];
@@ -289,7 +294,7 @@ describe('Sidebar', () => {
             .map((row) => row.dataset.reorderId))
             .toEqual(['routines', 'artifacts', 'agents', 'browser']);
         expect(JSON.parse(localStorage.getItem('omnideck_sidebar_navigation_order')))
-            .toEqual(['routines', 'artifacts', 'agents', 'apps', 'browser']);
+            .toEqual(['routines', 'artifacts', 'agents', 'apps', 'browser', 'goals']);
         expect(screen.getByRole('status')).toHaveTextContent(
             'Agents moved to position 3 of 4',
         );
@@ -352,5 +357,56 @@ it('hides the desktop button unless desktop is enabled', () => {
         setup({ desktopEnabled: true, onOpenDesktop });
         await user.click(screen.getByTestId('sidebar-desktop'));
         expect(onOpenDesktop).toHaveBeenCalledOnce();
+    });
+
+    describe('Goals row', () => {
+        const waiting = (conversationId) => ({
+            id: `goal-${conversationId}`, conversation_id: conversationId, objective: 'Plan', revision: 1, paused: false,
+            plan: [], questions: [{ id: 'q', question: 'Which day?', choices: [], status: 'open', revision: 1, answers: [], reviewed_answer_count: 0 }],
+            next: { kind: 'wait', question_ids: ['q'] }, created_at: '2026-11-01T00:00:00Z',
+        });
+
+        function listChats(ids) {
+            globalThis.fetch = vi.fn(async (url) => ({
+                ok: true,
+                json: async () => (url === '/api/conversations/sessions'
+                    ? ids.map((id) => ({ conversation_id: id, title: id, started_at: '2026-11-01T00:00:00Z' }))
+                    : []),
+            }));
+        }
+
+        it('hides the Goals row while Goals is off', () => {
+            listChats([]);
+            setup();
+            expect(screen.queryByTestId('sidebar-nav-goals')).not.toBeInTheDocument();
+        });
+
+        it('shows the needs you pill only above zero and names the row with the count', async () => {
+            listChats(['a', 'b']);
+            sidebarGoalsEnabled = true;
+            sidebarGoals = [waiting('a'), waiting('b')];
+            setup();
+            expect(await screen.findByRole('button', { name: 'Goals, 2 need you' })).toHaveAttribute('title', '2 goals need you');
+            expect(screen.getByTestId('sidebar-goals-needs-you')).toHaveTextContent('2');
+        });
+
+        it('shows no pill when no goal needs you', async () => {
+            listChats(['a']);
+            sidebarGoalsEnabled = true;
+            setup();
+            expect(await screen.findByTestId('sidebar-nav-goals')).toHaveAccessibleName('Goals');
+            expect(screen.queryByTestId('sidebar-goals-needs-you')).not.toBeInTheDocument();
+        });
+
+        it('puts the pill on the icon when collapsed', async () => {
+            localStorage.setItem(COLLAPSE_KEY, '1');
+            listChats(['a']);
+            sidebarGoalsEnabled = true;
+            sidebarGoals = [waiting('a')];
+            setup();
+            const pill = await screen.findByTestId('sidebar-goals-needs-you');
+            expect(screen.getByTestId('sidebar-nav-goals')).toHaveAccessibleName('Goals, 1 needs you');
+            expect(pill.className).toMatch(/badgeOnIcon/);
+        });
     });
 });

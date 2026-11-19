@@ -76,7 +76,7 @@ def test_created_routine_runs_in_background_and_persists_output(page: Page, dele
         expect(routines.run_now_button()).to_be_visible()
         routines.run_now_button().click()
 
-        # The production runner polls every five seconds. Wait on its public API
+        # The shared scheduler polls for due work. Wait on its public API
         # until the real task agent, tool loop, file event, and store update have
         # all reached a terminal state.
         deadline = time.monotonic() + 30

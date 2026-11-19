@@ -1,10 +1,12 @@
+import { useGoals } from '../goals/GoalsState.jsx';
 import { useCallback } from 'react';
 
 import ChatPanel from '../../components/ChatPanel.jsx';
+import { label as conversationLabel } from '../../components/conversationSections.js';
+import { useConversationCatalog } from './catalog/ConversationCatalog.jsx';
 import { useAppData } from '../../contexts/AppData.jsx';
 import AgentNetworkView from '../agent/AgentNetworkView.jsx';
 import useAgentNetworkCounts from '../agent/useAgentNetworkCounts.js';
-import { useAppSettings } from '../app/AppSettings.jsx';
 import {
     useArtifactDesktopActions,
 } from '../artifacts/ArtifactDesktopAdapter.jsx';
@@ -20,8 +22,12 @@ import {
 import {
     useConversationSessionCommands,
     useConversationSessionState,
+    useSelectedProfileId,
 } from './session/ConversationSession.jsx';
 import styles from '../../App.module.css';
+import { useGoalDesktopActions } from '../goals/GoalDesktopAdapter.jsx';
+import GoalRequestDialog from '../goals/GoalRequestDialog.jsx';
+import useGoalRequests from '../goals/useGoalRequests.js';
 
 /** Conversation-domain adapter for Chat and Agent Network modes. */
 export default function ConversationDesktopView({ view, tabGroupId }) {
@@ -29,21 +35,26 @@ export default function ConversationDesktopView({ view, tabGroupId }) {
         activeConversationId,
         turns,
         draft,
-        isStreaming,
         isOffline,
         stopRequested,
         stalled,
-        conversationProfileId,
+        isStreaming,
+        queue,
+        returned,
     } = useConversationSessionState();
     const {
         sendMessage,
+        sendAnswers,
+        removeQueuedMessage,
+        consumeReturnedMessages,
         sendNudge,
         stopGeneration,
         setDraft,
-        setConversationProfileId,
+        pickConversationProfile,
     } = useConversationSessionCommands();
-    const { profilesHook } = useAppData();
-    const { defaultProfileId } = useAppSettings();
+    const { profilesHook, features } = useAppData();
+    const { goalsByConversation } = useGoals();
+    const { openGoal } = useGoalDesktopActions();
     const navigation = useDesktopNavigationCommands();
     const agentCounts = useAgentNetworkCounts();
     const artifacts = useArtifactDesktopActions();
@@ -51,24 +62,24 @@ export default function ConversationDesktopView({ view, tabGroupId }) {
         openAgentWorkspaceResource,
     } = useWorkspaceResourceDesktopActions();
 
-    const selectedProfileId = conversationProfileId ?? defaultProfileId;
+    const selectedProfileId = useSelectedProfileId();
+    const { items: catalogItems } = useConversationCatalog();
+    const listed = catalogItems.find((item) => item.conversation_id === activeConversationId);
+    const chatTitle = listed ? conversationLabel(listed) : 'New chat';
     const navigationTarget = navigationTargetForView(view);
     const mode = navigationTarget?.kind || 'chat';
     const selectedAgentId = navigationTarget?.agentId || null;
+    const { request: goalRequest, requestGoal, closeRequest } = useGoalRequests(activeConversationId);
 
-    const handleSend = useCallback((message, attachments) => {
-        if (isStreaming) {
-            if (!stopRequested) sendNudge(message);
-        } else {
-            sendMessage(message, attachments, selectedProfileId);
-        }
-    }, [
-        isStreaming,
-        selectedProfileId,
-        sendMessage,
-        sendNudge,
-        stopRequested,
-    ]);
+    const handleSend = useCallback((message, attachments) => (
+        sendMessage(message, attachments, selectedProfileId)
+    ), [selectedProfileId, sendMessage]);
+
+    const handleSendAnswers = useCallback(async (goalId, answers) => {
+        const result = await sendAnswers(goalId, answers, selectedProfileId);
+        if (result && !result.ok) throw new Error(result.error || 'Your answers were not sent.');
+        return { queued: Boolean(result?.queued) };
+    }, [selectedProfileId, sendAnswers]);
 
     if (mode === 'network') {
         return (
@@ -95,10 +106,19 @@ export default function ConversationDesktopView({ view, tabGroupId }) {
     return (
         <div className={styles.chatColumn}>
             <ChatPanel
+                title={chatTitle}
+                goal={features.goals ? goalsByConversation[activeConversationId] : undefined}
+                onOpenGoal={() => openGoal(activeConversationId)}
+                onRequestGoal={features.goals ? requestGoal : undefined}
                 turns={turns}
                 stalled={stalled}
                 isOffline={isOffline}
                 onSend={handleSend}
+                onSendAnswers={handleSendAnswers}
+                queue={queue}
+                returned={returned}
+                onRemoveQueued={removeQueuedMessage}
+                onReturnedConsumed={consumeReturnedMessages}
                 onStop={stopGeneration}
                 isStreaming={isStreaming}
                 stopRequested={stopRequested}
@@ -111,13 +131,14 @@ export default function ConversationDesktopView({ view, tabGroupId }) {
                 )}
                 onSelectAgent={(agentId) => navigation.openAgent(agentId)}
                 selectedProfileId={selectedProfileId}
-                onProfileChange={setConversationProfileId}
+                onProfileChange={pickConversationProfile}
                 profileRefreshSignal={profilesHook.revision}
                 onPreview={artifacts.openFileOutput}
                 conversationId={activeConversationId}
                 draft={draft}
                 onDraftChange={setDraft}
             />
+            {features.goals && <GoalRequestDialog request={goalRequest} profileId={selectedProfileId} onClose={closeRequest} />}
         </div>
     );
 }

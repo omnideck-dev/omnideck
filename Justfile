@@ -243,6 +243,7 @@ manual-test:
 
     "$engine" rm -f "$name" 2>/dev/null || true
     env_args=(); [ -f .env ] && env_args=(--env-file .env)
+    [ -n "${MOCK_LLM:-}" ] && env_args+=(-e MOCK_LLM="$MOCK_LLM")
     gpu_args=()
     case "${OMNIDECK_GPU:-0}" in
         0|false|none) ;;

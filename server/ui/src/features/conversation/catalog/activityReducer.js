@@ -1,12 +1,24 @@
-/** @type {import('./activityTypes').ConversationActivityState} */
+import { APP_EFFECT_TYPES } from '../../app/appEffectTypes.js';
+
+/**
+ * @typedef {{
+ *   running: Map<string, string>,
+ *   finished: Set<string>,
+ *   visibleConversationId: string | null,
+ * }} ConversationActivityState
+ * @typedef {{ type: 'runs/snapshot' | 'runs/started' | 'runs/finished', runs: import('../../app/appEffects.types').RunIdentity[] }
+ *   | { type: 'visibility', conversationId: string | null }} ConversationActivityAction
+ */
+
+/** @type {ConversationActivityState} */
 export const initialActivityState = {
     running: new Map(), finished: new Set(), visibleConversationId: null,
 };
 
 /**
- * @param {import('./activityTypes').ConversationActivityState} state
- * @param {import('./activityTypes').ConversationActivityAction} event
- * @returns {import('./activityTypes').ConversationActivityState}
+ * @param {ConversationActivityState} state
+ * @param {ConversationActivityAction} event
+ * @returns {ConversationActivityState}
  */
 export function activityReducer(state, event) {
     const running = new Map(state.running);
@@ -16,8 +28,8 @@ export function activityReducer(state, event) {
         if (event.conversationId !== null) finished.delete(event.conversationId);
         return { running, finished, visibleConversationId: event.conversationId };
     }
-    if (event.type === 'snapshot') {
-        const active = new Map(event.runs.map((run) => [run.conversation_id, run.run_id]));
+    if (event.type === APP_EFFECT_TYPES.RUNS_SNAPSHOT) {
+        const active = new Map(event.runs.map((run) => [run.conversationId, run.runId]));
         for (const [conversationId, runId] of running) {
             if (active.get(conversationId) !== runId && conversationId !== state.visibleConversationId) {
                 finished.add(conversationId);
@@ -27,11 +39,11 @@ export function activityReducer(state, event) {
         return { ...state, running: active, finished };
     }
     for (const run of event.runs) {
-        const id = run.conversation_id;
-        if (event.type === 'started') {
-            running.set(id, run.run_id);
+        const id = run.conversationId;
+        if (event.type === APP_EFFECT_TYPES.RUNS_STARTED) {
+            running.set(id, run.runId);
             finished.delete(id);
-        } else if (event.type === 'finished' && running.get(id) === run.run_id) {
+        } else if (event.type === APP_EFFECT_TYPES.RUNS_FINISHED && running.get(id) === run.runId) {
             running.delete(id);
             if (id !== state.visibleConversationId) finished.add(id);
         }

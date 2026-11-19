@@ -48,6 +48,7 @@ function legacyIdentity(rawView) {
             'settings',
             'agents',
             'routines',
+            'goals',
             'artifacts',
             'apps',
         ].includes(rawView.type)

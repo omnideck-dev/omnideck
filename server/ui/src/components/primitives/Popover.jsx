@@ -27,11 +27,14 @@ function horizontalPosition(rect, width, align, minLeft, maxLeft) {
  * above it when the room below falls under the caller's useful-height threshold
  * and the upper side has more room. Their maximum height is capped to the chosen
  * side of the viewport; callers should make their content scroll within that
- * height.
+ * height. maxWidth caps anchor-sized overlays while letting them follow pane
+ * resizing. Pass triggerRef separately when positioning against a larger surface
+ * (such as a composer) so clicking elsewhere on that surface still dismisses it.
  */
 export default function Popover({
     anchorRef,
-    returnFocusRef = anchorRef,
+    triggerRef = anchorRef,
+    returnFocusRef = triggerRef,
     onClose,
     onOpen,
     children,
@@ -39,6 +42,7 @@ export default function Popover({
     align = 'start',
     placement = 'auto',
     width,
+    maxWidth = Infinity,
     maxHeight = DEFAULT_MAX_HEIGHT,
     flipThreshold = maxHeight,
     gap = DEFAULT_GAP,
@@ -58,7 +62,7 @@ export default function Popover({
 
             const rect = anchor.getBoundingClientRect();
             const availableWidth = Math.max(0, window.innerWidth - (viewportMargin * 2));
-            const resolvedWidth = Math.min(width || rect.width, availableWidth);
+            const resolvedWidth = Math.min(width || rect.width, maxWidth, availableWidth);
             const maxLeft = Math.max(
                 viewportMargin,
                 window.innerWidth - viewportMargin - resolvedWidth,
@@ -111,7 +115,7 @@ export default function Popover({
             window.removeEventListener('resize', updatePosition);
             window.removeEventListener('scroll', updatePosition, true);
         };
-    }, [align, anchorRef, flipThreshold, gap, maxHeight, placement, viewportMargin, width]);
+    }, [align, anchorRef, flipThreshold, gap, maxHeight, placement, viewportMargin, width, maxWidth]);
 
     // Consumers can move focus only after the positioned surface is visible.
     // Parent mount effects may run while the initial render is still hidden.
@@ -123,7 +127,7 @@ export default function Popover({
 
     useEffect(() => {
         const handleOutsideMouseDown = (event) => {
-            if (anchorRef.current?.contains(event.target)) return;
+            if (triggerRef.current?.contains(event.target)) return;
             if (popoverRef.current?.contains(event.target)) return;
             onClose?.();
         };
@@ -139,7 +143,7 @@ export default function Popover({
             document.removeEventListener('mousedown', handleOutsideMouseDown);
             document.removeEventListener('keydown', handleKeyDown);
         };
-    }, [anchorRef, onClose, returnFocusRef]);
+    }, [triggerRef, onClose, returnFocusRef]);
 
     const positionStyle = position
         ? {

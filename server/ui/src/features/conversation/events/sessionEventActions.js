@@ -2,6 +2,7 @@ import {
     CONVERSATION_EVENT_TYPES as EVENT,
     isRootAgentEvent,
 } from './eventTypes.js';
+import { isShownGoalEvent } from './goalTranscript.js';
 
 // Records retained by the open frontend session so it can build Turns. This
 // is a UI policy, not the backend's separate durability policy.
@@ -29,13 +30,30 @@ export function getSessionEventActions(event) {
     if (!event?.type) return actions;
     const isRootEvent = isRootAgentEvent(event);
 
-    if (isRootEvent && RETAINED_SESSION_EVENT_TYPES.has(event.type)) {
+    if (isRootEvent && (RETAINED_SESSION_EVENT_TYPES.has(event.type)
+        || (event.type === EVENT.GOAL && isShownGoalEvent(event)))) {
         actions.push({ type: 'RETAIN_EVENT', event });
     }
 
     switch (event.type) {
         case EVENT.USER_MESSAGE:
             if (isRootEvent) actions.push({ type: 'CONFIRM_USER_MESSAGE' });
+            if (event.nudge_id) {
+                actions.push({ type: 'DROP_QUEUED_MESSAGE', nudgeId: event.nudge_id, returned: false });
+            }
+            break;
+        case EVENT.NUDGE_QUEUED:
+            actions.push({
+                type: 'QUEUE_MESSAGE',
+                message: {
+                    id: event.nudge_id,
+                    content: event.content || '',
+                    context: Array.isArray(event.context) ? event.context : [],
+                },
+            });
+            break;
+        case EVENT.NUDGE_REMOVED:
+            actions.push({ type: 'DROP_QUEUED_MESSAGE', nudgeId: event.nudge_id, returned: event.reason === 'returned' });
             break;
         case EVENT.ITERATION:
             if (isRootEvent) actions.push({ type: 'FINALIZE_ITERATION' });

@@ -24,6 +24,12 @@ rather than naming either architectural layer.
   application-aware FakeProvider directive protocol.
 - `skills`: stored skill catalog, resolution, policy, and skill management tools.
 - `server` and `tasks`: adapters for HTTP and scheduled workflows.
+- `goals`: goal storage, the goal tools, the goal run extension and the goal
+  scheduling channel.
+
+Channels such as HTTP chat, routines and goal wakes call `agent_runtime`. A
+feature may import `agent_runtime`; `agent_runtime` never imports a feature or a
+channel. `agent_core` holds no feature logic.
 
 ## Agent preparation and execution
 
@@ -42,9 +48,11 @@ application scratchpad hook and configured compaction strategy.
 
 ## Run ownership
 
-`AgentRuntime.start(request)` reserves a conversation and creates a `RunSession`
-and a background task. It returns `RunHandle`. A second concurrent run in the
-same conversation is rejected; different conversations may run concurrently.
+`AgentRuntime.start(request)` always begins a run. It reserves a conversation and
+creates a `RunSession` and a background task, and returns `RunHandle`. A second
+concurrent run in the same conversation is rejected with `RunConflictError`;
+different conversations may run concurrently. Goal wakes, routines and goal reopen
+use `start`.
 
 The session owns the root and live child `ExecutionContext` objects, shared stop
 signal, individual nudge inboxes, event replay, disk observers, artifact records,
@@ -59,6 +67,36 @@ and cached versus run-lifetime conversation resources.
 observer detaches it; execution continues. `stop()` requests cooperative stop.
 `cancel()` explicitly cancels owned work, and callers await completion to ensure
 cleanup. Nudge delivery accepts only live execution IDs belonging to this run.
+
+`AgentRuntime.send(request)` is the one way to send a user message. When the
+conversation's root agent is working, the message is queued as a root nudge with
+a `nudge_id` and the run publishes `nudge_queued`. Otherwise it starts a run. A
+request's `model_text` travels with the queued message.
+Files cannot be queued. The queued `user_message` carries the same `nudge_id`
+when the agent reads it. A queued message can be removed until then, which
+publishes `nudge_removed` with reason `removed`. When the run ends, every unread
+root nudge publishes `nudge_removed` with reason `returned`. The two queue events
+are part of the run's replay but are not written to the conversation history.
+`AgentRuntime.observe_events(handler)` sees every event any run publishes.
+
+## Run extensions
+
+`AgentRuntime(extensions=[...])` takes the features that take part in every root
+run, such as goals. Sub-agents never see extensions.
+
+- `before_run(request, run)` runs inside the run, after the conversation is
+  acquired and before the root agent starts. It returns `RunAdditions` or None:
+  `skills` granted to the root agent for this run only, and `opening_events`
+  published in order before the run's first message. It stops the run by raising
+  `StopRequestedError`.
+- `after_run(request, run, result, *, shutting_down)` runs once for every
+  extension whose `before_run` returned, after the root agent finished. The
+  events it returns are published inside the run, with the root agent's
+  identity, before `turn_end`. `shutting_down` is true when the runtime closed
+  and stopped the run.
+- `AgentRunRequest.trigger` says why a channel started a run without a typed
+  message. The runtime passes it through unread; an extension recognises its
+  own. A run with a trigger publishes no `user_message`.
 
 The session emits exactly one root `turn_end` after cleanup. The runtime removes
 completed runs from its active maps. Existing handles retain their result and
@@ -117,6 +155,43 @@ run registry, remote-control map, persistence, or root terminal event.
 depth. Events flow through the session's history to disk observers, child-history
 projections, artifact indexing, and replay. Children create no disk writers.
 
+Any event may carry `model_text`, the text the model reads for it. On a
+`user_message` it replaces the content, so the transcript keeps what the user
+typed while the model reads, for example, the questions an answer belongs to. On
+any other event the model view shows it as a user message that starts with
+`[System notice]`. The model view and compaction read only event types and
+`model_text`; they know no feature. Only a typed `user_message` that opens the
+thread is pinned across compactions. Without one, the compaction summary opens
+the view as a user message. The intent merge collects `user_message` events only.
+
+Goal activity uses one `goal` event type, with `data.kind` naming a wakeup or a
+divider. Every goal event is written inside a run: the goal run extension opens a
+goal run with its wakeup, opens a run with an `edited` event when the user changed
+the goal's objective, plan or summary since the previous run started, and returns
+at most one outcome divider (scheduled, waiting, error or completed) from
+`after_run`. The wakeup and `edited` events carry `model_text`; dividers do not.
+The user's own goal actions add nothing to the chat. Conversation reload reads
+the log directly.
+
+A goal run, and every chat turn on an unfinished goal, receives five goal tools:
+`read_goal`, `read_goal_history`, `update_goal`, `update_goal_questions`, and
+`choose_next_action`. A turn on a done or cancelled goal receives only the two read
+tools. `update_goal` changes plan steps by ID and the working summary; omitted steps
+and fields stay unchanged. Each run keeps the goal revision and the chat's latest
+compaction it last read, never on disk. Writes are refused before the first read,
+after the user or the app changed the goal, and after a compaction since the read,
+so the agent reads again. `choose_next_action` selects continue, schedule, wait
+for input, or complete, with a required note for the user. Its flat action
+selector survives each provider's tool serialization, while runtime validation
+requires the fields for that action and rejects unrelated fields. It changes what
+happens next without ending the current execution. Refusals come back as tool text
+that starts with `Error:`.
+
+Answers to goal questions are a user message whose context names the questions
+they answer and whose `model_text` gives each question with its answer. They are
+sent like any other message. The goal code saves them when that message is
+published, and a refused save is logged without stopping the run.
+
 `ConversationHistory` projects model messages. Each agent's `ContextManager`
 controls compaction using an injected `ContextStrategy`. The application's
 `LLMCompactionStrategy` owns configured summarization and model resource cleanup.
@@ -128,8 +203,42 @@ HTTP handlers translate requests, subscribe to a handle, and expose controls.
 A future messaging channel can do the same without changing agent core execution.
 Channel credentials, message delivery, and retries belong in that adapter.
 
-`TaskRunner` retains workflow scheduling, dependencies, and retry policy.
+`Scheduler` admits scheduled goals and routine tasks through one polling loop. `RoutineWorkSource` retains workflow dependencies and retry policy; `GoalWorkSource` translates durable goal wakes into runs with a goal trigger, which the goal run extension recognises.
 `TaskExecutor` builds task instructions, starts the injected shared runtime, and
 maps its result to persisted task output. `TaskResult.agent_run_id` identifies
 that agent run separately from its workflow `run_id`. An explicit routine-owner
 cancellation cancels its handle and waits for session cleanup.
+
+### Shared scheduling
+
+The application registers `GoalWorkSource` and `RoutineWorkSource` with one
+`Scheduler` before readiness. The sources share only the poll loop, the clock,
+admission and shutdown. Each source has its own run limit in
+`scheduling.max_concurrent`, a map such as `{routines: 4, goals: 4}`; a source
+at its limit never delays another source's work. Registering a source with no
+limit is refused. The scheduler reads the limits once per poll. A source that
+fails to recover or to list its work is logged and skipped; the others still
+run. Interactive chat is outside these limits. A busy goal conversation keeps
+its pending wake until it can be admitted.
+
+Schedules remain in the existing goal and routine files, with no duplicate queue.
+The goal adapter revalidates the wake ID when claiming it, so replaced, cancelled,
+or paused wakes cannot execute from a stale candidate. A run keeps its wake in place
+while it runs; a saved goal change wakes the scheduler so a due wake does not wait
+for the next poll, and so does a routine's Run now. Routine recurrence uses cron
+and timezones; task dependencies, retries and notifications stay in the routine
+adapter. Deleting a routine or run is handled by the routine source: it blocks
+that routine or run, cancels and awaits its own tasks, and keeps admission blocked
+until storage is deleted.
+
+Shutdown stops new admission, waits up to `scheduling.shutdown_timeout`, and
+cancels remaining source-owned work without interrupting cleanup twice. Routine
+cancellation owns its agent tree; goal observers leave execution to
+`AgentRuntime.close`, which preserves interrupted claims for reconciliation on
+restart: the wake a run held runs again, marked interrupted. This is single-process
+dispatch, not a distributed exactly-once guarantee for external actions.
+
+Shared settings are `scheduling.poll_interval` (seconds), `max_concurrent`, and
+`shutdown_timeout`. The routine pause control still pauses only routines.
+Disabling the Goals experiment stops goal runs and goal chat turns and leaves
+every goal as it was; a stopped wake run runs again once Goals are back on.

@@ -4,6 +4,7 @@ import { useToast } from './ToastProvider.jsx';
 import { clearChatDraft } from '../utils/chatDraftStorage.js';
 import StatusDot from './StatusDot.jsx';
 import Spinner from './primitives/Spinner.jsx';
+import IconButton from './primitives/IconButton.jsx';
 import SearchInput from './primitives/SearchInput.jsx';
 import SectionHeader from './ConversationSectionHeader.jsx';
 import ArchivedSection from './ConversationArchivedSection.jsx';
@@ -20,6 +21,10 @@ import {
     buildSections,
 } from './conversationSections.js';
 import styles from './ConversationsPanel.module.css';
+import { useNeedsYou } from '../features/goals/conversationGoals.js';
+import ConversationGoalStatus from '../features/goals/ConversationGoalStatus.jsx';
+
+const NEEDS_YOU = 'needs-you';
 
 function pointRect(event) {
     return {
@@ -46,6 +51,7 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
         folders, createFolder, renameFolder, setFolderIcon, deleteFolder, setConversationFolder,
     } = useConversationCatalog();
     const [query, setQuery] = useState('');
+    const needsYou = useNeedsYou(items);
     // Which row's context menu is open, plus the trigger rect to anchor it.
     const [menu, setMenu] = useState(null); // { id, rect } | null
     const [renamingId, setRenamingId] = useState(null);
@@ -83,10 +89,12 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
             .sort((a, b) => (b.started_at || '').localeCompare(a.started_at || ''));
     }, [items, query, searching]);
 
-    const sections = useMemo(
-        () => (searching ? [] : buildSections(items, folders, folderById, query)),
-        [items, folders, folderById, query, searching],
-    );
+    const sections = useMemo(() => {
+        if (searching) return [];
+        const needsIds = new Set(needsYou.map((item) => item.conversation_id));
+        const grouped = buildSections(items.filter((item) => !needsIds.has(item.conversation_id)), folders, folderById, query);
+        return needsYou.length ? [{ key: NEEDS_YOU, kind: 'goals', label: `Needs you · ${needsYou.length}`, items: needsYou }, ...grouped] : grouped;
+    }, [items, needsYou, folders, folderById, query, searching]);
 
     const hasRows = sections.some((s) => s.items.length > 0);
 
@@ -290,7 +298,10 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
                         {running ? <Spinner /> : <StatusDot status="complete" />}
                     </span>
                 )}
-                <span className={styles.itemTitle}>{label(convo)}</span>
+                <span className={styles.itemBody}>
+                    <span className={styles.itemTitle}>{label(convo)}</span>
+                    <ConversationGoalStatus conversationId={id} />
+                </span>
                 {showAge && (
                     <span className={styles.itemAge} data-testid="recent-item-age">
                         {relativeAge(convo.started_at)}
@@ -321,16 +332,14 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
         <div className={styles.recent} data-testid="recent-conversations">
             <div className={styles.sectionHeader}>
                 <span>Conversations</span>
-                <button
-                    type="button"
-                    className={styles.newFolderBtn}
+                <IconButton
                     onClick={() => setCreatingFolder(true)}
                     title="New folder"
                     aria-label="New folder"
                     data-testid="recent-new-folder"
                 >
                     <i className="bi bi-folder-plus" />
-                </button>
+                </IconButton>
             </div>
 
             <div className={styles.primary}>
@@ -385,7 +394,7 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
                 {searching && searchResults.map((convo) => renderRow(convo, { showAge: true }))}
 
                 {!searching && sections.map((section) => {
-                    const isCollapsed = collapsed.has(section.key);
+                    const isCollapsed = section.key !== NEEDS_YOU && collapsed.has(section.key);
                     return (
                         <div key={section.key} data-testid="recent-section" data-section={section.key}>
                             {section.kind === 'folder' && renamingFolderId === section.folder.id ? (
@@ -404,6 +413,7 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
                                 <SectionHeader
                                     section={section}
                                     collapsed={isCollapsed}
+                                    collapsible={section.key !== NEEDS_YOU}
                                     menuOpen={folderMenu?.folderId === section.folder?.id}
                                     onToggle={() => toggleSection(section.key)}
                                     onOpenFolderMenu={(rect) => toggleFolderMenu(section.folder.id, rect)}

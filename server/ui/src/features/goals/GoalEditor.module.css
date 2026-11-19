@@ -1,0 +1,25 @@
+.description { color: var(--text-secondary); font-size: var(--font-size-small); line-height: 1.6; margin: 0; overflow-wrap: anywhere; }
+.disclosure { cursor: pointer; color: var(--text-secondary); font-size: var(--font-size-small); }
+.editor { display: flex; flex-direction: column; min-height: 0; max-height: inherit; }
+.editorHeader { flex-shrink: 0; padding: var(--sp-4) var(--sp-5) var(--sp-3); }
+.editorHeading { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); margin-bottom: var(--sp-1); }
+.editorHeading h2 { font-size: var(--font-size-heading); margin: 0; }
+.editorBody { display: flex; flex-direction: column; gap: var(--sp-5); min-height: 0; overflow-y: auto; padding: var(--sp-3) var(--sp-5) var(--sp-5); }
+.editorBody > * { flex-shrink: 0; }
+.editorFooter { flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--sp-2); padding: var(--sp-3) var(--sp-5); border-top: 1px solid var(--border-subtle); }
+.editorFooterRow { display: flex; flex-direction: column; align-items: flex-end; gap: var(--sp-2); }
+.editorNote { margin: 0; color: var(--text-secondary); font-size: var(--font-size-small); }
+.planDisclosure > summary { padding: var(--sp-2) 0; color: var(--text-primary); font-size: var(--font-size-body); }
+.planDisclosure > summary > span { margin-left: var(--sp-2); color: var(--text-tertiary); font-size: var(--font-size-small); }
+.planFields { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-2); }
+.planEditor { min-width: 0; border-bottom: 1px solid var(--border-subtle); }
+.stepSummary { display: flex; align-items: baseline; gap: var(--sp-2); padding: var(--sp-3) 0; cursor: pointer; font-size: var(--font-size-body); }
+.stepSummary::before { content: '›'; color: var(--text-tertiary); }
+.planEditor[open] > .stepSummary::before { transform: rotate(90deg); }
+.stepSummary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-sm); }
+.stepNumber, .stepState { color: var(--text-tertiary); font-size: var(--font-size-small); flex-shrink: 0; }
+.stepTitle { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.stepFields { display: flex; flex-direction: column; gap: var(--sp-3); padding-bottom: var(--sp-4); }
+.stepText { min-height: 0; }
+.planEditorRow { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; justify-content: space-between; }
+.dependsOn { color: var(--text-tertiary); font-size: var(--font-size-small); }

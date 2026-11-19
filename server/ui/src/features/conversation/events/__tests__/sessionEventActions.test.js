@@ -33,6 +33,10 @@ describe('getSessionEventActions', () => {
         ]);
     });
 
+    it('does not retain agent completion', () => {
+        expect(getSessionEventActions(event('agent_completed', { status: 'success' }))).toEqual([]);
+    });
+
     it('sets only root agents on the open session', () => {
         const root = event('agent_started', { parent_agent_id: null });
         const child = event('agent_started', { depth: 1, parent_agent_id: 'agent-1' });

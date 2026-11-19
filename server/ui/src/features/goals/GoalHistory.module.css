@@ -1,0 +1,14 @@
+.description { color: var(--text-secondary); font-size: var(--font-size-small); line-height: 1.6; margin: 0; overflow-wrap: anywhere; }
+.disclosure { cursor: pointer; color: var(--text-secondary); font-size: var(--font-size-small); }
+.historyEntries { display: flex; flex-direction: column; gap: var(--sp-4); margin-top: var(--sp-4); }
+.historySearch { min-width: 0; }
+.progress { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--sp-4); line-height: 1.6; overflow-wrap: anywhere; }
+.progress > li { display: flex; flex-direction: column; gap: var(--sp-1); }
+.progress p { margin: 0; }
+.progress time { color: var(--text-tertiary); font-size: var(--font-size-caption); }
+.progress .disclosure { padding: var(--sp-1) 0; }
+.historyLine { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-2); }
+.historyActor { color: var(--text-secondary); font-weight: 600; font-size: var(--font-size-small); }
+.historyDetail { margin: 0; color: var(--text-secondary); font-size: var(--font-size-small); white-space: pre-wrap; overflow-wrap: anywhere; }
+.historyFold > summary { padding: var(--sp-1) 0; }
+.historyDetails { margin: var(--sp-1) 0 0; padding-left: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--font-size-small); }

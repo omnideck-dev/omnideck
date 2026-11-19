@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncGenerator, Callable, Iterator
+from collections.abc import AsyncGenerator, Callable, Iterator, Sequence
 from contextlib import contextmanager
 from typing import Protocol
 from uuid import uuid4
@@ -12,11 +12,13 @@ from integrations.connection_cache import IntegrationConnectionCache
 
 from conversations import ConversationStore
 from browser.runtime import BrowserRuntime
+from agent_core.agent_capabilities import AgentCapabilities
 from agent_core.control import StopRequestedError
-from agent_core.events import AgentEvent, ErrorPayload
+from agent_core.events import AgentEvent, ErrorPayload, publish_event
 from agent_core.turn import ExecutionResult
 
-from ._models import AgentRunRequest, RunResult, RunSnapshot, SequencedEvent
+from ._extensions import RunExtension
+from ._models import AgentRunRequest, QueuedMessage, RunResult, RunSnapshot, SequencedEvent
 from ._session import RunSession
 
 logger = logging.getLogger(__name__)
@@ -28,6 +30,10 @@ class RunConflictError(RuntimeError):
 
 class AgentRuntimeClosedError(RuntimeError):
     """The runtime has stopped accepting runs."""
+
+
+class AttachmentsWhileRunningError(ValueError):
+    """Files cannot be queued for an agent that is already working."""
 
 
 class _RunExecutor(Protocol):
@@ -73,8 +79,12 @@ class RunHandle:
         if self._session.started and self._session.task is not None and not self._session.task.done():
             self._session.task.cancel()
 
-    def nudge(self, message: str, *, execution_id: str | None = None) -> None:
-        self._session.nudge(message, execution_id)
+    def nudge(self, message: str, *, execution_id: str | None = None) -> str:
+        return self._session.nudge(message, execution_id)
+
+    def remove_nudge(self, nudge_id: str) -> bool:
+        """Remove a queued root message. Returns False when the agent already read it."""
+        return self._session.remove_root_message(nudge_id)
 
 
 class AgentRuntime:
@@ -88,6 +98,7 @@ class AgentRuntime:
         browser_runtime: BrowserRuntime | None = None,
         integration_cache: IntegrationConnectionCache | None = None,
         shutdown_timeout: float = 5.0,
+        extensions: Sequence[RunExtension] = (),
     ) -> None:
         from ._runner import AgentRunner
 
@@ -98,12 +109,14 @@ class AgentRuntime:
         self.conversations = conversations if conversations is not None else ConversationStore()
         self._browser = browser_runtime if browser_runtime is not None else BrowserRuntime()
         self._runner = runner if runner is not None else AgentRunner(browser_runtime=self._browser)
+        self._extensions = tuple(extensions)
         self._shutdown_timeout = shutdown_timeout
         self._integration_cache = integration_cache
         self._active_by_conversation: dict[str, RunSession] = {}
         self._runs_by_id: dict[str, RunSession] = {}
         self._closed = False
         self._run_observers: set[Callable[[RunHandle], None]] = set()
+        self._event_observers: set[Callable[[str, AgentEvent], None]] = set()
 
     async def start(self, request: AgentRunRequest) -> RunHandle:
         if self._closed:
@@ -116,6 +129,7 @@ class AgentRuntime:
         session = RunSession(
             request, f"run_{uuid4().hex}", self.conversations,
             integration_connections=self._integration_cache.snapshot() if self._integration_cache else (),
+            event_observers=self._event_observers,
         )
         self._active_by_conversation[session.conversation_id] = session
         self._runs_by_id[session.run_id] = session
@@ -136,6 +150,28 @@ class AgentRuntime:
             yield tuple(RunHandle(session) for session in self._active_by_conversation.values())
         finally:
             self._run_observers.discard(on_start)
+
+    async def send(self, request: AgentRunRequest) -> RunHandle | QueuedMessage:
+        """Send a user message: queue it for a working agent, or start a run."""
+        while True:
+            session = self._active_by_conversation.get(request.conversation_id)
+            if session is None:
+                return await self.start(request)
+            if session.accepts_root_messages():
+                if request.attachments:
+                    raise AttachmentsWhileRunningError("Files can be sent after the agent finishes.")
+                nudge_id = session.queue_root_message(request.message, request.context, request.model_text)
+                return QueuedMessage(nudge_id, session.run_id)
+            assert session.task is not None  # start() creates the task before returning.
+            await asyncio.wait({session.task})
+
+    def observe_events(self, handler: Callable[[str, AgentEvent], None]) -> Callable[[], None]:
+        """Call handler with the conversation ID and each event any run publishes.
+
+        Returns a function that stops observing.
+        """
+        self._event_observers.add(handler)
+        return lambda: self._event_observers.discard(handler)
 
     def get(self, run_id: str) -> RunHandle | None:
         session = self._runs_by_id.get(run_id)
@@ -168,23 +204,53 @@ class AgentRuntime:
     async def _drive(self, session: RunSession) -> RunResult:
         session.started = True
         root = ExecutionResult("stopped")
+        ran: list[RunExtension] = []
         try:
             async with session:
-                session.root_context.control.check_stop()
-                try:
-                    root = await self._runner.run(session.request, session)
-                except (asyncio.CancelledError, StopRequestedError):
-                    root = ExecutionResult("stopped")
-                except Exception as exc:
-                    root = self._failure(session, exc)
+                root = await self._run_root(session, ran)
+                self._end_extensions(session, ran, root, publish=True)
         except (asyncio.CancelledError, StopRequestedError):
             root = ExecutionResult("stopped")
         except Exception as exc:
             root = self._failure(session, exc)
         finally:
-            self._active_by_conversation.pop(session.conversation_id, None)
-            self._runs_by_id.pop(session.run_id, None)
+            session.return_unread()
+            try:
+                self._end_extensions(session, ran, root, publish=False)
+            finally:
+                self._active_by_conversation.pop(session.conversation_id, None)
+                self._runs_by_id.pop(session.run_id, None)
         return session.finish(root)
+
+    async def _run_root(self, session: RunSession, ran: list[RunExtension]) -> ExecutionResult:
+        try:
+            for extension in self._extensions:
+                additions = await extension.before_run(session.request, session)
+                ran.append(extension)
+                if additions is not None:
+                    session.additions.append(additions)
+            session.root_context.control.check_stop()
+            return await self._runner.run(session.request, session)
+        except (asyncio.CancelledError, StopRequestedError):
+            return ExecutionResult("stopped")
+        except Exception as exc:
+            return self._failure(session, exc)
+
+    def _end_extensions(
+        self, session: RunSession, ran: list[RunExtension], root: ExecutionResult, *, publish: bool,
+    ) -> None:
+        shutting_down = self._closed and root.status == "stopped"
+        while ran:
+            extension = ran.pop(0)
+            try:
+                events = extension.after_run(session.request, session, root, shutting_down=shutting_down)
+            except Exception:
+                logger.exception("Run extension failed at the end of run %s", session.run_id)
+                continue
+            if publish:
+                with session.root_context.bind(session.root_agent_name, AgentCapabilities([])):
+                    for event in events:
+                        publish_event(event)
 
     @staticmethod
     def _failure(session: RunSession, exc: Exception) -> ExecutionResult:
@@ -204,4 +270,4 @@ class AgentRuntime:
         return ExecutionResult("error", error=str(exc))
 
 
-__all__ = ["AgentRuntime", "AgentRuntimeClosedError", "RunConflictError", "RunHandle"]
+__all__ = ["AgentRuntime", "AgentRuntimeClosedError", "AttachmentsWhileRunningError", "RunConflictError", "RunHandle"]

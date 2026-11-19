@@ -222,7 +222,7 @@ export default function RoutinesView({ onComposeInChat }) {
             <div className={styles.listPane}>
                 <div className={styles.toolbar}>
                     <h1 className={styles.title}>
-                        <i className="bi bi-bullseye" /> Routines
+                        <i className="bi bi-alarm" /> Routines
                         <span className={styles.count}>· {visible.length}</span>
                     </h1>
                     <SearchInput
@@ -257,7 +257,7 @@ export default function RoutinesView({ onComposeInChat }) {
                 <div className={styles.scroll} data-testid="routines-list">
                     {visible.length === 0 ? (
                         <div className={styles.empty}>
-                            <i className="bi bi-bullseye" />
+                            <i className="bi bi-alarm" />
                             <div>No routines match your search.</div>
                         </div>
                     ) : (

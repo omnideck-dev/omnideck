@@ -106,6 +106,7 @@ class AgentRunner:
         """Use explicit session-owned identity, controls, history, and event delivery."""
         prepared = None
         child_history = None
+        history = None
         cancelled = False
         result = ExecutionResult("error", error="Execution did not complete")
         try:
@@ -140,6 +141,12 @@ class AgentRunner:
             )
             hooks = default_hooks(agent, max_iterations=agent.max_iterations, ctx_manager=ctx_manager)
             hooks.append(ScratchpadHook())
+            is_root = context.parent_execution_id is None
+            if is_root:
+                session.root_agent_name = agent.name
+                for additions in session.additions:
+                    for skill in additions.skills:
+                        prepared.capabilities.add(skill)
             if correlation_id is not None:
                 publish_event(
                     AgentEvent(payload=SpawnRequestedPayload(type="spawn_requested", correlation_id=correlation_id))
@@ -160,11 +167,20 @@ class AgentRunner:
                         agent_profile_id=profile.id,
                         browser_profile_id=profile.browser_profile_id,
                     ))
-                    publish_event(
-                        AgentEvent(
-                            payload=UserMessagePayload(type="user_message", content=message, attachments=attachments or [])
+                    if is_root:
+                        for additions in session.additions:
+                            for event in additions.opening_events:
+                                publish_event(event)
+                    if not is_root or session.request.trigger is None:
+                        publish_event(
+                            AgentEvent(
+                                payload=UserMessagePayload(
+                                    type="user_message", content=message, attachments=attachments or [],
+                                    context=list(session.request.context) if is_root else [],
+                                ),
+                                model_text=session.request.model_text if is_root else None,
+                            )
                         )
-                    )
                     parallel = load_config().parallel
                     result = await AgentExecutor().execute(
                         history=history,

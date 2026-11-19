@@ -17,7 +17,7 @@ const DEFAULT_PROMPTS = [
         text: 'Go to wikipedia.org and summarize the featured article of the day',
     },
     {
-        icon: 'bi-bullseye',
+        icon: 'bi-alarm',
         title: 'Create a routine',
         text: 'Help me create a routine and break it down into actionable steps',
     },

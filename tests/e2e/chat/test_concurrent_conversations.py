@@ -125,12 +125,12 @@ def _assert_activity_reconnect(page, api_client, relay):
     messages = page.evaluate('__activityProbe.messages')
     reconnect_snapshots = [
         item['event'] for item in messages
-        if item['connection'] > before['opens'] and item['event']['type'] == 'snapshot'
+        if item['connection'] > before['opens'] and item['event']['type'] == 'run_snapshot'
     ]
     assert reconnect_snapshots
     assert all(run['conversation_id'] != cid for run in reconnect_snapshots[0]['runs'])
     assert not any(
-        item['event']['type'] == 'finished'
+        item['event']['type'] == 'run_finished'
         and any(run['conversation_id'] == cid for run in item['event']['runs'])
         for item in messages
     )
@@ -195,8 +195,8 @@ def test_failed_navigation_preserves_live_chat_stop_and_draft(page: Page, failur
     page.route(destination_url, fail_load)
     RecentConversations(page).open_by_id(destination)
     expect(page.get_by_text("Couldn't open that conversation. Your current chat is still open.")).to_be_visible()
-    expect(chat.stop_button).to_be_visible()
     expect(chat.composer).to_have_value('Keep this draft')
+    expect(page.get_by_role('button', name='Send message', exact=True)).to_be_enabled()
     expect(_indicator(page, current)).to_have_attribute('data-status', 'running')
     assistant = page.get_by_test_id('message-assistant').last
     before = len(assistant.inner_text())
@@ -207,6 +207,7 @@ def test_failed_navigation_preserves_live_chat_stop_and_draft(page: Page, failur
         }""",
         arg=before,
     )
+    chat.composer.fill('')
     with page.expect_request(lambda req: '/api/chat/stop?' in req.url) as stopped:
         chat.stop_button.click()
     assert f'conversation_id={current}' in stopped.value.url

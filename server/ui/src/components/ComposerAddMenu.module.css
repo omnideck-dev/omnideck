@@ -1,0 +1,20 @@
+.addButton {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-full);
+  background: none;
+  color: var(--text-secondary);
+  border: none;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+.addButton svg { width: 16px; height: 16px; display: block; }
+.addButton:hover:not(:disabled) { background: var(--accent-muted); color: var(--text-primary); }
+.addButton:active:not(:disabled) { transform: translateY(1px); }
+.addButton:disabled { opacity: 0.4; cursor: not-allowed; }
+.addButton:focus-visible { outline: none; box-shadow: var(--shadow-glow); }
+.addIcon { font-size: var(--font-size-heading); }

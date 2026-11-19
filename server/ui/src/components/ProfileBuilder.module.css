@@ -30,7 +30,6 @@
 .instructions { width: 100%; padding: var(--sp-3); line-height: 1.6; resize: vertical; }
 .hint { display: block; color: var(--text-secondary); font-size: var(--font-size-small); font-weight: 400; line-height: 1.5; }
 .avatar { width: var(--sp-12); height: var(--sp-12); flex: none; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--accent-muted); font-size: var(--font-size-heading); cursor: pointer; }
-.editorPopover { overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--elevated); box-shadow: var(--shadow-lg); }
 .settingRow { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-2) 0; }
 .settingRow > i { color: var(--text-secondary); width: var(--sp-5); flex: none; font-size: var(--font-size-heading); }
 .settingText { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
@@ -46,8 +45,6 @@
 .modelSettings[open] summary > i { transform: rotate(90deg); }
 .modelSettingsBody { padding-top: var(--sp-5); }
 .modelTitle { display: block; margin-bottom: var(--sp-1); }
-.moreActions { display: flex; flex-direction: column; align-items: stretch; gap: var(--sp-1); padding: var(--sp-2); }
-.actionSeparator { border-top: 1px solid var(--border-subtle); margin: var(--sp-1) 0; }
 .emptyState { margin: auto; color: var(--text-secondary); }
 @media (max-width: 640px) {
     .formBody { padding: var(--sp-5) var(--sp-4) var(--sp-8); }

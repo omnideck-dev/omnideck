@@ -57,6 +57,7 @@ export function DesktopNavigationProvider({ children }) {
         // Conversation View's durable navigation identity.
         const {
             artifactId = null,
+            goalObjective = null,
             ...viewTarget
         } = nextTarget;
         const view = createNavigationView(viewTarget);
@@ -71,6 +72,12 @@ export function DesktopNavigationProvider({ children }) {
                     artifactId,
                     conversationId: viewTarget.conversationId || null,
                 },
+            });
+        }
+        if (goalObjective !== null && viewTarget.conversationId) {
+            dispatchAppEffect({
+                type: APP_EFFECT_TYPES.GOALS_START_REQUESTED,
+                payload: { conversationId: viewTarget.conversationId, objective: goalObjective },
             });
         }
         return true;
@@ -121,6 +128,10 @@ export function DesktopNavigationProvider({ children }) {
         }),
         [openTarget],
     );
+    const openGoals = useCallback(
+        () => openTarget({ kind: 'goals' }),
+        [openTarget],
+    );
     const openArtifacts = useCallback(
         (conversationId = null) => openTarget({
             kind: 'artifacts',
@@ -163,6 +174,7 @@ export function DesktopNavigationProvider({ children }) {
         openAgents,
         openBrowser,
         openRoutines,
+        openGoals,
         openArtifacts,
         openApps,
         openCustomApp,
@@ -177,6 +189,7 @@ export function DesktopNavigationProvider({ children }) {
         openCustomApp,
         openNetwork,
         openRoutines,
+        openGoals,
         openSettings,
         openTarget,
     ]);

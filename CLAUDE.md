@@ -32,7 +32,6 @@
 
 - Do not use f-strings for logging; use `logger.info("message %s", var)` instead
 - Use module-level logger (`logger = logging.getLogger(__name__)`)
-- Write plain-language comments. Keep them short by default — verbose only when the code is genuinely complicated or confusing. If something would make a reader stop and think, add a comment.
 - Tool functions that the LLM invokes must have Google-style docstrings — these are the LLM's documentation for when and how to use the tool.
 - Don't use `dict[str, Any]` for a dict with a known shape. Use a Pydantic model if it crosses a trust boundary (untrusted JSON, LLM args, HTTP bodies) and needs validation, a `TypedDict` if it's a dict you own and don't validate. Plain `dict[str, Any]` only when the shape is genuinely dynamic.
 - Leading-underscore naming follows the **"private module, public-within-package"** split. The underscore on a module filename is the "internal to this project" signal; symbols inside that module use the underscore only when they're *also* module-local:
@@ -44,8 +43,7 @@
 - No backward compatible refactors unless prompted
 - Write python code compatible with Python 3.12.10
 - Never put implementation details in docstrings
-- Add comments to explain non-obvious code
-- **Never name specific paths, callers, or doc files in comments or docstrings.** Cross-file references rot the moment anything moves: a "see ``server/_oauth.py``" line written in `integrations/...` keeps pointing at the old location forever after a rename, because the rename author isn't the one updating the comment. Same with "used by X", "called from Y", or "see plan.md / CLAUDE.md / docs/...". Describe the *concept* the reader needs (the rationale, the invariant, the bug class) — never the location. Same-package siblings are fine; the rule is for cross-package and cross-doc references. Greps to run before submitting: `\bsee \(?[\\\`\"]?[a-zA-Z_]*/[a-zA-Z_]`, `used by`, `called from`, `plan\.md|CLAUDE\.md`.
+- **Never name specific paths, callers, or doc files in docstrings.** Cross-file references rot the moment anything moves. Same with "used by X", "called from Y", or "see plan.md / docs/...". Describe the *concept* the reader needs (the rationale, the invariant, the bug class), never the location. Same-package siblings are fine. Greps to run before submitting: `\bsee \(?[\\\`\"]?[a-zA-Z_]*/[a-zA-Z_]`, `used by`, `called from`, `plan\.md|CLAUDE\.md`.
 - You may ignore Ruff(I001)
 
 ## Module Structure

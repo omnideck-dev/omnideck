@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
     ChatStreamHttpError,
     streamAgentRun,
+    removeQueuedTurn,
     streamChatTurn,
 } from '../chatClient.js';
 
@@ -47,9 +48,7 @@ describe('streamChatTurn', () => {
         }];
 
         await collect(streamChatTurn({
-            message: '',
-            attachments,
-            profileId: 'profile-1',
+            request: { kind: 'message', message: '', attachments, profileId: 'profile-1' },
             conversationId: 'conversation-1',
             signal,
         }));
@@ -74,10 +73,38 @@ describe('streamChatTurn', () => {
         });
     });
 
+    it('yields the queued reply when the agent is already working', async () => {
+        vi.spyOn(global, 'fetch').mockResolvedValue({
+            ok: true,
+            status: 202,
+            json: async () => ({ nudge: { id: 'n1', run_id: 'run-1' } }),
+        });
+
+        const records = await collect(streamChatTurn({ request: { kind: 'message', message: 'hello' } }));
+
+        expect(records).toEqual([{ nudge: { id: 'n1', run_id: 'run-1' } }]);
+    });
+
+    it('posts goal answers to the conversation answers route', async () => {
+        const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true, body: null });
+        const answers = [{ question_id: 'day', question_revision: 1, question: 'Which day?', answer: 'Tuesday' }];
+
+        await collect(streamChatTurn({
+            request: { kind: 'answers', goalId: 'g1', answers, profileId: 'p1' },
+            conversationId: 'conversation-1',
+        }));
+
+        const [url, init] = fetchSpy.mock.calls[0];
+        expect(url).toBe('/api/conversations/sessions/conversation-1/goal/answers');
+        expect(JSON.parse(init.body)).toEqual({
+            goal_id: 'g1', answers: [{ question_id: 'day', question_revision: 1, answer: 'Tuesday' }], profile_id: 'p1',
+        });
+    });
+
     it('omits optional request fields when they are not supplied', async () => {
         const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true, body: null });
 
-        await collect(streamChatTurn({ message: 'hello' }));
+        await collect(streamChatTurn({ request: { kind: 'message', message: 'hello' } }));
 
         const [, init] = fetchSpy.mock.calls[0];
         expect(JSON.parse(init.body)).toEqual({ message: 'hello' });
@@ -95,7 +122,7 @@ describe('streamChatTurn', () => {
             body: bodyFromChunks(oneByteChunks),
         });
 
-        await expect(collect(streamChatTurn({ message: 'hello' })))
+        await expect(collect(streamChatTurn({ request: { kind: 'message', message: 'hello' } })))
             .resolves.toEqual([expected]);
     });
 
@@ -108,7 +135,7 @@ describe('streamChatTurn', () => {
             body: bodyFromChunks([encoder.encode(jsonl)]),
         });
 
-        await expect(collect(streamChatTurn({ message: 'hello' })))
+        await expect(collect(streamChatTurn({ request: { kind: 'message', message: 'hello' } })))
             .resolves.toEqual([first, second]);
     });
 
@@ -121,7 +148,7 @@ describe('streamChatTurn', () => {
             body: bodyFromChunks([encoder.encode(jsonl)]),
         });
 
-        await expect(collect(streamChatTurn({ message: 'hello' })))
+        await expect(collect(streamChatTurn({ request: { kind: 'message', message: 'hello' } })))
             .resolves.toEqual([first, second]);
     });
 
@@ -132,14 +159,14 @@ describe('streamChatTurn', () => {
             body: bodyFromChunks([encoder.encode(JSON.stringify(record))]),
         });
 
-        await expect(collect(streamChatTurn({ message: 'hello' })))
+        await expect(collect(streamChatTurn({ request: { kind: 'message', message: 'hello' } })))
             .resolves.toEqual([]);
     });
 
     it('completes without records when the response has no body', async () => {
         vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true, body: null });
 
-        await expect(collect(streamChatTurn({ message: 'hello' })))
+        await expect(collect(streamChatTurn({ request: { kind: 'message', message: 'hello' } })))
             .resolves.toEqual([]);
     });
 
@@ -147,7 +174,7 @@ describe('streamChatTurn', () => {
         const error = new TypeError('network unavailable');
         vi.spyOn(global, 'fetch').mockRejectedValue(error);
 
-        await expect(collect(streamChatTurn({ message: 'hello' })))
+        await expect(collect(streamChatTurn({ request: { kind: 'message', message: 'hello' } })))
             .rejects.toBe(error);
     });
 
@@ -158,7 +185,7 @@ describe('streamChatTurn', () => {
             body: bodyThatFails(error),
         });
 
-        await expect(collect(streamChatTurn({ message: 'hello' })))
+        await expect(collect(streamChatTurn({ request: { kind: 'message', message: 'hello' } })))
             .rejects.toBe(error);
     });
 
@@ -167,7 +194,7 @@ describe('streamChatTurn', () => {
         error.name = 'AbortError';
         vi.spyOn(global, 'fetch').mockRejectedValue(error);
 
-        await expect(collect(streamChatTurn({ message: 'hello' })))
+        await expect(collect(streamChatTurn({ request: { kind: 'message', message: 'hello' } })))
             .rejects.toBe(error);
     });
 
@@ -213,5 +240,31 @@ describe('streamChatTurn', () => {
             runId: 'missing',
             afterSeq: 3,
         }))).rejects.toBeInstanceOf(ChatStreamHttpError);
+    });
+});
+
+describe('removeQueuedTurn', () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    it('deletes the queued message for the conversation', async () => {
+        const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+
+        await expect(removeQueuedTurn({ nudgeId: 'n1', conversationId: 'c1' })).resolves.toEqual({ ok: true });
+
+        expect(fetchSpy).toHaveBeenCalledWith('/api/chat/nudges/n1?conversation_id=c1', { method: 'DELETE' });
+    });
+
+    it('reports a message the agent already read', async () => {
+        vi.spyOn(global, 'fetch').mockResolvedValue({
+            ok: false,
+            status: 409,
+            json: async () => ({ error: 'The agent already read this message.' }),
+        });
+
+        await expect(removeQueuedTurn({ nudgeId: 'n1', conversationId: 'c1' })).resolves.toEqual({
+            ok: false,
+            status: 409,
+            error: 'The agent already read this message.',
+        });
     });
 });

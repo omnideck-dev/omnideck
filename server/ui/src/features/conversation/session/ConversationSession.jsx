@@ -12,8 +12,9 @@ import { useAgentDispatch } from '../../agent/AgentState.jsx';
 import useConversationSessionController from './useConversationSessionController.js';
 import { useWorkspaceDispatch } from '../../workspace/WorkspaceState.jsx';
 import { getConversationRestorePlan } from '../events/conversationRestore.js';
-import { useAppEffectDispatch } from '../../app/AppEffects.jsx';
+import { useAppEffectDispatch, useAppEffectSubscription } from '../../app/AppEffects.jsx';
 import { APP_EFFECT_TYPES } from '../../app/appEffectTypes.js';
+import { useAppSettings } from '../../app/AppSettings.jsx';
 
 const ConversationSessionStateContext = createContext(null);
 const ActiveConversationIdContext = createContext(undefined);
@@ -27,6 +28,7 @@ export function ConversationSessionProvider({ children }) {
     const { addStartedConversation } = useConversationCatalog();
     const { addToast } = useToast();
     const [conversationProfileId, setConversationProfileId] = useState(null);
+    const unsentPickRef = useRef(false);
     const isFreshConversationRef = useRef(true);
 
     const session = useConversationSessionController({
@@ -35,35 +37,37 @@ export function ConversationSessionProvider({ children }) {
         appEffectDispatch,
     });
 
+    const noteStartedConversation = useCallback((firstMessage) => {
+        if (!isFreshConversationRef.current) return;
+        isFreshConversationRef.current = false;
+        addStartedConversation({
+            conversationId: session.activeConversationId,
+            firstMessage,
+        });
+    }, [addStartedConversation, session.activeConversationId]);
+
     const sendMessage = useCallback((message, attachments, profileId) => {
-        if (!message && !attachments?.length) {
-            return session.sendMessage(message, attachments, profileId);
-        }
+        if (!message && !attachments?.length) return null;
         if (session.isOffline) return null;
-        if (isFreshConversationRef.current) {
-            isFreshConversationRef.current = false;
-            addStartedConversation({
-                conversationId: session.activeConversationId,
-                firstMessage: message || '',
-            });
-        }
+        noteStartedConversation(message || '');
+        unsentPickRef.current = false;
         return session.sendMessage(message, attachments, profileId);
-    }, [
-        addStartedConversation,
-        session.activeConversationId,
-        session.isOffline,
-        session.sendMessage,
-    ]);
+    }, [noteStartedConversation, session.isOffline, session.sendMessage]);
+
+    const sendAnswers = useCallback((goalId, answers, profileId) => {
+        if (session.isOffline) return null;
+        noteStartedConversation('');
+        unsentPickRef.current = false;
+        return session.sendAnswers(goalId, answers, profileId);
+    }, [noteStartedConversation, session.isOffline, session.sendAnswers]);
 
     const sendNudge = useCallback(async (message, agentId) => {
         const result = await session.sendNudge(message, agentId);
-        if (!result) return result;
-        if (result.ok) {
-            addToast('Nudge sent', { type: 'info', duration: 3000 });
-        } else if (result.status === 409) {
+        if (!result || result.ok) return result;
+        if (result.status === 409) {
             addToast('Agent is no longer running', { type: 'warn', duration: 5000 });
         } else {
-            addToast(result.error || 'Could not send nudge', { type: 'error' });
+            addToast(result.error || 'Could not send the message', { type: 'error' });
         }
         return result;
     }, [addToast, session.sendNudge]);
@@ -92,6 +96,7 @@ export function ConversationSessionProvider({ children }) {
             });
         }
         const restore = getConversationRestorePlan(loaded);
+        unsentPickRef.current = false;
         setConversationProfileId(loaded.profileId || null);
         agentDispatch({ type: 'RESET' });
         workspaceDispatch({ type: 'RESET' });
@@ -124,6 +129,7 @@ export function ConversationSessionProvider({ children }) {
         }
         const result = session.newConversation(options);
         isFreshConversationRef.current = true;
+        unsentPickRef.current = false;
         setConversationProfileId(null);
         agentDispatch({ type: 'RESET' });
         workspaceDispatch({ type: 'RESET' });
@@ -170,8 +176,12 @@ export function ConversationSessionProvider({ children }) {
         isOffline: session.isOffline,
         stopRequested: session.stopRequested,
         stalled: session.stalled,
+        queue: session.queue,
+        returned: session.returned,
         conversationProfileId,
     }), [
+        session.queue,
+        session.returned,
         conversationProfileId,
         session.activeConversationId,
         session.draft,
@@ -182,23 +192,56 @@ export function ConversationSessionProvider({ children }) {
         session.turns,
     ]);
 
+    const refreshActiveConversation = useCallback(async () => {
+        const loaded = await session.refreshActiveConversation();
+        if (loaded) {
+            isFreshConversationRef.current = false;
+            if (loaded.profileId && !unsentPickRef.current) setConversationProfileId(loaded.profileId);
+        }
+        return loaded;
+    }, [session.refreshActiveConversation]);
+
+    const activeConversationIdRef = useRef(session.activeConversationId);
+    activeConversationIdRef.current = session.activeConversationId;
+    const followRuns = useCallback((effect) => {
+        if (effect.payload.runs.some((run) => run.conversationId === activeConversationIdRef.current)) {
+            void refreshActiveConversation();
+        }
+    }, [refreshActiveConversation]);
+    useAppEffectSubscription(APP_EFFECT_TYPES.RUNS_STARTED, followRuns);
+    useAppEffectSubscription(APP_EFFECT_TYPES.RUNS_SNAPSHOT, followRuns);
+
+    const pickConversationProfile = useCallback((profileId) => {
+        unsentPickRef.current = true;
+        setConversationProfileId(profileId);
+    }, []);
+
     const commands = useMemo(() => ({
         sendMessage,
+        sendAnswers,
+        removeQueuedMessage: session.removeQueuedMessage,
+        consumeReturnedMessages: session.consumeReturnedMessages,
         sendNudge,
         stopGeneration: session.stopGeneration,
         loadConversation,
         newConversation,
         setDraft: session.setDraft,
         composeFromSource,
-        setConversationProfileId,
+        pickConversationProfile,
+        refreshActiveConversation,
     }), [
         composeFromSource,
         loadConversation,
         newConversation,
         sendMessage,
+        sendAnswers,
         sendNudge,
+        session.removeQueuedMessage,
+        session.consumeReturnedMessages,
         session.setDraft,
         session.stopGeneration,
+        pickConversationProfile,
+        refreshActiveConversation,
     ]);
 
     return (
@@ -250,4 +293,10 @@ export function useConversationSessionCommands() {
         throw new Error('useConversationSessionCommands must be used within ConversationSessionProvider');
     }
     return commands;
+}
+
+export function useSelectedProfileId() {
+    const { conversationProfileId } = useConversationSessionState();
+    const { defaultProfileId } = useAppSettings();
+    return conversationProfileId ?? defaultProfileId;
 }

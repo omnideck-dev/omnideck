@@ -1,5 +1,5 @@
 import { mapConversationEventToActions } from './mapConversationEventToActions.js';
-import { CONVERSATION_EVENT_TYPES as EVENT } from './eventTypes.js';
+import { CONVERSATION_EVENT_TYPES as EVENT, isRootAgentEvent } from './eventTypes.js';
 
 /** @param {string|null|undefined} timestamp */
 function eventTime(timestamp) {

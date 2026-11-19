@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from aiohttp import web
@@ -25,6 +24,8 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 from agent_runtime import AgentRuntime
 from config import load_config
+from scheduling import Scheduler
+from server._scheduling import SCHEDULER_KEY
 from server._agent_run_routes import register_agent_run_routes
 from server._agent_runtime import AGENT_RUNTIME_KEY
 from server._artifacts_routes import register_artifacts_routes
@@ -36,6 +37,9 @@ from server._custom_app_routes import register_custom_app_routes
 from server._custom_tool_routes import register_custom_tool_routes
 from server._desktop_routes import register_desktop_routes
 from server._feature_routes import register_feature_routes
+from server._goal_routes import register_goal_routes
+from server._goals import create_goal_store, setup_goals, start_goals
+from server._run_activity import ACTIVITY_FEEDS_KEY
 from server.oauth_setup.routes import register_oauth_routes
 from server._integrations_routes import register_integrations_routes
 from server._memory_routes import register_memory_routes
@@ -58,14 +62,14 @@ logger = logging.getLogger(__name__)
 
 _CORS_HEADERS = {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "POST, PUT, OPTIONS, GET, DELETE",
+    "Access-Control-Allow-Methods": "POST, PUT, PATCH, OPTIONS, GET, DELETE",
     # X-Requested-With is intentionally NOT listed here — cross-origin requests
     # cannot set it (browser blocks them at preflight), so its presence signals
     # that a request is same-origin. This is a lightweight CSRF guard.
     "Access-Control-Allow-Headers": "Content-Type",
 }
 
-_CSRF_METHODS = {"POST", "PUT", "DELETE"}
+_CSRF_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 
 @web.middleware
@@ -121,11 +125,20 @@ def create_app(
     app[BROWSER_RUNTIME_KEY] = browser_runtime
     integration_cache = IntegrationConnectionCache(integration_service)
     app[INTEGRATION_CACHE_KEY] = integration_cache
+    app[ACTIVITY_FEEDS_KEY] = []
+    goal_extension = create_goal_store(app)
     app[SELECTION_MUTATION_LOCK] = asyncio.Lock()
     app[AGENT_RUNTIME_KEY] = AgentRuntime(
         conversations=ConversationStore(), browser_runtime=browser_runtime,
         integration_cache=integration_cache,
+        extensions=[goal_extension],
     )
+    scheduling = load_config().scheduling
+    app[SCHEDULER_KEY] = Scheduler(
+        limits=scheduling.max_concurrent, poll_interval=scheduling.poll_interval,
+        shutdown_timeout=scheduling.shutdown_timeout,
+    )
+    setup_goals(app, app[SCHEDULER_KEY])
 
     # Agent-run HTTP channel adapter
     register_agent_run_routes(app)
@@ -171,6 +184,7 @@ def create_app(
 
     # Conversation sessions API
     register_conversation_routes(app)
+    register_goal_routes(app)
 
     # Artifacts hub API
     register_artifacts_routes(app)
@@ -333,9 +347,8 @@ async def _start_deferred_subsystems(app: web.Application) -> None:
                 logger.info("Deferred subsystems waiting for readiness")
             await app["ready"].wait()
             logger.info("Ready — starting deferred subsystems")
-            runner = app.get("task_runner")
-            if runner:
-                await runner.start()
+            await start_goals(app)
+            await app[SCHEDULER_KEY].start()
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -346,7 +359,7 @@ async def _start_deferred_subsystems(app: web.Application) -> None:
 
 async def _configure_routines(app: web.Application) -> None:
     """Compose routine services before requests; defer execution until readiness."""
-    from tasks import RoutineService, TaskExecutor, TaskRunner, TelegramNotifier, get_store
+    from tasks import RoutineService, TaskExecutor, RoutineWorkSource, TelegramNotifier, get_store
 
     config = load_config()
     store = get_store()
@@ -362,8 +375,11 @@ async def _configure_routines(app: web.Application) -> None:
         if not notifier.enabled:
             notifier = None
 
-    runner = TaskRunner(store, executor, config.routines, notifier=notifier)
-    app["task_runner"] = runner
+    runner = RoutineWorkSource(
+        store, executor, config.routines, max_concurrent=config.scheduling.max_concurrent["routines"], notifier=notifier,
+    )
+    app[SCHEDULER_KEY].register(runner)
+    app["routine_work_source"] = runner
     app[ROUTINE_SERVICE_KEY] = RoutineService(store, runner)
 
 
@@ -372,9 +388,9 @@ async def _stop_deferred_subsystems(app: web.Application) -> None:
     init_task = app.get("_deferred_init")
     if init_task and not init_task.done():
         init_task.cancel()
-    runner = app.get("task_runner")
-    if runner:
-        await runner.stop()
+    if init_task is not None:
+        await asyncio.gather(init_task, return_exceptions=True)
+    await app[SCHEDULER_KEY].stop()
 
 
 __all__ = ["AGENT_RUNTIME_KEY", "create_app"]

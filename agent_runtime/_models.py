@@ -9,7 +9,7 @@ from agent_core.turn import ExecutionResult
 from agent_core.providers import TokenUsage
 from agent_core.events import FileOutputPayload
 
-from agent_core.events import AgentEvent
+from agent_core.events import AgentEvent, GoalQuestionContext
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +38,11 @@ class AgentRunRequest:
 
     Channel adapters translate their native request into this type; the runner
     translates it into the agent core's conversation and turn primitives.
+
+    Attributes:
+        trigger: Why a channel started this run without a typed message. The
+            runtime passes it through unread; run extensions recognise their own.
+        model_text: What the model reads in place of the message, when set.
     """
 
     conversation_id: str
@@ -45,6 +50,17 @@ class AgentRunRequest:
     attachments: Sequence[RunAttachment] | None
     profile_id: str | None
     policy: RunPolicy = RunPolicy()
+    trigger: object | None = None
+    context: tuple[GoalQuestionContext, ...] = ()
+    model_text: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class QueuedMessage:
+    """A message queued for the agent's next step in an active run."""
+
+    nudge_id: str
+    run_id: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,4 +105,4 @@ class RunResult:
         self.root.raise_for_status()
 
 
-__all__ = ["AgentRunRequest", "RunAttachment", "RunPolicy", "RunResult", "RunSnapshot", "SequencedEvent"]
+__all__ = ["AgentRunRequest", "QueuedMessage", "RunAttachment", "RunPolicy", "RunResult", "RunSnapshot", "SequencedEvent"]

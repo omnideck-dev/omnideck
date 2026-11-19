@@ -1,11 +1,16 @@
-import React, { useRef, useState, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useEffect, useCallback, useId } from 'react';
 import styles from './ChatInput.module.css';
-import PaperclipIcon from './icons/PaperclipIcon.jsx';
 import SendIcon from './icons/SendIcon.jsx';
 import StopIcon from './icons/StopIcon.jsx';
 import OfflineNotice from './OfflineNotice.jsx';
 import ProfileSelector from './ProfileSelector.jsx';
 import AttachmentChip from './AttachmentChip.jsx';
+import ComposerAddMenu from './ComposerAddMenu.jsx';
+import Button from './primitives/Button.jsx';
+import SlashHint, { slashOptionId } from './SlashHint.jsx';
+import QueueStrip from './QueueStrip.jsx';
+import GoalQuestions from '../features/goals/GoalQuestions.jsx';
+import useGoalComposer from '../features/goals/useGoalComposer.js';
 import { loadChatDraft, saveChatDraft } from '../utils/chatDraftStorage.js';
 
 // 13.5px font-size * ~1.48 line-height ≈ 20px; 8px top + 4px bottom padding = 12px.
@@ -13,6 +18,7 @@ const LINE_HEIGHT_PX = 20;
 const PADDING_V_PX = 12;
 const MIN_HEIGHT_PX = 44;
 const MAX_AUTO_HEIGHT_PX = 8 * LINE_HEIGHT_PX + PADDING_V_PX; // 172px — 8 visible rows
+const GOAL_COMMAND = '/goal';
 
 /** Approximate decoded byte size of a base64 string. */
 function _base64Bytes(b64) {
@@ -20,21 +26,57 @@ function _base64Bytes(b64) {
     return Math.max(0, Math.floor(b64.length * 3 / 4) - padding);
 }
 
-function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequested = false, attachment, draft, onDraftConsumed, selectedProfileId, onProfileChange, profileRefreshSignal, conversationId }) {
-    const [message, setMessage] = useState(() => loadChatDraft(conversationId));
+const NO_MESSAGES = [];
+
+function ChatInput({ onSend, onSendAnswers, queue = NO_MESSAGES, returned = NO_MESSAGES, onRemoveQueued, onReturnedConsumed, onStop, isStreaming, isOffline = false, stopRequested = false, attachment, draft, onDraftConsumed, selectedProfileId, onProfileChange, profileRefreshSignal, conversationId, onRequestGoal, goal }) {
+    const [chatMessage, setChatMessage] = useState(() => loadChatDraft(conversationId));
+    const goalComposer = useGoalComposer({ goal, conversationId, queue, onSendAnswers });
+    const answering = goalComposer.answering;
+    const message = answering ? goalComposer.text : chatMessage;
+    const setMessage = answering ? goalComposer.setText : setChatMessage;
     const [selectedProfile, setSelectedProfile] = useState(null);
     const [expanded, setExpanded] = useState(false);
     const [isGrown, setIsGrown] = useState(false);
 
     const textareaRef = useRef(null);
     const fileInputRef = useRef(null);
+    const hintId = useId();
+    const [hintDismissed, setHintDismissed] = useState('');
+    const [slashIndex, setSlashIndex] = useState(0);
+    const controlsDisabled = stopRequested || isOffline;
+    const goalOpen = goalComposer.goalOpen;
+    const hasGoalCommand = Boolean(onRequestGoal);
+    const attachBlocked = isStreaming;
 
     const profileName = selectedProfile?.name;
     const placeholder = stopRequested
         ? 'Stopping…'
+        : answering
+        ? goalComposer.placeholder
         : isStreaming
-        ? `Send a nudge${profileName ? ` to ${profileName}` : ''}…`
+        ? 'Message the agent while it works…'
         : `Message ${profileName || 'Omnideck'}…`;
+    const goalCommandLabel = goalOpen ? 'Open this chat\'s goal' : 'Start a goal for this chat';
+    const slashCommands = [{ command: GOAL_COMMAND, description: goalCommandLabel }];
+    const showSlashHint = hasGoalCommand && !answering && !controlsDisabled && message.startsWith('/')
+        && !/\s/.test(message) && GOAL_COMMAND.startsWith(message) && hintDismissed !== message;
+    const activeSlash = Math.min(slashIndex, slashCommands.length - 1);
+    const requestGoalCommand = (objective) => {
+        const originalCommand = message;
+        onRequestGoal({
+            objective,
+            onStarted: () => setMessage((current) => current === originalCommand ? '' : current),
+            onClosed: () => textareaRef.current?.focus(),
+        });
+    };
+    const pickSlashCommand = (command) => {
+        if (command === GOAL_COMMAND && goalOpen) {
+            requestGoalCommand('');
+            return;
+        }
+        setMessage(`${command} `);
+        textareaRef.current?.focus();
+    };
 
     const resizeInline = useCallback(() => {
         const el = textareaRef.current;
@@ -92,8 +134,8 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
     // (nothing anchors it across a reload), so this only survives a hard
     // refresh once the conversation has been sent at least once — by design.
     useEffect(() => {
-        saveChatDraft(conversationId, message);
-    }, [conversationId, message]);
+        saveChatDraft(conversationId, chatMessage);
+    }, [conversationId, chatMessage]);
 
     // Each entry: { base64, content_type, filename, preview } where preview is a
     // data URL for images, null for other file types.
@@ -121,12 +163,40 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
     const handleSubmit = (e) => {
         e.preventDefault();
         if (stopRequested || isOffline) return;
+        if (answering) {
+            goalComposer.submit();
+            setExpanded(false);
+            return;
+        }
         if (!message.trim() && !attachments.length) return;
+        if (isStreaming && attachments.length) return;
+        const goalCommand = onRequestGoal && message.trim().match(/^\/goal(?:\s+([\s\S]*))?$/);
+        if (goalCommand) {
+            requestGoalCommand((goalCommand[1] || '').trim());
+            return;
+        }
         onSend(message.trim(), attachments.length ? attachments : null);
         setMessage('');
         setAttachments([]);
         if (fileInputRef.current) fileInputRef.current.value = '';
         setExpanded(false);
+    };
+
+    useEffect(() => {
+        if (!returned.length) return;
+        const texts = goalComposer.takeReturned(returned);
+        if (texts.length) setChatMessage((current) => [current, ...texts].filter(Boolean).join('\n'));
+        onReturnedConsumed?.(returned.map((item) => item.id));
+    }, [returned]);
+
+    const removeQueued = (id) => onRemoveQueued?.(id);
+    const editQueued = async (id) => {
+        const item = queue.find((queued) => queued.id === id);
+        const result = await onRemoveQueued?.(id);
+        if (!item || !result?.ok) return;
+        goalComposer.hide();
+        setChatMessage((current) => [current, item.content].filter(Boolean).join('\n'));
+        textareaRef.current?.focus();
     };
 
     const handleFile = (e) => {
@@ -166,10 +236,31 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
 
     const textareaProps = {
         value: message,
+        'aria-label': 'Message',
+        'aria-describedby': answering ? 'goal-current-question' : undefined,
         onChange: (e) => setMessage(e.target.value),
+        'aria-autocomplete': showSlashHint ? 'list' : undefined,
+        'aria-controls': showSlashHint ? hintId : undefined,
+        'aria-activedescendant': showSlashHint ? slashOptionId(hintId, activeSlash) : undefined,
         onKeyDown: (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
+            if (showSlashHint && slashCommands.length > 1 && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
                 e.preventDefault();
+                const step = e.key === 'ArrowDown' ? 1 : -1;
+                setSlashIndex((activeSlash + step + slashCommands.length) % slashCommands.length);
+                return;
+            }
+            if (showSlashHint && e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                setHintDismissed(message);
+                return;
+            }
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                if (showSlashHint) {
+                    pickSlashCommand(slashCommands[activeSlash].command);
+                    return;
+                }
                 handleSubmit(e);
             }
         },
@@ -181,6 +272,7 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
     // The corner expand/collapse control appears once the textarea has grown
     // past one row, or whenever the composer is expanded.
     const showCornerBtn = isGrown || expanded;
+    const hasSomethingToSend = answering ? goalComposer.hasSomethingToSend : message.trim().length > 0;
 
     return (
         <div className={[
@@ -193,7 +285,13 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
                     description="Messages and controls are unavailable."
                 />
             )}
+            <QueueStrip rows={goalComposer.queueRows} onRemove={removeQueued} onEdit={editQueued} disabled={isOffline} />
             <form className={styles.inputArea} onSubmit={handleSubmit}>
+                <GoalQuestions state={goalComposer.questions} disabled={controlsDisabled || goalComposer.sending} paused={Boolean(goal?.paused)} visible={answering}
+                    onHide={() => { goalComposer.hide(); textareaRef.current?.focus(); }}
+                    onShow={() => { goalComposer.show(); textareaRef.current?.focus(); }} />
+                {showSlashHint && <SlashHint id={hintId} commands={slashCommands} activeIndex={activeSlash} onPick={pickSlashCommand} />}
+                {attachBlocked && attachments.length > 0 && <p className={styles.composerNote}>Files can be sent after the agent finishes.</p>}
                 {attachments.length > 0 && (
                     <div className={styles.tray}>
                         {attachments.map((att, i) => (
@@ -232,59 +330,76 @@ function ChatInput({ onSend, onStop, isStreaming, isOffline = false, stopRequest
                     )}
                 </div>
                 <div className={styles.inputAreaButtons}>
-                    <ProfileSelector
-                        selectedId={selectedProfileId}
-                        onChange={onProfileChange}
-                        disabled={isStreaming}
-                        refreshSignal={profileRefreshSignal}
-                        onSelectedProfile={setSelectedProfile}
-                    />
-                    <div className={styles.actionButtons}>
-                        <button
-                            type="button"
-                            id="fileButton"
-                            className={styles.iconButton}
-                            onClick={() => fileInputRef.current && fileInputRef.current.click()}
-                            title="Attach file"
-                            aria-label="Attach file"
-                        >
-                            <PaperclipIcon />
-                        </button>
+                    <div className={styles.leftActions}>
+                        <ComposerAddMenu
+                            disabled={controlsDisabled}
+                            attachDisabled={attachBlocked}
+                            onAttach={() => fileInputRef.current?.click()}
+                            goalItem={hasGoalCommand ? {
+                                label: goalOpen ? 'Open goal' : 'Start a goal…',
+                                shortcut: GOAL_COMMAND,
+                                onSelect: () => onRequestGoal({
+                                    objective: '',
+                                    onStarted: () => {},
+                                    onClosed: () => textareaRef.current?.focus(),
+                                }),
+                            } : null}
+                        />
                         <input
                             ref={fileInputRef}
                             type="file"
                             id="fileInput"
                             multiple
+                            aria-label="Choose files to attach"
+                            disabled={controlsDisabled || attachBlocked}
                             style={{ display: 'none' }}
                             onClick={(e) => { e.target.value = ''; }}
                             onChange={handleFile}
                         />
-                        {isStreaming ? (
-                            <button
-                                type="button"
-                                className={`${styles.sendButton} ${styles.stopButton}`}
-                                data-testid="chat-stop-btn"
-                                title={stopRequested ? 'Stopping…' : 'Stop generation'}
-                                aria-label={stopRequested ? 'Stopping' : 'Stop generation'}
-                                onClick={onStop}
-                                disabled={stopRequested || isOffline}
-                            >
-                                <StopIcon />
-                            </button>
-                        ) : (
-                            <button
-                                type="submit"
-                                className={styles.sendButton}
-                                title="Send message"
-                                aria-label="Send message"
-                                disabled={
-                                    isOffline
-                                    || (!message.trim() && !attachments.length)
-                                }
-                            >
-                                <SendIcon />
-                            </button>
-                        )}
+                        <ProfileSelector
+                            selectedId={selectedProfileId}
+                            onChange={onProfileChange}
+                            disabled={isStreaming}
+                            refreshSignal={profileRefreshSignal}
+                            onSelectedProfile={setSelectedProfile}
+                        />
+                    </div>
+                    <div className={styles.actionButtons}>
+                        <div className={styles.sendActions}>
+                            {isStreaming && (!hasSomethingToSend || stopRequested) ? (
+                                <button
+                                    type="button"
+                                    className={`${styles.sendButton} ${styles.stopButton}`}
+                                    data-testid="chat-stop-btn"
+                                    title={stopRequested ? 'Stopping…' : goalComposer.stopTitle}
+                                    aria-label={stopRequested ? 'Stopping' : 'Stop generation'}
+                                    onClick={onStop}
+                                    disabled={stopRequested || isOffline}
+                                >
+                                    <StopIcon />
+                                </button>
+                            ) : answering ? (
+                                <Button
+                                    type="submit"
+                                    variant="filled"
+                                    loading={goalComposer.sending && !goalComposer.hasSomethingToSend}
+                                    loadingLabel="Sending…"
+                                    disabled={isOffline || stopRequested || !goalComposer.canSend}
+                                >
+                                    {goalComposer.sendLabel}
+                                </Button>
+                            ) : (
+                                <button
+                                    type="submit"
+                                    className={styles.sendButton}
+                                    title="Send message"
+                                    aria-label="Send message"
+                                    disabled={isOffline || stopRequested || (!message.trim() && (isStreaming || !attachments.length))}
+                                >
+                                    <SendIcon />
+                                </button>
+                            )}
+                        </div>
                     </div>
                 </div>
             </form>

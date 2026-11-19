@@ -1,4 +1,5 @@
 .git
+.scratch
 .github
 .venv
 **/__pycache__

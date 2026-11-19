@@ -83,16 +83,21 @@ navigation-target interface without changing feature components.
 
 ## Activity and desktop visibility
 
-The catalog opens one `/api/chat/activity` SSE connection through
-`conversationActivityClient`. It validates snapshot, started, and finished messages
-before dispatching them to `activityReducer`. The message types, decoder, reducer,
-and activity hook are included in the frontend TypeScript checking boundary.
-Native EventSource reconnects automatically; each connection starts with active
-run identities. The server caps each subscriber at 128 pending updates and closes
-the connection on overflow or a socket write taking longer than 30 seconds.
-Disconnect cleanup removes observers without stopping runtime-owned work. The reducer reconciles known runs without restoring historical
-completion dots on a fresh page load. Invalid messages are reported to the console
-and rejected atomically, leaving the last valid state intact.
+`ActivityStreamProvider` in `features/app` opens one `/api/chat/activity` SSE
+connection through `activityStream`. Each message is validated against the
+generated activity message types before it becomes an application effect:
+`runs/snapshot`, `runs/started` and `runs/finished` for run identities, and
+`goals/snapshot` and `goals/changed` for goals. The catalog's
+`useConversationActivity` subscribes to the run effects and feeds
+`activityReducer`; the goals state subscribes to the goal and run effects. The
+messages, decoder and reducer are included in the frontend TypeScript
+checking boundary. Native EventSource reconnects automatically; each
+connection starts with snapshots. The server caps each subscriber at 128
+pending updates and closes the connection on overflow or a socket write taking
+longer than 30 seconds. Disconnect cleanup removes observers without stopping
+runtime-owned work. The reducer reconciles known runs without restoring
+historical completion dots on a fresh page load. Invalid messages are reported
+to the console and rejected whole, leaving the last valid state intact.
 
 Desktop visibility is derived from layout state by `visibleViewIds`, shared by the
 renderer and `DesktopViewRuntimeProvider`. `useVisibleViewIds` exposes that result
@@ -114,8 +119,9 @@ flowchart LR
     Runtime --> Effects[ConversationDesktopEffects]
     Session[Selected conversation ID] --> Effects
     Effects --> Activity[Catalog activity reducer]
-    SSE[Activity SSE] --> Decoder[Validated transport messages]
-    Decoder --> Activity
+    SSE[Activity SSE] --> Decoder[Validated activity messages]
+    Decoder --> AppEffects[Application effects]
+    AppEffects --> Activity
     Activity --> Sidebar[Sidebar indicators]
 ```
 
@@ -123,3 +129,22 @@ A run finishing while its conversation is visible clears the spinner without
 adding a dot. A hidden completion adds a dot, even if the session is still
 selected. Showing that conversation clears the dot. These visibility updates do
 not change the selected transcript connection or stop server runs.
+
+## Transcript display steps
+
+`projectTurns` first turns events into transcript items, in the order they
+happened. Goal events that the transcript shows become goal dividers through
+`goalDividerItem`; other goal events add nothing. Then display steps run on the
+finished turns in a fixed order, listed in `TRANSCRIPT_PASSES`: compaction
+markers move to the boundary between summarized and kept work, and day headers
+mark each change of day in a chat that has a goal. Each step returns new turns
+and never changes the events.
+
+## Queued messages
+
+Chat state owns the messages waiting for the agent's next step. Sending while
+the agent works queues the message on the server, and the run's queue events
+add it to the queue and take it out when the agent reads it. The queue rules
+live in `session/queueState.js` as pure functions the session reducer calls.
+Queue events replay with the run and are not saved in the chat. A message the
+run hands back unread returns to the composer.

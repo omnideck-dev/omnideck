@@ -11,8 +11,18 @@ vi.mock('../../contexts/AppData.jsx', () => ({
     useAppData: () => ({ providersHook, refreshFeatures }),
 }));
 
+const KEY_CODE = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a'];
+
+function typeKeyCode() {
+    for (const key of KEY_CODE) fireEvent.keyDown(window, { key });
+}
+
+let savedGoalsEnabled = false;
+
 describe('SystemSettings', () => {
     beforeEach(() => {
+        localStorage.clear();
+        savedGoalsEnabled = false;
         refreshFeatures.mockReset();
         globalThis.fetch = vi.fn((url, init = {}) => {
             if (url === '/api/settings' && init.method === 'PUT') {
@@ -23,6 +33,7 @@ describe('SystemSettings', () => {
                         default_agent: 'omnideck',
                         custom_apps_enabled: true,
                         custom_tools_enabled: true,
+                        goals_enabled: true,
                     }),
                 });
             }
@@ -34,6 +45,7 @@ describe('SystemSettings', () => {
                         default_agent: 'omnideck',
                         custom_apps_enabled: false,
                         custom_tools_enabled: false,
+                        goals_enabled: savedGoalsEnabled,
                     }),
                 });
             }
@@ -106,6 +118,21 @@ describe('SystemSettings', () => {
         expect(toggle).toBeChecked();
     });
 
+    it('persists the opt-in Goals setting and refreshes feature availability', async () => {
+        render(<OmnideckHostProvider host={null}><SystemSettings /></OmnideckHostProvider>);
+        await screen.findByRole('switch', { name: 'Apps' });
+        typeKeyCode();
+        const toggle = await screen.findByRole('switch', { name: 'Goals' });
+        expect(toggle).not.toBeChecked();
+        expect(screen.getByTestId('goals-toggle')).toHaveTextContent(
+            'Turning this off stops all goals. Turn it back on and they continue where they left off.',
+        );
+        fireEvent.click(toggle);
+        await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledWith('/api/settings', expect.objectContaining({ method: 'PUT', body: JSON.stringify({ goals_enabled: true }) })));
+        await waitFor(() => expect(refreshFeatures).toHaveBeenCalledOnce());
+        expect(toggle).toBeChecked();
+    });
+
     it('groups related settings while keeping model pickers distinct', async () => {
         const host = {
             currentUpdate: vi.fn().mockResolvedValue(null),
@@ -135,5 +162,28 @@ describe('SystemSettings', () => {
         expect(within(models).getByText('Compaction')).toBeInTheDocument();
         expect(within(models).getByText('Title generation')).toBeInTheDocument();
         expect(within(models).getAllByTestId('model-picker')).toHaveLength(3);
+    });
+
+    it('hides an early access row by default and always shows experimental rows', async () => {
+        render(<OmnideckHostProvider host={null}><SystemSettings /></OmnideckHostProvider>);
+        expect(await screen.findByRole('switch', { name: 'Apps' })).toBeVisible();
+        expect(screen.getByRole('switch', { name: 'Custom Tools' })).toBeVisible();
+        expect(screen.queryByRole('switch', { name: 'Goals' })).not.toBeInTheDocument();
+    });
+
+    it('shows an early access row after the key code and remembers it', async () => {
+        const view = render(<OmnideckHostProvider host={null}><SystemSettings /></OmnideckHostProvider>);
+        await screen.findByRole('switch', { name: 'Apps' });
+        typeKeyCode();
+        expect(await screen.findByRole('switch', { name: 'Goals' })).toBeVisible();
+        view.unmount();
+        render(<OmnideckHostProvider host={null}><SystemSettings /></OmnideckHostProvider>);
+        expect(await screen.findByRole('switch', { name: 'Goals' })).toBeVisible();
+    });
+
+    it('shows an early access row while its setting is on', async () => {
+        savedGoalsEnabled = true;
+        render(<OmnideckHostProvider host={null}><SystemSettings /></OmnideckHostProvider>);
+        expect(await screen.findByRole('switch', { name: 'Goals' })).toBeChecked();
     });
 });

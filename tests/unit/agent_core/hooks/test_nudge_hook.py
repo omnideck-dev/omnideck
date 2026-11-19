@@ -54,8 +54,8 @@ async def test_nudge_hook_publishes_user_message_event_when_nudges_present():
             await conv.drain_observers()
 
     nudge_events = [e.payload for e in captured if isinstance(e.payload, UserMessagePayload)]
-    assert len(nudge_events) == 1
-    assert nudge_events[0].content == "first nudge\n\nsecond nudge"
+    assert len(nudge_events) == 2
+    assert [event.content for event in nudge_events] == ["first nudge", "second nudge"]
     assert nudge_events[0].attachments == []
 
 

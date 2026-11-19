@@ -5,12 +5,13 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 LEGACY_BROWSER_SKILL_ID = "browser"
-RESERVED_SKILL_IDS = frozenset({LEGACY_BROWSER_SKILL_ID})
+SESSION_GOAL_SKILL_ID = "session-goal"
+RESERVED_SKILL_IDS = frozenset({LEGACY_BROWSER_SKILL_ID, SESSION_GOAL_SKILL_ID})
 RESTRICTED_TOOL_CATEGORY_IDS = frozenset({"browser"})
 
 
 def is_reserved_skill_id(skill_id: str) -> bool:
-    """Return whether an ID belongs to an application capability."""
+    """Return whether an ID is reserved for application-controlled behavior."""
     return skill_id in RESERVED_SKILL_IDS
 
 
@@ -20,7 +21,7 @@ def is_restricted_tool_category(category_id: str) -> bool:
 
 
 def strip_reserved_skills(skill_ids: Iterable[str]) -> list[str]:
-    """Remove obsolete application-capability IDs from skill assignments."""
+    """Remove application-controlled IDs from user skill assignments."""
     return [skill_id for skill_id in skill_ids if not is_reserved_skill_id(skill_id)]
 
 
@@ -33,6 +34,7 @@ __all__ = [
     "LEGACY_BROWSER_SKILL_ID",
     "RESTRICTED_TOOL_CATEGORY_IDS",
     "RESERVED_SKILL_IDS",
+    "SESSION_GOAL_SKILL_ID",
     "grants_restricted_tool_category",
     "is_reserved_skill_id",
     "is_restricted_tool_category",

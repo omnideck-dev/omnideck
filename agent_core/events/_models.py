@@ -290,6 +290,52 @@ class UserAttachment(BaseModel):
     path: str
 
 
+class GoalWakeupData(BaseModel):
+    """A goal run that no user message started.
+
+    Attributes:
+        reason: Why the run started: planned, run_now, retry, or interrupted.
+        step: Title of the plan step the run works on, or empty when no step is open.
+    """
+
+    kind: Literal["wakeup"]
+    wake_id: str
+    reason: Literal["planned", "run_now", "retry", "interrupted"]
+    step: str
+
+
+class GoalTransitionData(BaseModel):
+    """A goal change shown in the conversation timeline.
+
+    Attributes:
+        resume_at: The planned run time for a scheduled transition.
+        question_count: Open questions the goal waits on, for a waiting transition.
+    """
+
+    kind: Literal["scheduled", "waiting", "error", "completed", "edited"]
+    resume_at: str | None = None
+    question_count: int = 0
+
+
+class GoalEventPayload(BaseModel):
+    """A goal event shared by model context and conversation rendering."""
+
+    type: Literal["goal"]
+    goal_id: str
+    data: Annotated[GoalWakeupData | GoalTransitionData, Field(discriminator="kind")]
+
+
+class GoalQuestionContext(BaseModel):
+    """An accepted question snapshot paired with its user answer."""
+
+    type: Literal["goal_question"]
+    goal_id: str
+    question_id: str
+    question_revision: int
+    question: str
+    answer: str
+
+
 class UserMessagePayload(BaseModel):
     """User-authored input to an agent — the prompt that opens a turn,
     or a nudge injected mid-turn into a running agent (root or sub-agent).
@@ -297,17 +343,54 @@ class UserMessagePayload(BaseModel):
     Attributes:
         type: Discriminator; always "user_message".
         content: The user-authored text.
+        context: What this message refers to, such as a goal question, or
+            later a selection in an artifact.
         attachments: Files uploaded with the message, materialized on
             the virtual computer before the LLM ran.
         is_nudge: False for the turn-opening prompt; True for queued
             user input that landed between iterations of an already-
             running turn.
+        nudge_id: The queued message's ID when it was sent while the
+            agent was working.
     """
 
     type: Literal["user_message"]
     content: str
     attachments: list[UserAttachment] = Field(default_factory=list)
+    context: list[GoalQuestionContext] = Field(default_factory=list)
     is_nudge: bool = False
+    nudge_id: str | None = None
+
+
+class NudgeQueuedPayload(BaseModel):
+    """A user message waiting for the agent's next step.
+
+    Attributes:
+        type: Discriminator; always "nudge_queued".
+        nudge_id: The queued message's ID.
+        content: The user-authored text.
+        context: What this message refers to, such as a goal question.
+    """
+
+    type: Literal["nudge_queued"]
+    nudge_id: str
+    content: str
+    context: list[GoalQuestionContext] = Field(default_factory=list)
+
+
+class NudgeRemovedPayload(BaseModel):
+    """A queued message left the queue without the agent reading it.
+
+    Attributes:
+        type: Discriminator; always "nudge_removed".
+        nudge_id: The queued message's ID.
+        reason: "removed" when the user removed it; "returned" when the
+            run ended before the agent read it.
+    """
+
+    type: Literal["nudge_removed"]
+    nudge_id: str
+    reason: Literal["removed", "returned"]
 
 
 class IterationToolCall(BaseModel):
@@ -468,6 +551,9 @@ AgentEventPayload = Annotated[
     | AgentCompletedPayload
     | SpawnRequestedPayload
     | UserMessagePayload
+    | NudgeQueuedPayload
+    | NudgeRemovedPayload
+    | GoalEventPayload
     | IterationPayload
     | ToolResultPayload
     | CompactionPayload
@@ -491,6 +577,9 @@ class AgentEvent(BaseModel):
         agent_name: Human-readable agent name for attribution.
         agent_id: Hierarchical context id of the emitting agent.
         depth: Nesting depth (0 = root agent, 1+ = sub-agents).
+        model_text: Text the model reads for this event. On a user message
+            it replaces the content; on any other event it is shown as a
+            notice the user did not write.
     """
 
     payload: AgentEventPayload
@@ -499,6 +588,7 @@ class AgentEvent(BaseModel):
     agent_name: str | None = None
     agent_id: str | None = None
     depth: int | None = None
+    model_text: str | None = None
 
     def to_flat_dict(self, conversation_id: str) -> dict:
         """Render the event as the flat dict shape persisted to events.jsonl.
@@ -516,6 +606,8 @@ class AgentEvent(BaseModel):
             "agent_name": self.agent_name,
             "depth": self.depth,
         }
+        if self.model_text:
+            flat["model_text"] = self.model_text
         flat.update(self.payload.model_dump(exclude={"type"}))
         return flat
 
@@ -535,6 +627,9 @@ __all__ = [
     "DesktopActivePayload",
     "ErrorPayload",
     "FileOutputPayload",
+    "GoalEventPayload",
+    "GoalWakeupData",
+    "GoalTransitionData",
     "IterationPayload",
     "IterationToolCall",
     "SpawnRequestedPayload",
@@ -545,4 +640,5 @@ __all__ = [
     "TurnEndPayload",
     "UserAttachment",
     "UserMessagePayload",
+    "GoalQuestionContext",
 ]

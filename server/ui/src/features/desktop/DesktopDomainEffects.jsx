@@ -8,6 +8,7 @@ import {
 import {
     CustomAppDesktopEffects,
 } from '../customApps/CustomAppDesktopAdapter.jsx';
+import { GoalDesktopEffects } from '../goals/GoalDesktopAdapter.jsx';
 import {
     WorkspaceResourceDesktopEffects,
 } from '../workspace/WorkspaceResourceDesktopAdapter.jsx';
@@ -26,6 +27,7 @@ function DesktopDomainEffects() {
             <CustomAppDesktopEffects />
             <ArtifactDesktopEffects />
             <ConversationDesktopEffects />
+            <GoalDesktopEffects />
         </>
     );
 }
