@@ -1,11 +1,8 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ConversationCatalogProvider } from '../../conversation/catalog/ConversationCatalog.jsx';
 import GoalPanel from '../GoalPanel.jsx';
 import { GoalsTestProvider } from './goalTestProviders.jsx';
 import { formatRunTime } from '../goalStatus.js';
-
-vi.mock('../../conversation/session/ConversationSession.jsx', () => ({ useSelectedProfileId: () => 'household-planner' }));
 
 const FUTURE = '2099-10-06T15:00:00Z';
 const PAST = '2020-10-06T15:00:00Z';
@@ -28,7 +25,7 @@ let previousGoals;
 const response = (body, status = 200) => ({ ok: status < 400, status, json: async () => body });
 
 function setup(props = {}) {
-    return render(<GoalsTestProvider goals={currentGoal ? [currentGoal] : []}><ConversationCatalogProvider><GoalPanel conversationId="chat-1" onOpenChat={vi.fn()} {...props} /></ConversationCatalogProvider></GoalsTestProvider>);
+    return render(<GoalsTestProvider goals={currentGoal ? [currentGoal] : []}><GoalPanel conversationId="chat-1" profileId="household-planner" onOpenChat={vi.fn()} {...props} /></GoalsTestProvider>);
 }
 
 function posts() {
@@ -132,7 +129,7 @@ describe('goal detail view', () => {
         expect(screen.getByRole('region', { name: 'Next up' })).toHaveTextContent('Combine calendars');
         fireEvent.click(screen.getByRole('button', { name: 'Run now' }));
         await expectStatus('Starting');
-        expect(posts()).toEqual([{ action: 'run', body: { goal_id: 'g1' } }]);
+        expect(posts()).toEqual([{ action: 'run', body: { goal_id: 'g1', profile_id: 'household-planner' } }]);
         expect(screen.queryByRole('button', { name: 'Run now' })).not.toBeInTheDocument();
     });
 
@@ -155,7 +152,7 @@ describe('goal detail view', () => {
         expect(screen.getByRole('button', { name: 'Edit' })).toBeVisible();
         fireEvent.click(within(callout).getByRole('button', { name: 'Retry' }));
         await waitFor(() => expect(screen.queryByTestId('goal-error')).not.toBeInTheDocument());
-        expect(posts()).toEqual([{ action: 'run', body: { goal_id: 'g1' } }]);
+        expect(posts()).toEqual([{ action: 'run', body: { goal_id: 'g1', profile_id: 'household-planner' } }]);
     });
 
     it('offers only Resume while paused and says when it will run', async () => {
@@ -170,7 +167,7 @@ describe('goal detail view', () => {
         expect(screen.getByRole('button', { name: 'Edit' })).toBeVisible();
         fireEvent.click(screen.getByRole('button', { name: 'Resume', exact: true }));
         await screen.findByRole('button', { name: 'Pause', exact: true });
-        expect(posts()).toEqual([{ action: 'resume', body: { goal_id: 'g1' } }]);
+        expect(posts()).toEqual([{ action: 'resume', body: { goal_id: 'g1', profile_id: 'household-planner' } }]);
     });
 
     it('offers only Resume on a paused goal stopped by an error', async () => {

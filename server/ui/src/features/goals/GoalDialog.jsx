@@ -1,11 +1,9 @@
 import { useEffect, useRef } from 'react';
-import { useConversationCatalog } from '../conversation/catalog/ConversationCatalog.jsx';
 import GoalEditor from './GoalEditor.jsx';
 import { isGoalOpen, useGoals } from './GoalsState.jsx';
 
-export default function GoalDialog({ conversationId, profileId, initialObjective = '', onStarted, onClose }) {
+export default function GoalDialog({ conversationId, profileId, initialObjective = '', onCreated, onStarted, onClose }) {
     const { mutateGoal, goalsByConversation } = useGoals();
-    const { refetch: refreshConversations } = useConversationCatalog();
     const mounted = useRef(true);
     const latest = goalsByConversation[conversationId];
     const goal = isGoalOpen(latest) ? latest : null;
@@ -24,7 +22,7 @@ export default function GoalDialog({ conversationId, profileId, initialObjective
             ...body,
             ...(!goal ? { profile_id: profileId } : {}),
         });
-        if (!goal) void refreshConversations();
+        if (!goal) onCreated?.({ conversation_id: conversationId, title: body.objective.slice(0, 50) });
         if (mounted.current) onStarted?.();
     };
 

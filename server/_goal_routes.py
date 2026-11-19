@@ -10,8 +10,8 @@ from functools import wraps
 from aiohttp import web
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
-from agents import get_agent_profile, get_default_profile
-from conversations import ensure_conversation, load_conversation_profile
+from agents import AgentProfile, get_agent_profile, get_default_profile
+from conversations import ensure_conversation, load_conversation_profile, save_conversation_profile
 from agent_runtime import AgentRunRequest, RunConflictError
 from goals import (
     Goal, GoalAnswerSubmission, GoalConflictError, GoalNotFoundError, GoalStateError, GoalStep, answer_message,
@@ -40,10 +40,11 @@ class GoalEdit(BaseModel):
 
 
 class GoalControl(BaseModel):
-    """A user control, optionally naming the goal the user saw."""
+    """A user control, optionally naming the goal the user saw and the agent picked in the chat."""
 
     model_config = ConfigDict(extra="forbid")
     goal_id: str | None = None
+    profile_id: str | None = None
 
 
 class GoalReopen(BaseModel):
@@ -75,6 +76,13 @@ def _user_plan(saved: list[GoalStep], edited: list[GoalStep]) -> list[GoalStep]:
     """Keep step progress as the agent saved it; the user edits only the steps' text."""
     progress = {step.id: step.status for step in saved}
     return [step.model_copy(update={"status": progress.get(step.id, "pending")}) for step in edited]
+
+
+def _usable_profile(profile_id: str | None) -> AgentProfile | None:
+    profile = get_agent_profile(profile_id) if profile_id else get_default_profile()
+    if profile is None or not profile.enabled or not profile.model or not profile.provider:
+        return None
+    return profile
 
 
 def _require_enabled() -> None:
@@ -159,9 +167,8 @@ async def assign_goal_handler(request: web.Request) -> web.Response:
     store = request.app[GOAL_STORE_KEY]
     if store.current(conversation_id) is not None:
         raise GoalConflictError("This conversation already has an unfinished goal")
-    profile_id = payload.profile_id or load_conversation_profile(conversation_id)
-    profile = get_agent_profile(profile_id) if profile_id else get_default_profile()
-    if profile is None or not profile.enabled or not profile.model or not profile.provider:
+    profile = _usable_profile(payload.profile_id or load_conversation_profile(conversation_id))
+    if profile is None:
         return web.json_response({"error": "Choose an enabled agent with a configured model."}, status=400)
     Goal(conversation_id=conversation_id, objective=payload.objective)
     ensure_conversation(conversation_id, title=payload.objective.strip(), profile_id=profile.id)
@@ -202,6 +209,13 @@ async def control_goal_handler(request: web.Request) -> web.Response:
     if payload.goal_id is not None and payload.goal_id != goal.id:
         raise GoalConflictError("This chat has a different goal. Refresh before changing it.")
     handle = request.app[AGENT_RUNTIME_KEY].active_for_conversation(conversation_id)
+    profile = None
+    if action in ("resume", "run"):
+        profile = _usable_profile(payload.profile_id or load_conversation_profile(conversation_id))
+        if profile is None:
+            return web.json_response(
+                {"error": "This chat's agent was deleted or turned off. Choose another agent in the chat."}, status=400,
+            )
     if action == "resume":
         store.resume(goal.id)
     elif action == "run":
@@ -216,6 +230,8 @@ async def control_goal_handler(request: web.Request) -> web.Response:
         store.cancel(goal.id)
         if handle is not None:
             handle.stop()
+    if profile is not None:
+        save_conversation_profile(conversation_id, profile.id)
     return _snapshot(request, conversation_id)
 
 
