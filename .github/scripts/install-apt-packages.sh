@@ -7,7 +7,7 @@ if (( $# == 0 )); then
 fi
 
 readonly max_attempts=3
-readonly command_timeout=180
+readonly command_timeout=600
 
 run_apt() {
     local attempt
@@ -28,6 +28,7 @@ run_apt() {
             return 1
         fi
 
+        sudo dpkg --configure -a || true
         sleep $((attempt * 10))
     done
 }

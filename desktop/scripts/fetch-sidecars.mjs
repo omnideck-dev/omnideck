@@ -30,10 +30,6 @@ function run(command, args) {
   assert.equal(result.status, 0, result.stderr || `${command} exited with ${result.status}`);
 }
 
-function powershellLiteral(value) {
-  return `'${value.replaceAll("'", "''")}'`;
-}
-
 async function findExtractedBinary(root, expectedName) {
   const candidates = [];
   async function visit(directory) {
@@ -109,16 +105,8 @@ for (const target of selected) {
     await writeFile(archivePath, archive);
     if (target.archive.endsWith('.zip')) {
       if (process.platform === 'win32') {
-        const command = [
-          `Expand-Archive -LiteralPath ${powershellLiteral(archivePath)}`,
-          `-DestinationPath ${powershellLiteral(extractRoot)} -Force`,
-        ].join(' ');
-        run('powershell.exe', [
-          '-NoProfile',
-          '-NonInteractive',
-          '-EncodedCommand',
-          Buffer.from(command, 'utf16le').toString('base64'),
-        ]);
+        const systemTar = path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe');
+        run(systemTar, ['-xf', archivePath, '-C', extractRoot]);
       } else {
         run('unzip', ['-q', archivePath, '-d', extractRoot]);
       }
