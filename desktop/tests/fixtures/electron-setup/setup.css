@@ -247,27 +247,11 @@ body {
 }
 
 .mark {
-  display: flex;
-  align-items: end;
-  justify-content: center;
-  gap: 3px;
+  display: block;
+  flex: none;
   width: 34px;
   height: 34px;
-  padding: var(--sp-2);
-  background: var(--accent);
-  border-radius: var(--radius-lg);
 }
-
-.mark span {
-  display: block;
-  width: 3px;
-  background: #fff;
-  border-radius: var(--radius-full);
-}
-
-.mark span:nth-child(1) { height: 8px; }
-.mark span:nth-child(2) { height: 16px; }
-.mark span:nth-child(3) { height: 12px; }
 
 .brand,
 .eyebrow,
