@@ -40,7 +40,6 @@ logger = logging.getLogger(__name__)
 # resumed from the warm cache loses them while a cold disk resume keeps them.
 _RETAINED_EVENT_TYPES: frozenset[str] = frozenset({
     "user_message",
-    "goal",
     "iteration",
     "tool_result",
     "compaction",
@@ -145,7 +144,7 @@ class ConversationHistory:
         event regardless of type; persistence and the UI stream also handle
         types the in-memory log doesn't retain.
         """
-        if self._conversation_id is not None and event.payload.type in _RETAINED_EVENT_TYPES:
+        if self._conversation_id is not None and (event.payload.type in _RETAINED_EVENT_TYPES or event.model_text):
             self._events.append(event.to_flat_dict(self._conversation_id))
         for obs in tuple(self._observers):
             try:

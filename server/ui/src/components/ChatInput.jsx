@@ -10,8 +10,7 @@ import Button from './primitives/Button.jsx';
 import SlashHint, { slashOptionId } from './SlashHint.jsx';
 import QueueStrip from './QueueStrip.jsx';
 import GoalQuestions from '../features/goals/GoalQuestions.jsx';
-import useGoalAnswering, { isAnswerMessage, queueRows } from '../features/goals/useGoalAnswering.js';
-import { formatRunTime, isGoalOpen } from '../features/goals/goalStatus.js';
+import useGoalComposer from '../features/goals/useGoalComposer.js';
 import { loadChatDraft, saveChatDraft } from '../utils/chatDraftStorage.js';
 
 // 13.5px font-size * ~1.48 line-height ≈ 20px; 8px top + 4px bottom padding = 12px.
@@ -20,15 +19,6 @@ const PADDING_V_PX = 12;
 const MIN_HEIGHT_PX = 44;
 const MAX_AUTO_HEIGHT_PX = 8 * LINE_HEIGHT_PX + PADDING_V_PX; // 172px — 8 visible rows
 const GOAL_COMMAND = '/goal';
-
-function stopTitle(goal) {
-    if (!isGoalOpen(goal)) return 'Stop generation';
-    const next = goal.next;
-    if (next?.kind === 'wake' && Date.parse(next.at) > Date.now()) {
-        return `Stops this run. The goal will still run ${formatRunTime(next.at)}.`;
-    }
-    return 'Stops this run. The goal will wait for you.';
-}
 
 /** Approximate decoded byte size of a base64 string. */
 function _base64Bytes(b64) {
@@ -40,10 +30,10 @@ const NO_MESSAGES = [];
 
 function ChatInput({ onSend, onSendAnswers, queue = NO_MESSAGES, returned = NO_MESSAGES, onRemoveQueued, onReturnedConsumed, onStop, isStreaming, isOffline = false, stopRequested = false, attachment, draft, onDraftConsumed, selectedProfileId, onProfileChange, profileRefreshSignal, conversationId, onRequestGoal, goal }) {
     const [chatMessage, setChatMessage] = useState(() => loadChatDraft(conversationId));
-    const goalAnswering = useGoalAnswering({ goal, conversationId, queue, onSendAnswers });
-    const answering = goalAnswering.answering;
-    const message = answering ? goalAnswering.text : chatMessage;
-    const setMessage = answering ? goalAnswering.setText : setChatMessage;
+    const goalComposer = useGoalComposer({ goal, conversationId, queue, onSendAnswers });
+    const answering = goalComposer.answering;
+    const message = answering ? goalComposer.text : chatMessage;
+    const setMessage = answering ? goalComposer.setText : setChatMessage;
     const [selectedProfile, setSelectedProfile] = useState(null);
     const [expanded, setExpanded] = useState(false);
     const [isGrown, setIsGrown] = useState(false);
@@ -54,7 +44,7 @@ function ChatInput({ onSend, onSendAnswers, queue = NO_MESSAGES, returned = NO_M
     const [hintDismissed, setHintDismissed] = useState('');
     const [slashIndex, setSlashIndex] = useState(0);
     const controlsDisabled = stopRequested || isOffline;
-    const goalOpen = isGoalOpen(goal);
+    const goalOpen = goalComposer.goalOpen;
     const hasGoalCommand = Boolean(onRequestGoal);
     const attachBlocked = isStreaming;
 
@@ -62,7 +52,7 @@ function ChatInput({ onSend, onSendAnswers, queue = NO_MESSAGES, returned = NO_M
     const placeholder = stopRequested
         ? 'Stopping…'
         : answering
-        ? goalAnswering.placeholder
+        ? goalComposer.placeholder
         : isStreaming
         ? 'Message the agent while it works…'
         : `Message ${profileName || 'Omnideck'}…`;
@@ -174,7 +164,7 @@ function ChatInput({ onSend, onSendAnswers, queue = NO_MESSAGES, returned = NO_M
         e.preventDefault();
         if (stopRequested || isOffline) return;
         if (answering) {
-            goalAnswering.submit();
+            goalComposer.submit();
             setExpanded(false);
             return;
         }
@@ -194,9 +184,8 @@ function ChatInput({ onSend, onSendAnswers, queue = NO_MESSAGES, returned = NO_M
 
     useEffect(() => {
         if (!returned.length) return;
-        const texts = returned.filter((item) => !isAnswerMessage(item)).map((item) => item.content).filter(Boolean);
+        const texts = goalComposer.takeReturned(returned);
         if (texts.length) setChatMessage((current) => [current, ...texts].filter(Boolean).join('\n'));
-        goalAnswering.restoreReturned(returned);
         onReturnedConsumed?.(returned.map((item) => item.id));
     }, [returned]);
 
@@ -205,7 +194,7 @@ function ChatInput({ onSend, onSendAnswers, queue = NO_MESSAGES, returned = NO_M
         const item = queue.find((queued) => queued.id === id);
         const result = await onRemoveQueued?.(id);
         if (!item || !result?.ok) return;
-        goalAnswering.hide();
+        goalComposer.hide();
         setChatMessage((current) => [current, item.content].filter(Boolean).join('\n'));
         textareaRef.current?.focus();
     };
@@ -283,7 +272,7 @@ function ChatInput({ onSend, onSendAnswers, queue = NO_MESSAGES, returned = NO_M
     // The corner expand/collapse control appears once the textarea has grown
     // past one row, or whenever the composer is expanded.
     const showCornerBtn = isGrown || expanded;
-    const hasSomethingToSend = answering ? goalAnswering.hasSomethingToSend : message.trim().length > 0;
+    const hasSomethingToSend = answering ? goalComposer.hasSomethingToSend : message.trim().length > 0;
 
     return (
         <div className={[
@@ -296,11 +285,11 @@ function ChatInput({ onSend, onSendAnswers, queue = NO_MESSAGES, returned = NO_M
                     description="Messages and controls are unavailable."
                 />
             )}
-            <QueueStrip rows={queueRows(queue)} onRemove={removeQueued} onEdit={editQueued} disabled={isOffline} />
+            <QueueStrip rows={goalComposer.queueRows} onRemove={removeQueued} onEdit={editQueued} disabled={isOffline} />
             <form className={styles.inputArea} onSubmit={handleSubmit}>
-                <GoalQuestions state={goalAnswering.questions} disabled={controlsDisabled || goalAnswering.sending} paused={Boolean(goal?.paused)} visible={answering}
-                    onHide={() => { goalAnswering.hide(); textareaRef.current?.focus(); }}
-                    onShow={() => { goalAnswering.show(); textareaRef.current?.focus(); }} />
+                <GoalQuestions state={goalComposer.questions} disabled={controlsDisabled || goalComposer.sending} paused={Boolean(goal?.paused)} visible={answering}
+                    onHide={() => { goalComposer.hide(); textareaRef.current?.focus(); }}
+                    onShow={() => { goalComposer.show(); textareaRef.current?.focus(); }} />
                 {showSlashHint && <SlashHint id={hintId} commands={slashCommands} activeIndex={activeSlash} onPick={pickSlashCommand} />}
                 {attachBlocked && attachments.length > 0 && <p className={styles.composerNote}>Files can be sent after the agent finishes.</p>}
                 {attachments.length > 0 && (
@@ -382,7 +371,7 @@ function ChatInput({ onSend, onSendAnswers, queue = NO_MESSAGES, returned = NO_M
                                     type="button"
                                     className={`${styles.sendButton} ${styles.stopButton}`}
                                     data-testid="chat-stop-btn"
-                                    title={stopRequested ? 'Stopping…' : stopTitle(goal)}
+                                    title={stopRequested ? 'Stopping…' : goalComposer.stopTitle}
                                     aria-label={stopRequested ? 'Stopping' : 'Stop generation'}
                                     onClick={onStop}
                                     disabled={stopRequested || isOffline}
@@ -393,11 +382,11 @@ function ChatInput({ onSend, onSendAnswers, queue = NO_MESSAGES, returned = NO_M
                                 <Button
                                     type="submit"
                                     variant="filled"
-                                    loading={goalAnswering.sending && !goalAnswering.hasSomethingToSend}
+                                    loading={goalComposer.sending && !goalComposer.hasSomethingToSend}
                                     loadingLabel="Sending…"
-                                    disabled={isOffline || stopRequested || !goalAnswering.canSend}
+                                    disabled={isOffline || stopRequested || !goalComposer.canSend}
                                 >
-                                    {goalAnswering.sendLabel}
+                                    {goalComposer.sendLabel}
                                 </Button>
                             ) : (
                                 <button

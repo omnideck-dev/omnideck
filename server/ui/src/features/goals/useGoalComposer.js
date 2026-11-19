@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react';
 
 import { useGoalQuestionDrafts } from './GoalQuestions.jsx';
+import { formatRunTime, isGoalOpen } from './goalStatus.js';
 
 function goalAnswers(message) {
     return (message.context || []).filter((item) => item?.type === 'goal_question');
 }
 
-export default function useGoalAnswering({ goal, conversationId, queue, onSendAnswers }) {
+export default function useGoalComposer({ goal, conversationId, queue, onSendAnswers }) {
     const [inFlight, setInFlight] = useState([]);
     const queuedIds = useMemo(() => queue.flatMap((message) => goalAnswers(message)
         .filter((item) => item.goal_id === goal?.id).map((item) => item.question_id)), [queue, goal?.id]);
@@ -38,14 +39,21 @@ export default function useGoalAnswering({ goal, conversationId, queue, onSendAn
         });
     };
 
-    const restoreReturned = (messages) => {
+    const takeReturned = (messages) => {
+        const texts = [];
         for (const message of messages) {
             if (goalAnswers(message).length) questions.restoreAnswers(message.context);
+            else if (message.content) texts.push(message.content);
         }
+        return texts;
     };
 
     const current = questions.current;
+    const rows = useMemo(() => queueRows(queue), [queue]);
     return {
+        goalOpen: isGoalOpen(goal),
+        stopTitle: stopTitle(goal),
+        queueRows: rows,
         answering,
         questions,
         text: questions.text,
@@ -58,11 +66,11 @@ export default function useGoalAnswering({ goal, conversationId, queue, onSendAn
         submit,
         hide: () => setHidden(questionSet),
         show: () => setHidden(''),
-        restoreReturned,
+        takeReturned,
     };
 }
 
-export function queueRows(queue) {
+function queueRows(queue) {
     return queue.map((message) => {
         const answers = goalAnswers(message).length;
         return answers
@@ -71,6 +79,11 @@ export function queueRows(queue) {
     });
 }
 
-export function isAnswerMessage(message) {
-    return goalAnswers(message).length > 0;
+function stopTitle(goal) {
+    if (!isGoalOpen(goal)) return 'Stop generation';
+    const next = goal.next;
+    if (next?.kind === 'wake' && Date.parse(next.at) > Date.now()) {
+        return `Stops this run. The goal will still run ${formatRunTime(next.at)}.`;
+    }
+    return 'Stops this run. The goal will wait for you.';
 }

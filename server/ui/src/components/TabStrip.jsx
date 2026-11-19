@@ -2,11 +2,12 @@ import {
     useCallback,
     useEffect,
     useLayoutEffect,
+    useMemo,
     useRef,
     useState,
 } from 'react';
 
-import TabContextMenu from './TabContextMenu.jsx';
+import Menu from './primitives/Menu.jsx';
 import styles from './TabStrip.module.css';
 
 /** Accessible, scrollable tab chrome with a shared action menu. */
@@ -31,9 +32,9 @@ export default function TabStrip({
     });
     const closeTabMenu = useCallback(() => setTabMenu(null), []);
 
-    const openTabMenu = useCallback((tab, position) => {
+    const openTabMenu = useCallback((tab, position, trigger) => {
         if (!tab.menuActions?.length) return;
-        setTabMenu({ tabId: tab.id, position });
+        setTabMenu({ tabId: tab.id, position, trigger });
     }, []);
 
     const updateTabOverflow = useCallback(() => {
@@ -145,6 +146,14 @@ export default function TabStrip({
     useEffect(() => {
         if (tabMenu && !menuTab) closeTabMenu();
     }, [closeTabMenu, menuTab, tabMenu]);
+    const menuRefs = useMemo(() => tabMenu && {
+        trigger: { current: tabMenu.trigger },
+        anchor: {
+            current: {
+                getBoundingClientRect: () => new DOMRect(tabMenu.position.x, tabMenu.position.y, 0, 0),
+            },
+        },
+    }, [tabMenu]);
 
     return (
         <div className={styles.tabStrip} data-testid={panelTestId}>
@@ -187,7 +196,7 @@ export default function TabStrip({
                                     openTabMenu(tab, {
                                         x: event.clientX,
                                         y: event.clientY,
-                                    });
+                                    }, event.currentTarget.querySelector('[role="tab"]'));
                                 }}
                             >
                                 <button
@@ -226,7 +235,7 @@ export default function TabStrip({
                                         openTabMenu(tab, {
                                             x: rect.left,
                                             y: rect.bottom,
-                                        });
+                                        }, event.currentTarget);
                                     }}
                                     role="tab"
                                     aria-selected={isActive}
@@ -261,7 +270,7 @@ export default function TabStrip({
                                                     openTabMenu(tab, {
                                                         x: rect.left,
                                                         y: rect.bottom,
-                                                    });
+                                                    }, event.currentTarget);
                                                 }}
                                                 title="Tab actions"
                                                 aria-label={`Actions for ${tab.label} tab`}
@@ -312,10 +321,23 @@ export default function TabStrip({
                 </button>
             </div>
             {menuTab && (
-                <TabContextMenu
-                    actions={menuTab.menuActions}
-                    position={tabMenu.position}
-                    testid={`view-tab-menu-${menuTab.testid || menuTab.id}`}
+                <Menu
+                    triggerRef={menuRefs.trigger}
+                    anchorRef={menuRefs.anchor}
+                    gap={0}
+                    label="Tab actions"
+                    items={menuTab.menuActions.map((action) => ({
+                        id: action.id,
+                        label: action.testid
+                            ? <span data-testid={`tab-context-action-${action.id}`}>{action.label}</span>
+                            : action.label,
+                        icon: action.icon,
+                        disabled: action.disabled,
+                        separatorBefore: action.separatorBefore,
+                        testId: action.testid || `tab-context-action-${action.id}`,
+                        onSelect: action.execute,
+                    }))}
+                    testId={`view-tab-menu-${menuTab.testid || menuTab.id}`}
                     onClose={closeTabMenu}
                 />
             )}
