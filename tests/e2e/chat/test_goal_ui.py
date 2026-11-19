@@ -59,7 +59,7 @@ def test_goals_off_and_on_leaves_goals_unchanged(goal_ui):
     SettingsPage(page).goto_system()
     toggle = page.get_by_role('switch', name='Goals', exact=True)
     expect(toggle).to_be_checked()
-    expect(page.get_by_test_id('goals-toggle')).to_contain_text('Goals pick up where they left off')
+    expect(page.get_by_test_id('goals-toggle')).to_contain_text('Turn it back on and they continue where they left off.')
     with page.expect_response(
         lambda response: response.url.endswith('/api/settings') and response.request.method == 'PUT'
     ) as disabled_response:
