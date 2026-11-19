@@ -56,16 +56,19 @@ logger = logging.getLogger(__name__)
 # Middleware
 # ---------------------------------------------------------------------------
 
+# The CSRF-guarded methods are also the ones advertised as allowed origins,
+# so the two lists can't drift apart the way they did before PATCH was added
+# to one but not the other.
+_CSRF_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
 _CORS_HEADERS = {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "POST, PUT, OPTIONS, GET, DELETE",
+    "Access-Control-Allow-Methods": ", ".join([*sorted(_CSRF_METHODS), "OPTIONS", "GET"]),
     # X-Requested-With is intentionally NOT listed here — cross-origin requests
     # cannot set it (browser blocks them at preflight), so its presence signals
     # that a request is same-origin. This is a lightweight CSRF guard.
     "Access-Control-Allow-Headers": "Content-Type",
 }
-
-_CSRF_METHODS = {"POST", "PUT", "DELETE"}
 
 
 @web.middleware
