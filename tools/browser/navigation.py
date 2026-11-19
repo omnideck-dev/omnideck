@@ -2,17 +2,21 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from playwright.async_api import Error as PlaywrightError
 
 from browser.core.exceptions import BrowserToolError
+from browser.core.tab import Tab
 from browser.runtime import get_browser
 from tools.browser._tool_context import get_document, get_tab
 from tools.browser._tool_support import format_action_result
 from tools.browser.events import emit_screenshot, emit_screenshot_after, emit_tab_state
 
 logger = logging.getLogger(__name__)
+
+_DISCARD_TAB_TIMEOUT_S = 3.0
 
 
 @emit_screenshot_after
@@ -68,18 +72,36 @@ async def new_tab(url: str) -> str:
     try:
         browser = await get_browser()
         resolved_tab = await browser.new_tab()
-        result = await browser.navigate(url, tab=resolved_tab)
-        formatted = await format_action_result(result, tool_name="new_tab")
-        # new_tab is the one tool that doesn't take a ``tab`` kwarg, so
-        # it emits its own screenshot explicitly rather than going through
-        # the @emit_screenshot_after decorator.
-        await emit_screenshot(resolved_tab)
+        try:
+            result = await browser.navigate(url, tab=resolved_tab)
+            formatted = await format_action_result(result, tool_name="new_tab")
+            # new_tab is the one tool that doesn't take a ``tab`` kwarg, so
+            # it emits its own screenshot explicitly rather than going through
+            # the @emit_screenshot_after decorator.
+            await emit_screenshot(resolved_tab)
+        except BaseException:
+            # The agent never learns this tab's ID from a failed call, so it
+            # can't close the tab itself; left open it counts toward the limit.
+            # BaseException so a cancelled run cleans up too.
+            await _discard_tab(resolved_tab)
+            raise
         return formatted
     except BrowserToolError:
         raise
     except Exception as exc:  # pragma: no cover - wrap into tool error
         logger.exception("new_tab failed for %s", url)
         raise BrowserToolError(str(exc), tool="new_tab") from exc
+
+
+async def _discard_tab(tab: Tab) -> None:
+    """Close a tab opened by a failed ``new_tab`` without masking its error."""
+    try:
+        # Bounded: navigation often fails because the browser is wedged, and
+        # closing a page in that state can hang too.
+        await asyncio.wait_for(tab.close(), timeout=_DISCARD_TAB_TIMEOUT_S)
+    except Exception:  # noqa: BLE001 - cleanup must not replace the original error
+        logger.warning("Could not close tab=%s after new_tab failed", tab.id, exc_info=True)
+    await emit_tab_state()
 
 
 async def close_tab(*, tab: str) -> str:
