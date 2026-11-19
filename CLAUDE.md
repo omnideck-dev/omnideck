@@ -1,5 +1,9 @@
 # CLAUDE.md
 
+## Wiki
+
+Before deep-diving unfamiliar code, check `docs/wiki/overview.md` and `docs/wiki/codemap.md` — a commit-pinned wiki of architecture, entities, and extension patterns maintained per `docs/wiki/WIKI-PROMPT.md`. Each page records the commit it was last verified against; if it looks stale relative to what you're reading, trust the source and update the page.
+
 ## Commands
 
 ### Image (rebuild only when container/Dockerfile changes)
