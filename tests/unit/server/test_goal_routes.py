@@ -9,7 +9,10 @@ import pytest
 from aiohttp import web
 
 from agents import AgentProfile
-from conversations import ConversationStore, conversations_dir, conversation_exists, list_conversations
+from conversations import (
+    ConversationStore, conversation_exists, conversations_dir, list_conversations, load_conversation_profile,
+    save_conversation_profile,
+)
 from goals import GoalStep, GoalStore
 from server._agent_runtime import AGENT_RUNTIME_KEY
 from server._agent_run_routes import register_agent_run_routes
@@ -322,6 +325,59 @@ async def test_control_with_an_expected_revision_is_refused_as_unknown(goal_clie
     response = await client.post(BASE + "/pause", json={"expected_revision": goal.revision})
     assert response.status == 400
     assert store.current("chat-1").paused is False
+
+
+def only_these_agents(monkeypatch, *ids):
+    agents = {id: AgentProfile(id=id, name=id, provider="fake", model="fake") for id in ids}
+    monkeypatch.setattr("server._goal_routes.get_agent_profile", agents.get)
+
+
+async def test_resume_after_the_chat_agent_was_deleted_waits_for_another_agent(goal_client, monkeypatch):
+    client, store, _, _ = goal_client
+    await assign(client)
+    goal = store.current("chat-1")
+    store.pause(goal.id)
+    only_these_agents(monkeypatch, "other")
+    refused = await client.post(BASE + "/resume", json={"goal_id": goal.id, "profile_id": "test"})
+    assert refused.status == 400
+    assert (await refused.json())["error"] == "This chat's agent was deleted or turned off. Choose another agent in the chat."
+    assert store.get(goal.id).paused is True
+    response = await client.post(BASE + "/resume", json={"goal_id": goal.id, "profile_id": "other"})
+    assert response.status == 200
+    assert (await response.json())["goal"]["paused"] is False
+    assert load_conversation_profile("chat-1") == "other"
+
+
+async def test_resume_without_a_picked_agent_checks_the_chat_saved_agent(goal_client, monkeypatch):
+    client, store, _, _ = goal_client
+    await assign(client)
+    goal = store.current("chat-1")
+    store.pause(goal.id)
+    save_conversation_profile("chat-1", "deleted")
+    only_these_agents(monkeypatch, "test")
+    assert (await client.post(BASE + "/resume", json={})).status == 400
+    assert store.get(goal.id).paused is True
+
+
+async def test_retry_with_a_new_agent_saves_it_for_the_next_wake(goal_client, monkeypatch):
+    client, store, _, _ = goal_client
+    await assign(client)
+    goal = failed(store, store.current("chat-1"))
+    only_these_agents(monkeypatch, "other")
+    response = await client.post(BASE + "/run", json={"goal_id": goal.id, "profile_id": "other"})
+    assert response.status == 200
+    assert (await response.json())["goal"]["next"]["reason"] == "retry"
+    assert load_conversation_profile("chat-1") == "other"
+
+
+async def test_refused_run_does_not_change_the_chat_agent(goal_client, monkeypatch):
+    client, store, _, _ = goal_client
+    await assign(client)
+    goal = scheduled(store, store.current("chat-1"))
+    store.pause(goal.id)
+    only_these_agents(monkeypatch, "test", "other")
+    assert (await client.post(BASE + "/run", json={"profile_id": "other"})).status == 409
+    assert load_conversation_profile("chat-1") == "test"
 
 
 async def test_run_moves_future_wake_to_now(goal_client):

@@ -8,7 +8,6 @@ import SearchInput from '../../components/primitives/SearchInput.jsx';
 import Select from '../../components/primitives/Select.jsx';
 import SortableTable from '../../components/primitives/SortableTable.jsx';
 import StarterPrompts, { AccentWord } from '../../components/StarterPrompts.jsx';
-import { useConversationCatalog } from '../conversation/catalog/ConversationCatalog.jsx';
 import GoalStatus from './GoalStatus.jsx';
 import { useGoals } from './GoalsState.jsx';
 import { goalStatus, planProgress } from './goalStatus.js';
@@ -52,16 +51,15 @@ function PlanCell({ goal }) {
     </span>;
 }
 
-export default function GoalsView({ onOpenGoal, onStartGoal }) {
+export default function GoalsView({ conversations, loading, onOpenGoal, onStartGoal }) {
     const { goalsByConversation } = useGoals();
-    const { items, loading } = useConversationCatalog();
     const [query, setQuery] = useState('');
     const [sort, setSort] = useState({ key: 'status', dir: 'asc' });
 
-    const rows = useMemo(() => items.flatMap((item) => {
+    const rows = useMemo(() => conversations.flatMap((item) => {
         const goal = goalsByConversation[item.conversation_id];
         return goal ? [{ id: item.conversation_id, goal, title: conversationLabel(item), status: goalStatus(goal) }] : [];
-    }), [items, goalsByConversation]);
+    }), [conversations, goalsByConversation]);
 
     const visible = useMemo(() => {
         const needle = query.trim().toLowerCase();

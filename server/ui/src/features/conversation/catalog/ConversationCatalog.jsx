@@ -124,27 +124,31 @@ export function ConversationCatalogProvider({ children }) {
     // into the in-memory list (so it appears without a refetch) and fills in
     // its title once generation returns. Deduped by id so a double-send or a
     // later resume can't insert it twice.
-    const addStartedConversation = useCallback(({ conversationId, firstMessage }) => {
+    const addConversation = useCallback((summary) => {
         setItems((prev) => (
-            prev.some((c) => c.conversation_id === conversationId)
+            prev.some((c) => c.conversation_id === summary.conversation_id)
                 ? prev
                 : [{
-                    conversation_id: conversationId,
-                    first_message: firstMessage,
+                    first_message: '',
                     title: '',
                     started_at: new Date().toISOString(),
-                    turn_count: 1,
+                    turn_count: 0,
                     pinned: false,
                     folder_id: null,
+                    ...summary,
                 }, ...prev]
         ));
+    }, [setItems]);
+
+    const addStartedConversation = useCallback(({ conversationId, firstMessage }) => {
+        addConversation({ conversation_id: conversationId, first_message: firstMessage, turn_count: 1 });
         _generateTitle(conversationId, firstMessage).then((title) => {
             if (!title) return;
             setItems((prev) => prev.map((c) => (
                 c.conversation_id === conversationId ? { ...c, title } : c
             )));
         });
-    }, [setItems]);
+    }, [addConversation, setItems]);
 
     // Archive only after the server confirms the move. In particular, an
     // active run returns 409 and must remain visible and selected in the UI.
@@ -196,6 +200,7 @@ export function ConversationCatalogProvider({ children }) {
         ...panel,
         activity,
         setVisibleConversation,
+        addConversation,
         addStartedConversation,
         archiveConversation,
         unarchiveConversation,

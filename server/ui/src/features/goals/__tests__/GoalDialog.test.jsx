@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ConversationCatalogProvider } from '../../conversation/catalog/ConversationCatalog.jsx';
 import GoalDialog from '../GoalDialog.jsx';
 import { GoalsTestProvider, emitGoal } from './goalTestProviders.jsx';
 
@@ -22,20 +21,21 @@ let saveGate;
 
 function DialogHarness({ onClose, shown = true, ...props }) {
     const [open, setOpen] = useState(true);
-    return <GoalsTestProvider goals={initialGoals}><ConversationCatalogProvider>
+    return <GoalsTestProvider goals={initialGoals}>
         {open && shown && <GoalDialog {...props} onClose={() => { onClose(); setOpen(false); }} />}
-    </ConversationCatalogProvider></GoalsTestProvider>;
+    </GoalsTestProvider>;
 }
 
 let initialGoals = [];
 
 function setup(props = {}) {
     initialGoals = currentGoal ? [currentGoal] : [];
+    const onCreated = vi.fn();
     const onStarted = vi.fn();
     const onClose = vi.fn();
-    const dialogProps = { conversationId: 'chat-1', profileId: 'household-planner', onStarted, onClose, ...props };
+    const dialogProps = { conversationId: 'chat-1', profileId: 'household-planner', onCreated, onStarted, onClose, ...props };
     const view = render(<DialogHarness {...dialogProps} />);
-    return { onStarted, onClose, hideDialog: () => view.rerender(<DialogHarness {...dialogProps} shown={false} />) };
+    return { onCreated, onStarted, onClose, hideDialog: () => view.rerender(<DialogHarness {...dialogProps} shown={false} />) };
 }
 
 function mutations() {
@@ -88,7 +88,16 @@ describe('goal assignment dialog', () => {
             objective: 'Keep our household schedule current', profile_id: 'household-planner',
         });
         expect(callbacks.onStarted).toHaveBeenCalledTimes(1);
+        expect(callbacks.onCreated).toHaveBeenCalledWith({ conversation_id: 'chat-1', title: 'Keep our household schedule current' });
         expect(callbacks.onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports the new chat with the first 50 characters of the objective as its title', async () => {
+        currentGoal = null;
+        const objective = 'Find a pediatric dentist near the school who takes our insurance';
+        const callbacks = setup({ initialObjective: objective });
+        fireEvent.click(await screen.findByRole('button', { name: 'Start goal' }));
+        await waitFor(() => expect(callbacks.onCreated).toHaveBeenCalledWith({ conversation_id: 'chat-1', title: objective.slice(0, 50) }));
     });
 
     it('titles a new goal "Start a goal" and says the agent can ask questions and come back later', async () => {
@@ -127,6 +136,7 @@ describe('goal assignment dialog', () => {
         expect(currentGoal.next).toEqual(before.next);
         expect(currentGoal.paused).toBe(before.paused);
         expect(currentGoal.profile_id).toBe('assistant');
+        expect(callbacks.onCreated).not.toHaveBeenCalled();
         expect(callbacks.onClose).toHaveBeenCalledTimes(1);
     });
 

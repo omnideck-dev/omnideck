@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import useDesktopLayout from '../../desktop/useDesktopLayout.jsx';
 import { DesktopViewRuntimeProvider } from '../../desktop/DesktopViewRuntime.jsx';
@@ -10,6 +10,7 @@ import { GoalsTestProvider } from './goalTestProviders.jsx';
 const state = vi.hoisted(() => ({
     session: { activeConversationId: 'chat-a', isOffline: false },
     openConversation: vi.fn(),
+    addConversation: vi.fn(),
 }));
 vi.mock('../../conversation/session/ConversationSession.jsx', () => ({
     useConversationSessionState: () => state.session,
@@ -22,7 +23,7 @@ vi.mock('../../conversation/catalog/ConversationCatalog.jsx', () => ({
             { conversation_id: 'chat-b', title: 'Dentist' },
             { conversation_id: 'chat-c', title: 'No goal here' },
         ],
-        refetch: vi.fn(),
+        addConversation: state.addConversation,
     }),
 }));
 vi.mock('../../navigation/DesktopNavigation.jsx', () => ({
@@ -40,6 +41,7 @@ const goal = (conversationId, objective) => ({
 const GOALS = {
     'chat-a': goal('chat-a', 'Book the pavilion for Saturday'),
     'chat-b': goal('chat-b', 'Find a dentist open on Saturdays'),
+    'chat-p': { ...goal('chat-p', 'Renew the passports before June'), paused: true },
 };
 const response = (body) => ({ ok: true, status: 200, json: async () => body });
 const CHAT = { id: CONVERSATION_VIEW_ID, type: 'conversation', label: 'Chat' };
@@ -119,6 +121,27 @@ describe('the Goal tab', () => {
         expect(await screen.findByText('This chat has no goal')).toBeVisible();
         expect(screen.getByRole('button', { name: 'Start a goal…' })).toBeVisible();
         expect(goalViews()[0].label).toBe('Goal');
+    });
+
+    it('resumes the goal with the agent picked in the chat', async () => {
+        state.session = { activeConversationId: 'chat-p', isOffline: false };
+        render(<Shell />);
+        await act(async () => { openGoalRef(); });
+        fireEvent.click(await screen.findByRole('button', { name: 'Resume', exact: true }));
+        await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledWith(
+            expect.stringMatching(/sessions\/chat-p\/goal\/resume$/),
+            expect.objectContaining({ body: JSON.stringify({ goal_id: 'goal-chat-p', profile_id: 'household-planner' }) }),
+        ));
+    });
+
+    it('adds the chat to the chat list when a goal starts in it', async () => {
+        state.session = { activeConversationId: 'chat-c', isOffline: false };
+        render(<Shell />);
+        await act(async () => { openGoalRef(); });
+        fireEvent.click(await screen.findByRole('button', { name: 'Start a goal…' }));
+        fireEvent.change(await screen.findByLabelText('What would you like done?'), { target: { value: 'Plan the garden beds' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Start goal' }));
+        await waitFor(() => expect(state.addConversation).toHaveBeenCalledWith({ conversation_id: 'chat-c', title: 'Plan the garden beds' }));
     });
 
     it('hides Open chat while the chat is visible', async () => {
