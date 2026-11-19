@@ -95,7 +95,7 @@ def test_simple_agent_editor_discard_save_and_reload(page, width):
         detail.get_by_role("button", name="More actions").click()
         actions = page.get_by_role("menu", name="Agent actions")
         expect(actions).to_be_visible()
-        assert actions.evaluate("el => getComputedStyle(el).backgroundColor") not in (
+        assert actions.locator("..").evaluate("el => getComputedStyle(el).backgroundColor") not in (
             "transparent", "rgba(0, 0, 0, 0)",
         )
         expect(actions.get_by_role("menuitem", name="Duplicate", exact=True)).to_be_focused()

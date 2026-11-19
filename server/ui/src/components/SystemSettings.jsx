@@ -215,7 +215,7 @@ export default function SystemSettings() {
                     <div className={styles.settingIcon}><i className="bi bi-bullseye" aria-hidden="true" /></div>
                     <div className={styles.settingInfo}>
                         <span className={styles.settingTitle}>Goals</span>
-                        <span className={styles.settingDesc}>Let chats pursue goals with editable plans and scheduled returns. Turning Goals off stops all goal runs and alarms. Goals pick up where they left off when you turn it back on.</span>
+                        <span className={styles.settingDesc}>Give a chat a goal and the agent keeps working on it until it is done, even while you are away. Turning this off stops all goals. Turn it back on and they continue where they left off.</span>
                     </div>
                     <ToggleSwitch checked={!!settings.goals_enabled} onChange={(event) => updateSetting('goals_enabled', event.target.checked)} aria-label="Goals" />
                 </label>}
