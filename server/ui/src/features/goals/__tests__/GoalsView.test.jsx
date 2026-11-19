@@ -84,6 +84,8 @@ describe('Goals page', () => {
         expect(screen.getAllByTestId('starter-prompt')).toHaveLength(4);
         fireEvent.click(screen.getByText('Plan a trip'));
         expect(onStartGoal).toHaveBeenCalledWith('Plan a 4-day trip to Chicago in May for two. Ask me about budget and dates.');
+        const prompts = screen.getAllByTestId('starter-prompt');
+        expect(prompts[prompts.length - 1].parentElement.nextElementSibling).toBe(screen.getByTestId('goals-start'));
         fireEvent.click(screen.getByRole('button', { name: 'Start a goal…' }));
         expect(onStartGoal).toHaveBeenLastCalledWith('');
     });

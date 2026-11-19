@@ -88,8 +88,8 @@ export default function GoalsView({ onOpenGoal, onStartGoal }) {
                     subheading="A goal is a longer task the agent keeps working on in its own chat. It makes a plan, can ask you questions, and comes back later on its own. Pick an example, or start your own."
                     prompts={GOAL_PROMPTS}
                     onSelect={(text) => onStartGoal(text)}
+                    action={startButton}
                 />
-                <div className={styles.emptyAction}>{startButton}</div>
             </div>
         </div>;
     }

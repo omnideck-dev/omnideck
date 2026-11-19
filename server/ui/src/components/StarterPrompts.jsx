@@ -38,6 +38,7 @@ export default function StarterPrompts({
     prompts = DEFAULT_PROMPTS,
     heading = <>What can I <AccentWord>help</AccentWord> you with?</>,
     subheading,
+    action,
 }) {
     return (
         <div className={styles.container}>
@@ -59,6 +60,7 @@ export default function StarterPrompts({
                     </button>
                 ))}
             </div>
+            {action}
         </div>
     );
 }
