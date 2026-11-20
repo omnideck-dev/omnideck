@@ -194,6 +194,11 @@ A setup wizard runs in the UI the first time you open it. It guides you through:
 
 Cloud providers list available models automatically. Ollama lists whatever you've already pulled.
 
+For an OpenAI-compatible provider with an API key, the server URL can end in
+`/v1` or use the server root. For example, `http://model-server:8080/v1` and
+`http://model-server:8080` both route model requests to `/v1`. Custom path prefixes,
+such as `/api/v1`, are preserved. Use a host address reachable from Omnideck's container.
+
 That's it — you're running.
 
 ---
