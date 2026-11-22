@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator
 
 import httpx2
 
-from ._errors import MCPFailure, request_failure
+from ._errors import MCPFailure, MCPRequestError, request_failure
 from ._compression import DecompressedStream, MAX_RESPONSE_BYTES
 
 
@@ -23,6 +23,9 @@ def quiet_protocol_logs() -> None:
         library_logger.handlers = [logging.NullHandler()]
         library_logger.propagate = False
 
+
+TOOL_CALL_SECONDS = 600
+TOOL_READ_SECONDS = TOOL_CALL_SECONDS + 60
 
 _LOCAL_NETWORKS = tuple(ipaddress.ip_network(value) for value in (
     "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "fc00::/7",
@@ -146,6 +149,36 @@ class MCPTransport(httpx2.AsyncBaseTransport):
         await self._transport.aclose()
 
 
+class ToolSessionTransport(MCPTransport):
+    """Fail a single MCP request without ending the session that sent it.
+
+    The SDK runs every request inside the session's shared task group, so an
+    exception escaping one request cancels all other requests and the session.
+    A failed request is instead answered with a JSON-RPC error, while its local
+    failure reason stays available to the caller.
+    """
+
+    async def handle_async_request(self, request: httpx2.Request) -> httpx2.Response:
+        if request.method != "POST":
+            return await super().handle_async_request(request)
+        try:
+            return await super().handle_async_request(request)
+        except MCPRequestError:
+            pass
+        except (httpx2.TransportError, OSError, TimeoutError):
+            request_failure(MCPFailure.NETWORK_ERROR)
+        except ValueError:
+            request_failure(MCPFailure.REQUEST_REFUSED)
+        return httpx2.Response(502, request=request, json={
+            "jsonrpc": "2.0", "id": None,
+            "error": {"code": -32603, "message": "Request failed before a response"},
+        })
+
+
+def _client_headers(token: str) -> dict[str, str]:
+    return {"Accept-Encoding": "gzip, deflate", **({"Authorization": f"Bearer {token}"} if token else {})}
+
+
 def mcp_http_client(
     *, auth: httpx2.Auth | None = None, token: str = "",
     background_resource: str | None = None,
@@ -155,6 +188,16 @@ def mcp_http_client(
     return httpx2.AsyncClient(
         transport=MCPTransport(background_resource=background_resource,
                                     resource_endpoint=resource_endpoint), auth=auth,
-        headers={"Accept-Encoding": "gzip, deflate", **({"Authorization": f"Bearer {token}"} if token else {})},
+        headers=_client_headers(token),
         timeout=httpx2.Timeout(30, connect=10), follow_redirects=False, trust_env=False,
+    )
+
+
+def mcp_tool_session_client(*, token: str, resource_endpoint: str) -> httpx2.AsyncClient:
+    """HTTP client for a long-lived tool session, where tools may work for minutes."""
+    quiet_protocol_logs()
+    return httpx2.AsyncClient(
+        transport=ToolSessionTransport(resource_endpoint=resource_endpoint),
+        headers=_client_headers(token),
+        timeout=httpx2.Timeout(TOOL_READ_SECONDS, connect=10), follow_redirects=False, trust_env=False,
     )

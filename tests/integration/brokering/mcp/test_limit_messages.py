@@ -103,9 +103,7 @@ async def test_catalog_limit_survives_real_sdk_setup_teardown():
 
 
 async def test_tool_deadline_explains_unknown_outcome_without_replay(monkeypatch):
-    # Exercise the actual timeout path without waiting a minute in the suite.
-    timeout = asyncio.timeout
-    monkeypatch.setattr("brokering.brokers.mcp_broker.client.asyncio.timeout", lambda seconds: timeout(0.01))
+    monkeypatch.setattr("brokering.brokers.mcp_broker.client.TOOL_CALL_SECONDS", 0.01)
 
     async def wait(*args):
         await asyncio.Event().wait()
@@ -117,7 +115,7 @@ async def test_tool_deadline_explains_unknown_outcome_without_replay(monkeypatch
     with pytest.raises(RpcError) as caught:
         await dispatcher.dispatch("mcp.slow", {})
     assert caught.value.code == "MCP_TOOL_TIMEOUT"
-    assert "60-second limit" in caught.value.message
+    assert "10-minute limit" in caught.value.message
     assert "may have completed" in caught.value.message
     assert send.await_count == 1
 
