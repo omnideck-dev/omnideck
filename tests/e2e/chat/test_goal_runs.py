@@ -224,25 +224,26 @@ def test_goal_run_uses_the_agent_last_sent_in_the_chat(goal_ui):
         assert view.root_profiles()[-2:] == [writer['name'], writer['name']]
 
 
-def test_retry_works_after_picking_another_agent(goal_ui):
+def test_retry_works_after_picking_another_agent_without_sending_a_message(goal_ui):
     view, page = goal_ui, goal_ui.page
     view.assign()
     usual = view.root_profiles()[0]
     with agent_profile() as writer:
         response = page.request.post('/api/chat', data={
             'conversation_id': view.conversation_id, 'profile_id': writer['id'],
-            'message': read_goal() + work_on(say('Booked the hall.')) + choose('schedule', 'Booking later.', at=future(60))
-            + say('I will book the hall later.'),
+            'message': read_goal() + work_on(say('Booked the hall.')) + choose('schedule', 'Booking soon.', at=future(0.25))
+            + say('I will book the hall soon.'),
         })
         assert response.ok, response.text()
-    view.idle()
-    assert page.request.post(view.base + '/run', data={}).ok
-    failed = view.wait(lambda g: g['next']['kind'] == 'error')
+    failed = view.wait(lambda g: g['next']['kind'] == 'error', timeout=45)
     assert failed['claim'] is None
+    refused = page.request.post(view.base + '/run', data={})
+    assert refused.status == 400
+    assert refused.json()['error'] == "This chat's agent was deleted or turned off. Choose another agent in the chat."
+    assert view.current()['next']['kind'] == 'error'
     page.reload()
     page.get_by_role('combobox', name='Agent profile').click()
     page.get_by_role('option', name=usual, exact=True).click()
-    view.send('', 'Using the usual agent now.')
     view.open()
     view.details.get_by_test_id('goal-error').get_by_role('button', name='Retry', exact=True).click()
     expect(page.get_by_test_id('message-assistant').filter(has_text='Booked the hall.')).to_be_visible(timeout=15000)

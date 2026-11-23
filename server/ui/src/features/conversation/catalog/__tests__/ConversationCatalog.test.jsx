@@ -67,6 +67,19 @@ describe('ConversationCatalogProvider', () => {
         expect(listCalls).toHaveLength(1);
     });
 
+    it('addConversation adds a chat the server already saved without asking for a title or refetching', async () => {
+        render(<AppEffectsProvider><ConversationCatalogProvider><Probe /></ConversationCatalogProvider></AppEffectsProvider>);
+        await waitFor(() => expect(screen.getByText('c1:one')).toBeInTheDocument());
+
+        act(() => api.addConversation({ conversation_id: 'c3', title: 'Renew the passports' }));
+        act(() => api.addConversation({ conversation_id: 'c3', title: 'Something else' }));
+        expect(screen.getAllByTestId('row')[0]).toHaveTextContent('c3:Renew the passports');
+        expect(screen.getAllByTestId('row')).toHaveLength(2);
+        const calls = global.fetch.mock.calls.map(([u]) => u);
+        expect(calls.filter((u) => u === '/api/conversations/sessions')).toHaveLength(1);
+        expect(calls.some((u) => u.endsWith('/title'))).toBe(false);
+    });
+
     it('addStartedConversation is deduped by id', async () => {
         render(<AppEffectsProvider><ConversationCatalogProvider><Probe /></ConversationCatalogProvider></AppEffectsProvider>);
         await waitFor(() => expect(screen.getByText('c1:one')).toBeInTheDocument());

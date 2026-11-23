@@ -4,8 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import GoalsView from '../GoalsView.jsx';
 import { GoalsTestProvider, emitGoal } from './goalTestProviders.jsx';
 
-const catalog = vi.hoisted(() => ({ items: [], loading: false }));
-vi.mock('../../conversation/catalog/ConversationCatalog.jsx', () => ({ useConversationCatalog: () => catalog }));
+const catalog = { items: [], loading: false };
 
 const chat = (id, title) => ({ conversation_id: id, title, started_at: '2026-11-01T00:00:00Z' });
 const question = { id: 'q', question: 'Which day?', choices: [], status: 'open', revision: 1, answers: [], reviewed_answer_count: 0 };
@@ -17,7 +16,7 @@ const goal = (id, objective, fields = {}) => ({
 function renderView(goals, props = {}) {
     const onOpenGoal = vi.fn();
     const onStartGoal = vi.fn();
-    render(<GoalsTestProvider goals={goals}><GoalsView onOpenGoal={onOpenGoal} onStartGoal={onStartGoal} {...props} /></GoalsTestProvider>);
+    render(<GoalsTestProvider goals={goals}><GoalsView conversations={catalog.items} loading={catalog.loading} onOpenGoal={onOpenGoal} onStartGoal={onStartGoal} {...props} /></GoalsTestProvider>);
     return { onOpenGoal, onStartGoal };
 }
 

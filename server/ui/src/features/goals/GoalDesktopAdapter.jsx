@@ -56,15 +56,16 @@ function GoalConversationView({ conversationId }) {
     const [dialog, setDialog] = useState(null);
     const { isOffline } = useConversationSessionState();
     const selectedProfileId = useSelectedProfileId();
+    const { addConversation } = useConversationCatalog();
     const navigation = useDesktopNavigationCommands();
     const visibleIds = useVisibleViewIds();
     const chatVisible = visibleIds.includes(CONVERSATION_VIEW_ID);
     return <>
-        <GoalPanel conversationId={conversationId} isOffline={isOffline}
+        <GoalPanel conversationId={conversationId} profileId={selectedProfileId} isOffline={isOffline}
             onEdit={() => setDialog({ mode: 'edit' })}
             onStartGoal={() => setDialog({ mode: 'start' })}
             onOpenChat={chatVisible ? undefined : () => navigation.openConversation(conversationId)} />
-        {dialog && <GoalDialog conversationId={conversationId} profileId={selectedProfileId}
+        {dialog && <GoalDialog conversationId={conversationId} profileId={selectedProfileId} onCreated={addConversation}
             onClose={() => setDialog(null)} />}
     </>;
 }

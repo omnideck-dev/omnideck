@@ -5,7 +5,6 @@ import IconButton from '../../components/primitives/IconButton.jsx';
 import Menu from '../../components/primitives/Menu.jsx';
 import { goalStatus, isGoalOpen, nextUpStep, reasonLine } from './goalStatus.js';
 import { useGoals } from './GoalsState.jsx';
-import { useSelectedProfileId } from '../conversation/session/ConversationSession.jsx';
 import GoalStatus from './GoalStatus.jsx';
 import GoalPlan from './GoalPlan.jsx';
 import GoalHistory from './GoalHistory.jsx';
@@ -32,9 +31,8 @@ function MoreActions({ ended, disabled, onOpenHistory, onCancel }) {
     </>;
 }
 
-export default function GoalPanel({ conversationId, isOffline = false, onEdit, onStartGoal, onOpenChat }) {
+export default function GoalPanel({ conversationId, profileId, isOffline = false, onEdit, onStartGoal, onOpenChat }) {
     const { goalsByConversation, detailsByConversation, loadGoal, mutateGoal } = useGoals();
-    const selectedProfileId = useSelectedProfileId();
     const goal = goalsByConversation[conversationId];
     const detail = detailsByConversation[conversationId];
     const [loaded, setLoaded] = useState(false);
@@ -65,7 +63,7 @@ export default function GoalPanel({ conversationId, isOffline = false, onEdit, o
             setBusy('');
         }
     };
-    const run = (action) => { void act(action).catch(() => {}); };
+    const run = (action) => { void act(action, action === 'pause' ? {} : { profile_id: profileId }).catch(() => {}); };
     const openChat = onOpenChat && <Button variant="ghost" onClick={onOpenChat}><i className="bi bi-chat-left-text" aria-hidden="true" /> Open chat</Button>;
 
     if (!goal) return <section className={styles.goalView} aria-label="Goal details" data-testid="goal-details"><div className={styles.details}>
@@ -149,7 +147,7 @@ export default function GoalPanel({ conversationId, isOffline = false, onEdit, o
                 </div>
             </div>
             {reopening && <GoalReopenDialog onClose={() => setReopening(false)}
-                onSubmit={(text) => act('reopen', { text, profile_id: selectedProfileId })} />}
+                onSubmit={(text) => act('reopen', { text, profile_id: profileId })} />}
         </section>
     );
 }

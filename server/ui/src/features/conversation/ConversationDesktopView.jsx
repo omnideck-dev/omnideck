@@ -63,7 +63,7 @@ export default function ConversationDesktopView({ view, tabGroupId }) {
     } = useWorkspaceResourceDesktopActions();
 
     const selectedProfileId = useSelectedProfileId();
-    const { items: catalogItems } = useConversationCatalog();
+    const { items: catalogItems, addConversation } = useConversationCatalog();
     const listed = catalogItems.find((item) => item.conversation_id === activeConversationId);
     const chatTitle = listed ? conversationLabel(listed) : 'New chat';
     const navigationTarget = navigationTargetForView(view);
@@ -138,7 +138,7 @@ export default function ConversationDesktopView({ view, tabGroupId }) {
                 draft={draft}
                 onDraftChange={setDraft}
             />
-            {features.goals && <GoalRequestDialog request={goalRequest} profileId={selectedProfileId} onClose={closeRequest} />}
+            {features.goals && <GoalRequestDialog request={goalRequest} profileId={selectedProfileId} onCreated={addConversation} onClose={closeRequest} />}
         </div>
     );
 }
