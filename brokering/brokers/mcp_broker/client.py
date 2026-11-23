@@ -9,7 +9,7 @@ from mcp.types import CallToolRequest, CallToolRequestParams, CallToolResult
 
 from brokering._rpc import RpcError
 from brokering._operation_errors import UNKNOWN_OUTCOME
-from brokering.mcp_protocol import MCPFailure, MCPRequestError, mcp_error_boundary, request_failure
+from brokering.mcp_protocol import TOOL_CALL_SECONDS, MCPFailure, MCPRequestError, mcp_error_boundary, request_failure
 from integrations.discovery import DiscoveredOperation
 
 
@@ -24,9 +24,12 @@ class MCPDispatcher:
     def replace_operation_grants(self, grants: frozenset[str]) -> None:
         self._grants = grants
 
-    async def dispatch(self, operation_id: str, args: dict[str, Any]) -> dict[str, Any]:
+    def require_grant(self, operation_id: str) -> None:
         if operation_id not in self._grants:
             raise RpcError("PERMISSION_DENIED", "This tool is not enabled for this integration.")
+
+    async def dispatch(self, operation_id: str, args: dict[str, Any]) -> dict[str, Any]:
+        self.require_grant(operation_id)
         if operation_id not in self._available:
             raise RpcError("NOT_FOUND", "This tool is no longer available. Reconnect to refresh tools.")
         try:
@@ -39,7 +42,7 @@ class MCPDispatcher:
 
     async def _call(self, operation_id: str, args: dict[str, Any]) -> dict[str, Any]:
         try:
-            async with asyncio.timeout(60):
+            async with asyncio.timeout(TOOL_CALL_SECONDS):
                 # Use the single-request API: never automatically satisfy
                 # elicitation/sampling or retry a potentially mutating tool.
                 # The higher-level call_tool also validates remote output

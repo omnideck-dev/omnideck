@@ -15,6 +15,8 @@ class MCPFailure(StrEnum):
     DISCOVERY_TIMEOUT = "MCP_DISCOVERY_TIMEOUT"
     TOOL_TIMEOUT = "MCP_TOOL_TIMEOUT"
     NETWORK_TIMEOUT = "MCP_NETWORK_TIMEOUT"
+    NETWORK_ERROR = "MCP_NETWORK_ERROR"
+    REQUEST_REFUSED = "MCP_REQUEST_REFUSED"
 
 
 _MESSAGES = {
@@ -24,8 +26,10 @@ _MESSAGES = {
     MCPFailure.RESPONSE_SIZE: "The MCP server response exceeded omnideck's 4 MiB limit. Request less data or ask the service to return smaller responses.",
     MCPFailure.RESULT_SIZE: "The tool result exceeded omnideck's 2 MiB limit. Narrow the request or ask for fewer results.",
     MCPFailure.DISCOVERY_TIMEOUT: "The server took too long to list its tools (30-second limit). Try connecting again when the service is responding.",
-    MCPFailure.TOOL_TIMEOUT: "The remote tool did not return a result within omnideck's 60-second limit.",
+    MCPFailure.TOOL_TIMEOUT: "The remote tool did not return a result within omnideck's 10-minute limit.",
     MCPFailure.NETWORK_TIMEOUT: "The MCP server did not respond before the network timeout.",
+    MCPFailure.NETWORK_ERROR: "The connection to the MCP server failed during this request.",
+    MCPFailure.REQUEST_REFUSED: "omnideck refused this MCP exchange under its network rules, such as a redirect, an unsupported encoding or a disallowed address.",
 }
 
 # The SDK can replace a transport exception with a generic connection error.

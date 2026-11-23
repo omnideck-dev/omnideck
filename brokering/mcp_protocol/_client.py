@@ -10,12 +10,14 @@ from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 
 from integrations.discovery import DiscoveredOperation, MAX_CATALOG_BYTES, MAX_OPERATIONS, mcp_operation_id, parse_discovered_operations
-from ._network import mcp_http_client
-from ._errors import MCPFailure, mcp_error_boundary, request_failure
+from ._network import mcp_tool_session_client
+from ._errors import MCPFailure, MCPRequestError, mcp_error_boundary, request_failure
 
 
 @asynccontextmanager
-async def connect(endpoint: str, *, token: str = "") -> AsyncIterator[Client]:
+async def connect(
+    endpoint: str, *, token: str = "", disconnected: asyncio.Event | None = None,
+) -> AsyncIterator[Client]:
     # SDK transports own AnyIO cancel scopes, which must enter and exit in the
     # same task. Broker preparation and later activation/discard run in different
     # tasks; keep transport lifetime in a dedicated owner rather than moving its
@@ -28,7 +30,7 @@ async def connect(endpoint: str, *, token: str = "") -> AsyncIterator[Client]:
         nonlocal runtime_failed
         try:
             with mcp_error_boundary():
-                async with mcp_http_client(token=token, resource_endpoint=endpoint) as http:
+                async with mcp_tool_session_client(token=token, resource_endpoint=endpoint) as http:
                     async with Client(streamable_http_client(endpoint, http_client=http), cache=None) as client:
                         ready.set_result(client)
                         await stop.wait()
@@ -41,10 +43,18 @@ async def connect(endpoint: str, *, token: str = "") -> AsyncIterator[Client]:
                 # authenticated session. Actual teardown errors still surface.
                 runtime_failed = not stop.is_set()
                 raise
+        finally:
+            if disconnected is not None:
+                disconnected.set()
 
     owner = asyncio.create_task(own_transport(), name="mcp-transport")
     try:
-        yield await ready
+        try:
+            async with asyncio.timeout(30):
+                client = await ready
+        except TimeoutError as exc:
+            raise MCPRequestError(MCPFailure.NETWORK_TIMEOUT) from exc
+        yield client
     finally:
         stop.set()
         if ready.cancelled() or not ready.done():
