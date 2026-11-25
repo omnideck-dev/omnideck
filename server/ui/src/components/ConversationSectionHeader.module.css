@@ -19,7 +19,7 @@
     border-radius: var(--radius-sm);
     cursor: pointer;
     font-family: var(--font-body);
-    font-size: 12px;
+    font-size: var(--font-size-small);
     font-weight: 600;
     letter-spacing: 0.02em;
     color: var(--text-tertiary);
@@ -35,7 +35,7 @@
     height: 26px;
     padding: 0 4px;
     font-family: var(--font-body);
-    font-size: 12px;
+    font-size: var(--font-size-small);
     font-weight: 600;
     letter-spacing: 0.02em;
     color: var(--text-tertiary);
@@ -74,3 +74,7 @@
 .folderMenuBtn:focus-visible { opacity: 1; }
 .folderMenuBtn:hover { background: var(--accent-muted); color: var(--text-primary); }
 .folderHead.menuOpen .folderMenuBtn { color: var(--text-primary); }
+
+@media (pointer: coarse) {
+    .sectionToggle, .sectionLabel { height: 44px; }
+}

@@ -16,8 +16,3 @@
     background: white;
     box-shadow: var(--shadow-sm);
 }
-
-@media (max-width: 700px) {
-    .frameWell { padding: 0; }
-    .frame { border: 0; border-radius: 0; }
-}

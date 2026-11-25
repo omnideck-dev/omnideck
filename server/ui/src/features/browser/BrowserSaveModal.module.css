@@ -149,13 +149,6 @@
     margin-top: var(--sp-5);
 }
 
-@media (max-width: 560px) {
-    .identity {
-        grid-template-columns: 1fr;
-        align-items: start;
-    }
-}
-
 @keyframes browserSaveSpin {
     to {
         transform: rotate(360deg);

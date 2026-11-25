@@ -7,6 +7,7 @@ from tests.e2e.pages import ChatView, Sidebar
 
 def _sidebar_order(page: Page, selector: str) -> list[str]:
     """Return the DOM order for one reorderable sidebar group."""
+    page.locator(selector).first.wait_for()
     return page.locator(selector).evaluate_all("""rows => rows.map((row) => row.getAttribute('data-reorder-id'))""")
 
 

@@ -11,6 +11,7 @@ import styles from './ConversationSectionHeader.module.css';
  */
 export default function ConversationSectionHeader({ section, collapsed, collapsible = true, menuOpen, onToggle, onOpenFolderMenu }) {
     const isFolder = section.kind === 'folder';
+    const hasFolderMenu = isFolder && Boolean(onOpenFolderMenu);
     return (
         <div
             className={[
@@ -19,7 +20,7 @@ export default function ConversationSectionHeader({ section, collapsed, collapsi
                 menuOpen ? styles.menuOpen : '',
             ].filter(Boolean).join(' ')}
             onContextMenu={(event) => {
-                if (!isFolder) return;
+                if (!hasFolderMenu) return;
                 event.preventDefault();
                 event.stopPropagation();
                 onOpenFolderMenu({
@@ -45,7 +46,7 @@ export default function ConversationSectionHeader({ section, collapsed, collapsi
             </button> : <span className={styles.sectionLabel} data-testid="recent-section-label">
                 <span className={styles.sectionName}>{section.label}</span>
             </span>}
-            {isFolder && (
+            {hasFolderMenu && (
                 <button
                     type="button"
                     className={styles.folderMenuBtn}

@@ -1,6 +1,7 @@
 import { createContext, useContext, useCallback, useEffect, useState } from 'react';
 
 import useConversationActivity from './useConversationActivity.js';
+import useLiveConversationList from './useLiveConversationList.js';
 
 import useListPanel from '../../../hooks/useListPanel.js';
 
@@ -28,31 +29,31 @@ async function _generateTitle(conversationId, firstMessage) {
  * Owns browser-session run activity and the sidebar's recent-conversations list. The list is fetched once on
  * mount and then mutated locally: new conversations are pushed in optimistically
  * the moment they start, titles are patched in place when generation returns,
- * and pin/rename/delete edit the array directly. There is no server-originated
- * list mutation left to discover, so the list never refetches after load.
+ * and pin/rename/delete edit the array directly. Changes made in other tabs, on
+ * other devices, or by scheduled runs arrive on the activity stream, and the
+ * list and folders refetch only when that stream reconnects.
  */
 const ConversationCatalogContext = createContext(null);
 
 export function ConversationCatalogProvider({ children }) {
     const { activity, setVisibleConversation } = useConversationActivity();
-    // No refreshSignal: the list loads once on mount and is kept current by the
-    // mutations below rather than refetching.
     const panel = useListPanel('/api/conversations/sessions', {
         getId: (s) => s.conversation_id,
     });
-    const { setItems } = panel;
+    const { setItems, refetch } = panel;
 
-    // Folders are a small, separately-loaded list. Like the conversation list
-    // they load once and are kept current by the mutations below.
     const [folders, setFolders] = useState([]);
-    useEffect(() => {
-        let cancelled = false;
-        fetch('/api/conversations/folders')
-            .then((r) => (r.ok ? r.json() : []))
-            .then((data) => { if (!cancelled) setFolders(data); })
-            .catch(() => {});
-        return () => { cancelled = true; };
-    }, []);
+    const loadFolders = useCallback(() => fetch('/api/conversations/folders')
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => { if (data) setFolders(data); })
+        .catch(() => {}), []);
+    useEffect(() => { void loadFolders(); }, [loadFolders]);
+
+    const refresh = useCallback(() => {
+        void refetch();
+        void loadFolders();
+    }, [refetch, loadFolders]);
+    useLiveConversationList({ setItems, refetch: refresh, archived: false });
 
     // Create a folder and add it to the in-memory list. Returns the created
     // folder (with its server-assigned id) so callers can immediately file a

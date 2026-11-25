@@ -3,14 +3,13 @@ import { hasPreviewToggle, isImageFile, isPdfFile } from '../utils/fileTypes.js'
 import { containerFileUrl } from '../utils/containerFileUrl.js';
 import * as fileWatch from '../utils/fileWatchStore.js';
 import copyToClipboard from '../utils/copyToClipboard.js';
-import { bytesDownload, triggerDownload } from '../utils/downloads.js';
+import { base64Bytes, bytesDownload, triggerDownload } from '../utils/downloads.js';
 
 // How often to re-check a disk-backed file for changes while its preview is open.
 const POLL_INTERVAL_MS = 4000;
 
 function _decodeText(b64) {
-    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-    return new TextDecoder().decode(bytes);
+    return new TextDecoder().decode(base64Bytes(b64));
 }
 
 // Append a cache-busting marker so the browser refetches an updated file
@@ -178,10 +177,7 @@ export default function useFileContent(item) {
         if (!isPdf) return null;
         if (path) return _bust(fileUrl, version);
         if (content) {
-            const byteChars = atob(content);
-            const bytes = new Uint8Array(byteChars.length);
-            for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
-            const blob = new Blob([bytes], { type: 'application/pdf' });
+            const blob = new Blob([base64Bytes(content)], { type: 'application/pdf' });
             return URL.createObjectURL(blob);
         }
         return null;
@@ -220,10 +216,7 @@ export default function useFileContent(item) {
         } else if (path) {
             triggerDownload(fileUrl, filename || 'file');
         } else if (content) {
-            const byteChars = atob(content);
-            const bytes = new Uint8Array(byteChars.length);
-            for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
-            bytesDownload(bytes, content_type, filename || 'file');
+            bytesDownload(base64Bytes(content), content_type, filename || 'file');
         }
     }, [text, content, content_type, path, fileUrl, filename]);
 

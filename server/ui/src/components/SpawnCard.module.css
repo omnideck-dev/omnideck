@@ -16,7 +16,7 @@
     gap: var(--sp-2);
     padding: 6px 10px;
     font-family: var(--font-brand);
-    font-size: 11px;
+    font-size: var(--font-size-caption);
     letter-spacing: 0.04em;
     color: var(--text-tertiary);
 }
@@ -27,7 +27,7 @@
 .rollup {
     margin-left: auto;
     font-family: var(--font-code);
-    font-size: 10.5px;
+    font-size: var(--font-size-caption);
     color: var(--text-secondary);
     letter-spacing: 0;
 }
@@ -48,7 +48,7 @@
 .row:focus-visible { outline: none; box-shadow: var(--shadow-glow); }
 
 .name {
-    font-size: 13px;
+    font-size: var(--font-size-body);
     font-weight: 600;
     color: var(--text-primary);
     flex-shrink: 0;
@@ -58,7 +58,7 @@
     flex: 1;
     min-width: 0;
     font-family: var(--font-code);
-    font-size: 11px;
+    font-size: var(--font-size-caption);
     color: var(--text-tertiary);
     overflow: hidden;
     text-overflow: ellipsis;

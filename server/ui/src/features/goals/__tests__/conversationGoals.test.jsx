@@ -11,7 +11,6 @@ vi.mock('../../conversation/session/ConversationSession.jsx', () => ({
     useConversationSessionState: () => ({ isOffline: false, stopRequested: false }),
 }));
 const openGoal = vi.fn();
-vi.mock('../GoalDesktopAdapter.jsx', () => ({ useGoalDesktopActions: () => ({ openGoal }) }));
 
 const waiting = {
     id: 'g1', conversation_id: 'a', objective: 'Plan', revision: 1, paused: false, plan: [],
@@ -53,9 +52,17 @@ describe('goal requests', () => {
     });
 
     it('focuses the Goal tab for an open goal with no new text, and opens the dialog otherwise', () => {
-        const { result } = renderHook(() => useGoalRequests('a'), { wrapper: wrapper([waiting]) });
+        const { result } = renderHook(() => useGoalRequests('a', { openGoal }), { wrapper: wrapper([waiting]) });
         result.current.requestGoal({ objective: '' });
         expect(openGoal).toHaveBeenCalledWith('a');
+        expect(result.current.request).toBeNull();
+    });
+
+    it('does nothing for an open goal with no new text when the caller has no goal view', () => {
+        const { result } = renderHook(() => useGoalRequests('a'), { wrapper: wrapper([waiting]) });
+        const onStarted = vi.fn();
+        result.current.requestGoal({ objective: '', onStarted });
+        expect(onStarted).toHaveBeenCalled();
         expect(result.current.request).toBeNull();
     });
 });

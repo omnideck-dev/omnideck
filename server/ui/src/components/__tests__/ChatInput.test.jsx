@@ -29,6 +29,31 @@ describe('ChatInput', () => {
         expect(onSend).toHaveBeenCalledWith('Hello world', null);
     });
 
+    it('sends on Enter by default', async () => {
+        const onSend = vi.fn();
+        const user = userEvent.setup();
+        render(<ChatInput onSend={onSend} isStreaming={false} />);
+
+        await user.type(screen.getByPlaceholderText('Message Omnideck…'), 'Hello{Enter}');
+
+        expect(onSend).toHaveBeenCalledWith('Hello', null);
+    });
+
+    it('adds a new line on Enter when Enter does not send', async () => {
+        const onSend = vi.fn();
+        const user = userEvent.setup();
+        render(<ChatInput onSend={onSend} isStreaming={false} submitOnEnter={false} />);
+
+        const textarea = screen.getByPlaceholderText('Message Omnideck…');
+        await user.type(textarea, 'Hello{Enter}there');
+
+        expect(onSend).not.toHaveBeenCalled();
+        expect(textarea).toHaveValue('Hello\nthere');
+        expect(textarea).toHaveAttribute('enterkeyhint', 'enter');
+        await user.click(screen.getByLabelText('Send message'));
+        expect(onSend).toHaveBeenCalledWith('Hello\nthere', null);
+    });
+
     describe('composer actions', () => {
         it('opens an accessible menu and keeps file selection on the existing input', async () => {
             const user = userEvent.setup();

@@ -146,7 +146,7 @@ def test_mcp_oauth_tools_and_cancel_cleanup(page, remote_service):
                 page.request.delete(f'{base}/api/integrations/{record["id"]}')
 
 
-@pytest.mark.parametrize("viewport", [{"width": 1280, "height": 900}, {"width": 390, "height": 844}], ids=["desktop", "phone"])
+@pytest.mark.parametrize("viewport", [{"width": 1280, "height": 900}, {"width": 1024, "height": 640}], ids=["desktop", "smallest"])
 def test_mcp_invalid_schema_is_disabled_while_valid_tool_can_be_saved(page, remote_service, viewport):
     page.set_viewport_size(viewport)
     base = os.environ.get("OMNIDECK_URL", "http://localhost:8080")

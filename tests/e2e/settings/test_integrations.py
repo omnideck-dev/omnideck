@@ -30,7 +30,7 @@ def test_empty_state_shows_when_no_integrations(page: Page) -> None:
     expect(settings.integrations.empty_state_add).to_be_visible()
 
 
-@pytest.mark.parametrize("width", [1440, 390])
+@pytest.mark.parametrize("width", [1440, 1024])
 def test_integration_attention_and_tool_summary_spacing(page: Page, width: int) -> None:
     """A wrapped recovery warning remains separate from the compact tool summary."""
     page.set_viewport_size({"width": width, "height": 900})
@@ -69,7 +69,7 @@ def test_integration_attention_and_tool_summary_spacing(page: Page, width: int) 
     assert spacing["toolsGap"] == pytest.approx(spacing["groupGap"], abs=1)
 
 
-@pytest.mark.parametrize("width", [1440, 390])
+@pytest.mark.parametrize("width", [1440, 1024])
 def test_integration_rows_show_only_actionable_connection_status(page: Page, width: int) -> None:
     """Problem rows use plain warning text; healthy rows and detail headers stay quiet."""
     page.set_viewport_size({"width": width, "height": 900})

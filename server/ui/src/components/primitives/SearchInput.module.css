@@ -33,7 +33,7 @@
     border: none;
     background: transparent;
     color: var(--text-primary);
-    font-size: 13px;
+    font-size: var(--font-size-body);
     font-family: var(--font-body);
     outline: none;
 }
@@ -68,4 +68,10 @@
 
 .clear i {
     font-size: 11px;
+}
+
+@media (pointer: coarse) {
+    .search { height: 44px; }
+    .input { font-size: 16px; }
+    .clear { width: 44px; height: 44px; }
 }

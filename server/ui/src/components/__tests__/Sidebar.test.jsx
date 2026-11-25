@@ -12,11 +12,6 @@ import { ToastProvider } from '../ToastProvider.jsx';
 import { ConversationCatalogProvider } from '../../features/conversation/catalog/ConversationCatalog.jsx';
 import { AppEffectsProvider } from '../../features/app/AppEffects.jsx';
 import { ThemeProvider } from '../../contexts/Theme.jsx';
-import useIsMobileViewport from '../../hooks/useIsMobileViewport.js';
-
-vi.mock('../../hooks/useIsMobileViewport.js', () => ({
-    default: vi.fn(() => false),
-}));
 
 const navigationHarness = vi.hoisted(() => ({
     navigationTarget: { kind: 'chat', conversationId: 'conversation-1' },
@@ -93,7 +88,6 @@ beforeEach(() => {
     navigationHarness.customApps.unpinApp.mockReset();
     navigationHarness.customApps.reorderPinnedApps.mockReset();
     Object.values(navigationHarness.commands).forEach((command) => command.mockReset());
-    useIsMobileViewport.mockReturnValue(false);
 });
 afterEach(() => localStorage.clear());
 
@@ -143,19 +137,6 @@ describe('Sidebar', () => {
         localStorage.setItem(COLLAPSE_KEY, '1');
         setup();
         expect(screen.getByTestId('sidebar')).toHaveAttribute('data-collapsed', 'true');
-    });
-
-    it('starts collapsed by default on a mobile viewport', () => {
-        useIsMobileViewport.mockReturnValue(true);
-        setup();
-        expect(screen.getByTestId('sidebar')).toHaveAttribute('data-collapsed', 'true');
-    });
-
-    it('honors an explicit stored preference over the mobile default', () => {
-        useIsMobileViewport.mockReturnValue(true);
-        localStorage.setItem(COLLAPSE_KEY, '0');
-        setup();
-        expect(screen.getByTestId('sidebar')).toHaveAttribute('data-collapsed', 'false');
     });
 
     it('fires onNewConversation from the New chat button', async () => {

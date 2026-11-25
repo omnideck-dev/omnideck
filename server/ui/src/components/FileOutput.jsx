@@ -6,7 +6,8 @@ import ImageIcon from './icons/ImageIcon.jsx';
 import SourceIcon from './icons/SourceIcon.jsx';
 import DownloadIcon from './icons/DownloadIcon.jsx';
 import EyeIcon from './icons/EyeIcon.jsx';
-import { bytesDownload, triggerDownload } from '../utils/downloads.js';
+import { base64Bytes, bytesDownload, triggerDownload } from '../utils/downloads.js';
+import { useFileControls } from './FileControls.jsx';
 
 function FileOutputIcon({ contentType, filename }) {
     if (contentType?.startsWith('image/') || filename?.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i)) {
@@ -18,32 +19,55 @@ function FileOutputIcon({ contentType, filename }) {
     return <FileIcon size={16} />;
 }
 
+function openOrDownload({ item, previewable, onPreview, download }) {
+    if (previewable && onPreview) onPreview(item);
+    else download();
+}
+
+function FileCardActions({ item, previewable, onPreview, download }) {
+    return (
+        <div className={styles.fileOutputBtns}>
+            {previewable && onPreview && (
+                <button
+                    className={styles.fileOutputBtn}
+                    onClick={(e) => { e.stopPropagation(); onPreview(item); }}
+                    data-testid="file-preview-btn"
+                >
+                    <EyeIcon size={12} />
+                    Preview
+                </button>
+            )}
+            <button
+                className={styles.fileOutputBtn}
+                onClick={(e) => { e.stopPropagation(); download(); }}
+                data-testid="file-download-btn"
+            >
+                <DownloadIcon size={12} />
+                Download
+            </button>
+        </div>
+    );
+}
+
+const DESKTOP_CARD = { Actions: FileCardActions, open: openOrDownload };
+
 export default function FileOutput({ item, onPreview }) {
     const { filename, content_type, content, path } = item;
     const previewable = canPreviewFile(content_type, filename);
+    const { Actions, open } = useFileControls()?.card ?? DESKTOP_CARD;
 
-    const handleDownload = (e) => {
-        e.stopPropagation();
+    const download = () => {
         if (path) {
             triggerDownload(containerFileUrl(path), filename);
             return;
         }
-        const byteChars = atob(content);
-        const bytes = new Uint8Array(byteChars.length);
-        for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
-        bytesDownload(bytes, content_type, filename);
+        bytesDownload(base64Bytes(content), content_type, filename);
     };
 
-    const handleClick = () => {
-        if (previewable && onPreview) {
-            onPreview(item);
-        } else {
-            handleDownload(new Event('click'));
-        }
-    };
+    const slot = { item, previewable, onPreview, download };
 
     return (
-        <div className={styles.fileOutput} onClick={handleClick} style={{ cursor: 'pointer' }}>
+        <div className={styles.fileOutput} onClick={() => open(slot)} style={{ cursor: 'pointer' }}>
             <div className={styles.fileOutputHeader}>
                 <span className={styles.fileOutputIcon}>
                     <FileOutputIcon contentType={content_type} filename={filename} />
@@ -52,22 +76,7 @@ export default function FileOutput({ item, onPreview }) {
                     <span className={styles.fileOutputName}>{filename}</span>
                     <span className={styles.fileOutputMime}>{content_type}</span>
                 </div>
-                <div className={styles.fileOutputBtns}>
-                    {previewable && onPreview && (
-                        <button
-                            className={styles.fileOutputBtn}
-                            onClick={(e) => { e.stopPropagation(); onPreview(item); }}
-                            data-testid="file-preview-btn"
-                        >
-                            <EyeIcon size={12} />
-                            Preview
-                        </button>
-                    )}
-                    <button className={styles.fileOutputBtn} onClick={handleDownload} data-testid="file-download-btn">
-                        <DownloadIcon size={12} />
-                        Download
-                    </button>
-                </div>
+                {Actions && <Actions {...slot} />}
             </div>
         </div>
     );

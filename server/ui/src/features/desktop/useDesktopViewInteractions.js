@@ -2,7 +2,6 @@ import { useCallback, useMemo } from 'react';
 
 import { useAppEffectDispatch } from '../app/AppEffects.jsx';
 import { APP_EFFECT_TYPES } from '../app/appEffectTypes.js';
-import useIsMobileViewport from '../../hooks/useIsMobileViewport.js';
 import { createDesktopViewActions } from './desktopViewActions.js';
 
 /**
@@ -15,7 +14,6 @@ export default function useDesktopViewInteractions({
     desktopLayout,
 }) {
     const dispatchAppEffect = useAppEffectDispatch();
-    const isMobile = useIsMobileViewport();
     const { model, commands } = desktopLayout;
 
     const handleSelectView = useCallback((tabGroupId, viewId) => {
@@ -137,9 +135,8 @@ export default function useDesktopViewInteractions({
             tabGroup: tabGroupId ? model.tabGroups[tabGroupId] : null,
             floating: options.floating,
             commands: viewActionCommands,
-            isMobile,
         })
-    ), [isMobile, model.tabGroups, viewActionCommands]);
+    ), [model.tabGroups, viewActionCommands]);
 
     return {
         getViewActions,

@@ -6,6 +6,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
+from conversations import ConversationSummary
 from goals import Goal
 
 
@@ -52,12 +53,35 @@ class GoalChangedMessage(BaseModel):
     goal: Goal
 
 
+class ConversationResyncMessage(BaseModel):
+    """Chats may have changed before the stream connected, so reload the chat lists."""
+
+    type: Literal["conversation_resync"]
+
+
+class ConversationChangedMessage(BaseModel):
+    """A chat was created or changed. Archived chats belong in the archived list."""
+
+    type: Literal["conversation_changed"]
+    conversation: ConversationSummary
+    archived: bool
+
+
+class ConversationRemovedMessage(BaseModel):
+    """A chat was deleted."""
+
+    type: Literal["conversation_removed"]
+    conversation_id: str
+
+
 ActivityMessage = Annotated[
-    RunSnapshotMessage | RunStartedMessage | RunFinishedMessage | GoalSnapshotMessage | GoalChangedMessage,
+    RunSnapshotMessage | RunStartedMessage | RunFinishedMessage | GoalSnapshotMessage | GoalChangedMessage
+    | ConversationResyncMessage | ConversationChangedMessage | ConversationRemovedMessage,
     Field(discriminator="type"),
 ]
 
 __all__ = [
-    "ActivityMessage", "GoalChangedMessage", "GoalSnapshotMessage", "RunFinishedMessage", "RunIdentity",
-    "RunSnapshotMessage", "RunStartedMessage",
+    "ActivityMessage", "ConversationChangedMessage", "ConversationRemovedMessage", "ConversationResyncMessage",
+    "GoalChangedMessage", "GoalSnapshotMessage", "RunFinishedMessage", "RunIdentity", "RunSnapshotMessage",
+    "RunStartedMessage",
 ]

@@ -25,7 +25,7 @@ def test_providers_tab_shows_seeded_ollama(page: Page):
     original_viewport = page.viewport_size
     assert original_viewport is not None
     try:
-        for width in (1440, 700, 390):
+        for width in (1440, 1024):
             page.set_viewport_size({"width": width, "height": 900})
             assert row.evaluate("""element => {
                 const host = element.closest('[data-testid="providers-tab"]');

@@ -58,7 +58,7 @@
     align-items: center;
     justify-content: center;
     font-family: var(--font-brand);
-    font-size: 0.72rem;
+    font-size: var(--font-size-small);
     font-weight: 600;
     border: 2px solid var(--border);
     color: var(--text-tertiary);
@@ -102,7 +102,7 @@
 }
 
 .title {
-    font-size: 1.25rem;
+    font-size: var(--font-size-heading);
     font-weight: 700;
     color: var(--text-primary);
     margin: 0 0 0.5rem;
@@ -115,7 +115,7 @@
 }
 
 .subtitle {
-    font-size: 0.85rem;
+    font-size: var(--font-size-ui);
     color: var(--text-primary);
     opacity: 0.55;
     max-width: 380px;
@@ -125,7 +125,7 @@
 
 .hint {
     font-family: var(--font-brand);
-    font-size: 0.7rem;
+    font-size: var(--font-size-caption);
     color: var(--text-primary);
     opacity: 0.4;
     margin: 0 0 0.75rem;
@@ -206,14 +206,14 @@
 
 .modelName {
     font-family: var(--font-brand);
-    font-size: 0.82rem;
+    font-size: var(--font-size-body);
     font-weight: 600;
     color: var(--text-primary);
     line-height: 1.2;
 }
 
 .modelDesc {
-    font-size: 0.75rem;
+    font-size: var(--font-size-small);
     color: var(--text-primary);
     opacity: 0.5;
     line-height: 1.3;
@@ -230,7 +230,7 @@
 .badge {
     display: inline-block;
     font-family: var(--font-brand);
-    font-size: 0.62rem;
+    font-size: var(--font-size-label);
     padding: 0.1em 0.45em;
     border-radius: 3px;
     letter-spacing: 0.02em;
@@ -292,14 +292,14 @@
 
 .summaryLabel {
     font-family: var(--font-brand);
-    font-size: 0.72rem;
+    font-size: var(--font-size-small);
     color: var(--text-primary);
     opacity: 0.5;
 }
 
 .summaryValue {
     font-family: var(--font-brand);
-    font-size: 0.8rem;
+    font-size: var(--font-size-body);
     font-weight: 600;
     color: var(--text-primary);
 }
@@ -310,7 +310,7 @@
     border: 1px solid var(--danger-muted);
     border-radius: 0;
     color: var(--danger);
-    font-size: 0.8rem;
+    font-size: var(--font-size-body);
     line-height: 1.4;
 }
 
@@ -325,7 +325,7 @@
 
 .backBtn {
     font-family: var(--font-brand);
-    font-size: 0.78rem;
+    font-size: var(--font-size-body);
     padding: 0.45rem 1rem;
     border-radius: 0;
     border: 1px solid var(--border);
@@ -342,7 +342,7 @@
 
 .nextBtn {
     font-family: var(--font-brand);
-    font-size: 0.78rem;
+    font-size: var(--font-size-body);
     font-weight: 600;
     padding: 0.45rem 1.25rem;
     border-radius: 0;
@@ -378,7 +378,7 @@
     border: 1px solid var(--danger-muted);
     border-radius: 0;
     color: var(--text-primary);
-    font-size: 0.85rem;
+    font-size: var(--font-size-ui);
     line-height: 1.5;
     display: flex;
     flex-direction: column;
@@ -389,7 +389,7 @@
 .errorTitle {
     font-weight: 600;
     color: var(--danger);
-    font-size: 0.95rem;
+    font-size: var(--font-size-ui);
 }
 
 .errorMessage {
@@ -399,7 +399,7 @@
 
 .errorDetail {
     color: var(--muted-text, var(--text-primary));
-    font-size: 0.8rem;
+    font-size: var(--font-size-body);
 }
 
 .errorDetail code,
@@ -414,7 +414,7 @@
     margin: 0.25rem 0 0;
     padding-left: 1.25rem;
     color: var(--muted-text, var(--text-primary));
-    font-size: 0.8rem;
+    font-size: var(--font-size-body);
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
@@ -424,7 +424,7 @@
     align-self: flex-start;
     margin-top: 0.25rem;
     padding: 0.45rem 1rem;
-    font-size: 0.85rem;
+    font-size: var(--font-size-ui);
     font-weight: 600;
     border-radius: 0;
     border: 1px solid var(--danger);
@@ -463,14 +463,14 @@
 
 .fieldLabel {
     font-family: var(--font-brand);
-    font-size: 0.75rem;
+    font-size: var(--font-size-small);
     font-weight: 600;
     color: var(--text-primary);
 }
 
 .fieldInput {
     font-family: var(--font-brand);
-    font-size: 0.8rem;
+    font-size: var(--font-size-body);
     padding: 0.45rem 0.65rem;
     background: var(--canvas);
     border: 1px solid var(--border);
@@ -487,7 +487,7 @@
 }
 
 .fieldHint {
-    font-size: 0.72rem;
+    font-size: var(--font-size-small);
     color: var(--text-primary);
     opacity: 0.45;
     line-height: 1.4;
@@ -496,7 +496,7 @@
 /* Cloud provider sub-select */
 .cloudSelect {
     --select-width: 100%;
-    --select-font-size: 0.8rem;
+    --select-font-size: var(--font-size-body);
 }
 
 /* ── Provider error (step 1) ─────────────────────────────────── */
@@ -507,7 +507,7 @@
     background: var(--danger-muted);
     border: 1px solid var(--danger-muted);
     color: var(--danger);
-    font-size: 0.8rem;
+    font-size: var(--font-size-body);
     line-height: 1.4;
 }
 
@@ -519,7 +519,7 @@
     background: var(--accent-muted);
     border: 1px solid var(--accent-muted);
     color: var(--text-primary);
-    font-size: 0.82rem;
+    font-size: var(--font-size-body);
     line-height: 1.5;
     text-align: left;
 }
@@ -531,7 +531,7 @@
     margin-top: 0.75rem;
     padding: 0.4rem 1rem;
     font-family: var(--font-brand);
-    font-size: 0.75rem;
+    font-size: var(--font-size-small);
     color: var(--text-primary);
     opacity: 0.55;
     background: transparent;
@@ -567,6 +567,6 @@
 }
 
 .checkLabel {
-    font-size: 13px;
+    font-size: var(--font-size-body);
     color: var(--text-secondary);
 }

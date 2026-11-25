@@ -4,7 +4,7 @@
     max-width: var(--select-max-width, 100%);
     width: var(--select-width, auto);
     font-family: var(--font-body);
-    font-size: var(--select-font-size, 13px);
+    font-size: var(--select-font-size, var(--font-size-body));
 }
 
 /* Preserve native-select intrinsic sizing: an automatic-width control should

@@ -32,3 +32,7 @@
 }
 .textButton:hover:not(:disabled) { text-decoration: underline; }
 .textButton:disabled { cursor: default; }
+
+@media (pointer: coarse) {
+    .row { min-height: 44px; }
+}

@@ -2,7 +2,7 @@
  *
  * Used wherever a toolbar/header has a small icon control with hover-bg
  * feedback. Caller passes the icon (or any node) as children and chooses
- * a size: xs (24×24), sm (28×28), md (32×32).
+ * a size: xs (24×24), sm (28×28), md (32×32), lg (44×44) for touch screens.
  */
 
 .btn {
@@ -28,3 +28,8 @@
 .xs { width: 24px; height: 24px; }
 .sm { width: 28px; height: 28px; }
 .md { width: 32px; height: 32px; }
+.lg { width: 44px; height: 44px; font-size: var(--font-size-heading); }
+
+@media (pointer: coarse) {
+    .xs, .sm, .md { width: 44px; height: 44px; }
+}

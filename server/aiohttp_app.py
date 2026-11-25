@@ -32,6 +32,7 @@ from server._artifacts_routes import register_artifacts_routes
 from server._browser_control_routes import register_browser_control_routes
 from server._browser_profile_routes import register_browser_profile_routes
 from server._container_file_routes import register_container_file_routes
+from server._conversation_activity import ConversationActivityFeed
 from server._conversation_routes import register_conversation_routes
 from server._custom_app_routes import register_custom_app_routes
 from server._custom_tool_routes import register_custom_tool_routes
@@ -125,7 +126,7 @@ def create_app(
     app[BROWSER_RUNTIME_KEY] = browser_runtime
     integration_cache = IntegrationConnectionCache(integration_service)
     app[INTEGRATION_CACHE_KEY] = integration_cache
-    app[ACTIVITY_FEEDS_KEY] = []
+    app[ACTIVITY_FEEDS_KEY] = [ConversationActivityFeed()]
     goal_extension = create_goal_store(app)
     app[SELECTION_MUTATION_LOCK] = asyncio.Lock()
     app[AGENT_RUNTIME_KEY] = AgentRuntime(

@@ -1,10 +1,10 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import ReactDOM from 'react-dom/client';
-import App from './App.jsx';
 import { ToastProvider } from './components/ToastProvider.jsx';
 import { AppDataProvider } from './contexts/AppData.jsx';
 import { ThemeProvider } from './contexts/Theme.jsx';
 import { csrfFetch } from './utils/csrfFetch.js';
+import { isPhoneDevice } from './features/phone/phoneDevice.js';
 import 'bootstrap-icons/font/bootstrap-icons.css';
 import './global.css';
 import './hljs-tokens.css';
@@ -25,12 +25,18 @@ document.head.appendChild(customStylesLink);
 const _originalFetch = window.fetch;
 window.fetch = csrfFetch(_originalFetch);
 
+const Root = isPhoneDevice()
+    ? lazy(() => import('./features/phone/PhoneApp.jsx'))
+    : lazy(() => import('./App.jsx'));
+
 ReactDOM.createRoot(document.getElementById('root')).render(
     <React.StrictMode>
         <ThemeProvider>
             <ToastProvider>
                 <AppDataProvider>
-                    <App />
+                    <Suspense fallback={null}>
+                        <Root />
+                    </Suspense>
                 </AppDataProvider>
             </ToastProvider>
         </ThemeProvider>

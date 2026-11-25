@@ -9,7 +9,7 @@
     background: var(--canvas);
     color: var(--text-primary);
     font-family: var(--font-body);
-    font-size: 12.5px;
+    font-size: var(--font-size-body);
     outline: none;
     box-shadow: var(--shadow-glow);
 }
@@ -26,7 +26,7 @@
     background: var(--canvas);
     color: var(--text-primary);
     font-family: var(--font-body);
-    font-size: 12px;
+    font-size: var(--font-size-small);
     outline: none;
     box-shadow: var(--shadow-glow);
 }
@@ -48,7 +48,7 @@
     background: var(--canvas);
     color: var(--text-primary);
     font-family: var(--font-body);
-    font-size: 12.5px;
+    font-size: var(--font-size-body);
     outline: none;
     box-shadow: var(--shadow-glow);
 }
@@ -64,7 +64,7 @@
     padding: 0 10px;
     border-radius: var(--radius-sm);
     font-family: var(--font-body);
-    font-size: 12px;
+    font-size: var(--font-size-small);
     cursor: pointer;
 }
 .renameCancel {
@@ -81,4 +81,9 @@
 .renameSave:disabled {
     opacity: 0.5;
     cursor: default;
+}
+
+@media (pointer: coarse) {
+    .newFolderInput, .folderRenameInput, .renameInput { height: 44px; font-size: 16px; }
+    .renameSave, .renameCancel { height: 44px; }
 }

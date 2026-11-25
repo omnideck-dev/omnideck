@@ -41,7 +41,7 @@
 
 .fileOutputName {
   font-family: var(--font-code);
-  font-size: 12px;
+  font-size: var(--font-size-small);
   color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
@@ -49,7 +49,7 @@
 }
 
 .fileOutputMime {
-  font-size: 10px;
+  font-size: var(--font-size-label);
   color: var(--text-tertiary);
 }
 
@@ -66,7 +66,7 @@
   background: var(--accent-muted);
   border: 1px solid var(--border);
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-caption);
   font-family: var(--font-brand);
   cursor: pointer;
   padding: 3px 10px;

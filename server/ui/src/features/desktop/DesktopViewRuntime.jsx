@@ -6,7 +6,6 @@ import {
     useRef,
 } from 'react';
 
-import useIsMobileViewport from '../../hooks/useIsMobileViewport.js';
 import { DESKTOP_TAB_GROUP_IDS } from './desktopLayoutReducer.js';
 import { tabGroupContainingView, visibleViewIds } from './desktopLayoutSelectors.js';
 
@@ -33,16 +32,6 @@ function preferredCompanionTabGroup(model) {
 }
 
 /**
- * On mobile only one pane is reachable, so a companion must join whichever
- * pane the conversation already occupies instead of assuming it's always
- * left - the conversation can be in the right group (the desktop-only
- * "move"/"dock" actions leave that placement persisted across sessions).
- */
-function mobileCompanionTabGroup(model) {
-    return conversationTabGroupId(model) || DESKTOP_TAB_GROUP_IDS.LEFT;
-}
-
-/**
  * Exposes Desktop state and generic View commands to domain adapters.
  *
  * Domain adapters translate their own resources into serializable Views, then
@@ -52,13 +41,11 @@ export function DesktopViewRuntimeProvider({ desktopLayout, children }) {
     const { model, commands: layoutCommands } = desktopLayout;
     const modelRef = useRef(model);
     modelRef.current = model;
-    const isMobile = useIsMobileViewport();
-    const visibleIds = useMemo(() => visibleViewIds(model, isMobile), [
+    const visibleIds = useMemo(() => visibleViewIds(model), [
         model.tabGroups,
         model.openViewsById,
         model.floatingByViewId,
         model.fullscreenViewId,
-        isMobile,
     ]);
     // Bounds, split ratios, and focus change frequently. Domain effects need
     // only the View catalog, so keep their context value stable for pure
@@ -67,17 +54,8 @@ export function DesktopViewRuntimeProvider({ desktopLayout, children }) {
         openViews: Object.values(model.openViewsById),
         openViewsById: model.openViewsById,
     }), [model.openViewsById]);
-    // On mobile only one pane is ever visible (left, unless it's empty).
-    // Mirror that rule here so reported focus never points at a hidden
-    // pane's view for the render before the layout's own merge effect
-    // catches up with a restored or resized two-pane layout.
-    const mobileVisibleTabGroupId = model.tabGroups[
-        DESKTOP_TAB_GROUP_IDS.LEFT
-    ].viewIds.length > 0
-        ? DESKTOP_TAB_GROUP_IDS.LEFT
-        : DESKTOP_TAB_GROUP_IDS.RIGHT;
     const focusedTabGroupActiveViewId = model.tabGroups[
-        isMobile ? mobileVisibleTabGroupId : model.focusedTabGroupId
+        model.focusedTabGroupId
     ]?.activeViewId || null;
     // Focus is intentionally a separate subscription from the View catalog.
     // Tab selection and floating-window focus change often, while domain
@@ -119,14 +97,9 @@ export function DesktopViewRuntimeProvider({ desktopLayout, children }) {
     // Placement callers need the latest model, but they should receive stable
     // commands. In particular, navigation effects must not restart merely
     // because a drag or tab selection produced a new layout object.
-    // Mobile has room for only one visible pane, so companion views (artifacts,
-    // workspace resources) always join the conversation's pane instead of
-    // opening into an unreachable second one.
     const preferredTabGroupId = useCallback(
-        () => (isMobile
-            ? mobileCompanionTabGroup(modelRef.current)
-            : preferredCompanionTabGroup(modelRef.current)),
-        [isMobile],
+        () => preferredCompanionTabGroup(modelRef.current),
+        [],
     );
 
     const commands = useMemo(() => ({

@@ -38,23 +38,3 @@
     letter-spacing: 0.06em;
     text-transform: uppercase;
 }
-@media (max-width: 860px) {
-    .container {
-        grid-template-columns: 250px minmax(0, 1fr);
-    }
-}
-@media (max-width: 640px) {
-    /* The shared layout owns the mobile scroller, not each feature's host. */
-    .container {
-        display: block;
-        overflow-y: auto;
-    }
-    .list {
-        padding-right: 0;
-        margin-bottom: var(--sp-4);
-        border-right: 0;
-    }
-    .detail {
-        overflow: visible;
-    }
-}

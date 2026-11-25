@@ -239,7 +239,7 @@ def test_create_profile_and_rename_it_in_settings(page: Page, api_client: ApiCli
 
         original_viewport = page.viewport_size
         assert original_viewport is not None
-        for width in (1440, 700, 390):
+        for width in (1440, 1024):
             page.set_viewport_size({"width": width, "height": 900})
             editor.get_by_label("Name").scroll_into_view_if_needed()
             expect(editor.get_by_label("Name")).to_be_in_viewport()

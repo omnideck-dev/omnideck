@@ -6,7 +6,7 @@ from playwright.sync_api import expect
 from tests.e2e.pages import AgentsPage
 
 
-@pytest.mark.parametrize("width", [480, 1440])
+@pytest.mark.parametrize("width", [1024, 1440])
 def test_simple_agent_editor_discard_save_and_reload(page, width):
     """Visible settings, collapsed tuning, draft rollback and durable saves."""
     page.set_viewport_size({"width": width, "height": 960})

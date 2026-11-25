@@ -291,20 +291,3 @@
     flex: 1;
     place-items: center;
 }
-
-@media (max-width: 768px) {
-    .detailActions,
-    .detailBody {
-        padding-right: var(--sp-4);
-        padding-left: var(--sp-4);
-    }
-
-    .sitesHeading {
-        align-items: stretch;
-        flex-direction: column;
-    }
-
-    .siteSearch {
-        width: 100%;
-    }
-}

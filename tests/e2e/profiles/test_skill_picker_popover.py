@@ -19,7 +19,7 @@ def test_skill_picker_stays_inside_minimum_viewport(page: Page):
             "skills": [],
         },
     )
-    page.set_viewport_size({"width": 880, "height": 620})
+    page.set_viewport_size({"width": 1024, "height": 620})
 
     try:
         agents = AgentsPage(page).goto()

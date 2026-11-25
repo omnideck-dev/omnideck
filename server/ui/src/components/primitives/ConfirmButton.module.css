@@ -16,7 +16,7 @@
     padding: 0 14px;
     border-radius: var(--radius-md);
     font-family: var(--font-body);
-    font-size: 13px;
+    font-size: var(--font-size-body);
     font-weight: 500;
     border: 1px solid transparent;
     background: var(--danger-muted);

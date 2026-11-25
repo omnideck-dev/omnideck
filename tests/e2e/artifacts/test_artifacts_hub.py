@@ -74,7 +74,7 @@ def test_search_filters_to_matching_artifact(page: Page, produced):
 
 def test_grid_mounts_only_previews_near_the_viewport(page: Page):
     """Scrolling mounts nearby HTML previews and releases distant ones."""
-    page.set_viewport_size({"width": 800, "height": 600})
+    page.set_viewport_size({"width": 1024, "height": 640})
     nonce = time.time_ns()
     prefix = f"viewport_{nonce}"
     names = [f"{prefix}_{index:02d}.html" for index in range(18)]

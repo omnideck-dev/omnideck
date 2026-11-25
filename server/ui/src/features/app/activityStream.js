@@ -37,6 +37,17 @@ function decodeGoal(goal) {
 }
 
 /**
+ * @param {unknown} conversation
+ * @returns {import('./activityMessages.generated').ConversationSummary}
+ */
+function decodeConversation(conversation) {
+    if (!isRecord(conversation) || typeof conversation.conversation_id !== 'string' || !conversation.conversation_id) {
+        throw new Error('Invalid activity conversation');
+    }
+    return /** @type {import('./activityMessages.generated').ConversationSummary} */ (/** @type {unknown} */ (conversation));
+}
+
+/**
  * @param {string} data
  * @returns {import('./activityMessages.generated').ActivityMessage}
  */
@@ -54,6 +65,21 @@ export function decodeActivityMessage(data) {
     if (value.type === 'goal_changed') {
         if (typeof value.conversation_id !== 'string') throw new Error('Invalid goal change');
         return { type: 'goal_changed', conversation_id: value.conversation_id, goal: decodeGoal(value.goal) };
+    }
+    if (value.type === 'conversation_resync') return { type: 'conversation_resync' };
+    if (value.type === 'conversation_changed') {
+        if (typeof value.archived !== 'boolean') throw new Error('Invalid conversation change');
+        return {
+            type: 'conversation_changed',
+            conversation: decodeConversation(value.conversation),
+            archived: value.archived,
+        };
+    }
+    if (value.type === 'conversation_removed') {
+        if (typeof value.conversation_id !== 'string' || !value.conversation_id) {
+            throw new Error('Invalid conversation removal');
+        }
+        return { type: 'conversation_removed', conversation_id: value.conversation_id };
     }
     throw new Error('Unknown activity message');
 }
@@ -73,6 +99,15 @@ export function activityEffect(message) {
     case 'run_started': return { type: APP_EFFECT_TYPES.RUNS_STARTED, payload: runPayload(message.runs) };
     case 'run_finished': return { type: APP_EFFECT_TYPES.RUNS_FINISHED, payload: runPayload(message.runs) };
     case 'goal_snapshot': return { type: APP_EFFECT_TYPES.GOALS_SNAPSHOT, payload: { goals: message.goals } };
+    case 'conversation_resync': return { type: APP_EFFECT_TYPES.CONVERSATIONS_RESYNC, payload: null };
+    case 'conversation_changed': return {
+        type: APP_EFFECT_TYPES.CONVERSATIONS_CHANGED,
+        payload: { conversation: message.conversation, archived: message.archived },
+    };
+    case 'conversation_removed': return {
+        type: APP_EFFECT_TYPES.CONVERSATIONS_REMOVED,
+        payload: { conversationId: message.conversation_id },
+    };
     default: return {
         type: APP_EFFECT_TYPES.GOALS_CHANGED,
         payload: { conversationId: message.conversation_id, goal: message.goal },
@@ -85,16 +120,31 @@ export function activityEffect(message) {
  * @returns {() => void}
  */
 export function subscribeActivityStream(dispatch) {
-    const source = new EventSource('/api/chat/activity');
-    source.onmessage = ({ data }) => {
-        let message;
-        try {
-            message = decodeActivityMessage(data);
-        } catch (error) {
-            console.error('Rejected activity message', error);
-            return;
-        }
-        dispatch(activityEffect(message));
+    /** @type {EventSource} */
+    let source;
+    const open = () => {
+        source = new EventSource('/api/chat/activity');
+        source.onmessage = ({ data }) => {
+            let message;
+            try {
+                message = decodeActivityMessage(data);
+            } catch (error) {
+                console.error('Rejected activity message', error);
+                return;
+            }
+            dispatch(activityEffect(message));
+        };
     };
-    return () => source.close();
+    const reopenIfClosed = () => {
+        if (document.visibilityState !== 'visible' || source.readyState !== EventSource.CLOSED) return;
+        open();
+    };
+    open();
+    document.addEventListener('visibilitychange', reopenIfClosed);
+    window.addEventListener('online', reopenIfClosed);
+    return () => {
+        document.removeEventListener('visibilitychange', reopenIfClosed);
+        window.removeEventListener('online', reopenIfClosed);
+        source.close();
+    };
 }

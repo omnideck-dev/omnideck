@@ -102,7 +102,7 @@ def _assert_hover_inset(toggle):
     assert all(abs(gap - geometry["inset"]) < 1 for gap in geometry["gaps"]), geometry
 
 
-@pytest.mark.parametrize("width", [880, 1440])
+@pytest.mark.parametrize("width", [1024, 1440])
 def test_selection_row_actions_align_when_wrapped_and_expanded(page, width):
     """Both editors use the same centered actions; removal only edits the draft."""
     page.set_viewport_size({"width": width, "height": 900})

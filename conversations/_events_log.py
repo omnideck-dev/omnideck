@@ -20,7 +20,7 @@ from typing import Any
 
 from agent_core.events import AgentEvent
 
-from ._store import _get_conv_dir
+from ._store import _get_conv_dir, is_root_user_message, notify_conversation_changed
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +85,8 @@ class EventsLogWriter:
             with self._path.open("a", encoding="utf-8") as f:
                 f.write(line)
                 f.write("\n")
+            if is_root_user_message(flat):
+                notify_conversation_changed(self._conversation_id)
         except Exception:  # pragma: no cover - defensive
             logger.exception(
                 "Failed to append event to %s (event_id=%s, type=%s)",

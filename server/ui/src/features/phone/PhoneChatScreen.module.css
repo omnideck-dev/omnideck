@@ -1,0 +1,13 @@
+.screen {
+    --titlebar-height: 48px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+}
+
+.composer {
+    flex: none;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+}

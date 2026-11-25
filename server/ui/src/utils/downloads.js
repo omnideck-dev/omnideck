@@ -21,3 +21,10 @@ export function bytesDownload(content, contentType, filename) {
     const blob = new Blob([content], { type: contentType || 'application/octet-stream' });
     triggerDownload(URL.createObjectURL(blob), filename);
 }
+
+export function base64Bytes(content) {
+    const chars = atob(content);
+    const bytes = new Uint8Array(chars.length);
+    for (let i = 0; i < chars.length; i++) bytes[i] = chars.charCodeAt(i);
+    return bytes;
+}

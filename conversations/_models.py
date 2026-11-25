@@ -29,6 +29,14 @@ class ConversationSummary(BaseModel):
     folder_id: str | None = None  # Custom folder this chat belongs to, if any
 
 
+class ConversationChange(BaseModel):
+    """A chat's listing after a change: active, archived, or gone when summary is None."""
+
+    conversation_id: str
+    summary: ConversationSummary | None = None
+    archived: bool = False
+
+
 class Folder(BaseModel):
     """A user-created folder for grouping conversations in the sidebar."""
 
