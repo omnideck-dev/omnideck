@@ -169,9 +169,9 @@ def test_inactive_tab_context_menu_controls_that_tab(page: Page):
 
 def test_overflow_controls_scroll_and_reveal_the_selected_tab(page: Page):
     """A crowded tab strip remains navigable and keeps selection in view."""
-    # Stay above the mobile breakpoint and explicitly split the workspace
+    # Use the smallest supported window and explicitly split the workspace
     # so the left tab strip is crowded regardless of navigation defaults.
-    page.set_viewport_size({"width": 800, "height": 720})
+    page.set_viewport_size({"width": 1024, "height": 720})
     ChatView(page).goto()
     desktop = DesktopLayout(page)
     _open_destinations(page, "agents", "routines", "artifacts", "settings")

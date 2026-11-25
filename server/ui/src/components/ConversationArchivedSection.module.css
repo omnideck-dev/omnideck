@@ -21,7 +21,7 @@
     background: transparent;
     color: var(--text-tertiary);
     font-family: var(--font-body);
-    font-size: 12.5px;
+    font-size: var(--font-size-body);
     text-align: left;
     cursor: pointer;
     flex-shrink: 0;
@@ -33,7 +33,7 @@
 .archivedCount {
     flex: none !important;
     font-family: var(--font-code);
-    font-size: 10px;
+    font-size: var(--font-size-label);
     color: var(--text-tertiary);
     background: var(--accent-muted);
     padding: 1px 6px;
@@ -56,7 +56,7 @@
     padding: 0 var(--sp-1) 0 10px;
     border-radius: var(--radius-md);
     color: var(--text-secondary);
-    font-size: 12.5px;
+    font-size: var(--font-size-body);
 }
 .archivedItem:hover { background: var(--accent-muted); color: var(--text-primary); }
 
@@ -72,7 +72,7 @@
 /* Empty-state line when the archive has no conversations. */
 .empty {
     padding: var(--sp-3) 10px;
-    font-size: 12px;
+    font-size: var(--font-size-small);
     color: var(--text-tertiary);
 }
 
@@ -108,5 +108,10 @@
     gap: var(--sp-1);
     background: var(--danger);
     color: #fff;
-    font-size: 11px;
+    font-size: var(--font-size-caption);
+}
+
+@media (pointer: coarse) {
+    .archivedToggle, .archivedItem { height: 44px; font-size: var(--font-size-ui); }
+    .archivedAction, .archivedDelete { width: 44px; height: 44px; opacity: 1; }
 }

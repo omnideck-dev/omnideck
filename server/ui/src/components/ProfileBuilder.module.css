@@ -46,14 +46,3 @@
 .modelSettingsBody { padding-top: var(--sp-5); }
 .modelTitle { display: block; margin-bottom: var(--sp-1); }
 .emptyState { margin: auto; color: var(--text-secondary); }
-@media (max-width: 640px) {
-    .formBody { padding: var(--sp-5) var(--sp-4) var(--sp-8); }
-    .actionsBar { padding: var(--sp-2) var(--sp-3); grid-template-columns: auto minmax(0, 1fr) auto auto; gap: var(--sp-1); }
-    .actionsBar > button { grid-row: 1; }
-    .saveStatus { grid-column: 1 / -1; grid-row: 2; justify-self: start; }
-    .discardAction { grid-column: 2; grid-row: 1; justify-self: end; }
-    .saveAction { grid-column: 3; grid-row: 1; }
-    .overflowAction { grid-column: 4; grid-row: 1; }
-    .settingRow { flex-wrap: wrap; }
-    .settingControl { margin-left: auto; }
-}

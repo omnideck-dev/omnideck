@@ -20,6 +20,7 @@ from .agents_page import AgentsPage
 from .settings_page import SettingsPage
 from .sidebar import Sidebar
 from .desktop_layout import DesktopLayout
+from .phone_app import PhoneApp, phone_app
 
 __all__ = [
     "ChatView",
@@ -36,4 +37,6 @@ __all__ = [
     "SettingsPage",
     "Sidebar",
     "DesktopLayout",
+    "PhoneApp",
+    "phone_app",
 ]

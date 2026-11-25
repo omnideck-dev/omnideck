@@ -1,4 +1,5 @@
 .container {
+    container-type: inline-size;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -30,7 +31,7 @@
 }
 
 .subheading {
-    font-size: 13.5px;
+    font-size: var(--font-size-ui);
     line-height: 1.5;
     color: var(--text-tertiary);
     margin: 0;
@@ -88,18 +89,18 @@
 }
 
 .title {
-    font-size: 15px;
+    font-size: var(--font-size-ui);
     font-weight: 600;
     color: var(--text-primary);
 }
 
 .text {
-    font-size: 13px;
+    font-size: var(--font-size-body);
     color: var(--text-secondary);
     line-height: 1.4;
 }
 
-@media (max-width: 480px) {
+@container (max-width: 480px) {
     .grid {
         grid-template-columns: 1fr;
     }

@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useConversationCatalog } from '../features/conversation/catalog/ConversationCatalog.jsx';
-import { useToast } from './ToastProvider.jsx';
-import { clearChatDraft } from '../utils/chatDraftStorage.js';
+import useConversationListActions from '../features/conversation/catalog/useConversationListActions.js';
 import StatusDot from './StatusDot.jsx';
 import Spinner from './primitives/Spinner.jsx';
 import IconButton from './primitives/IconButton.jsx';
@@ -11,7 +10,6 @@ import ArchivedSection from './ConversationArchivedSection.jsx';
 import { ConversationMenu, FolderMenu, IconPicker } from './ConversationMenus.jsx';
 import { InlineNameInput, RenameRow } from './ConversationInlineEditors.jsx';
 import {
-    MAX_TITLE_LEN,
     MAX_FOLDER_NAME_LEN,
     DEFAULT_FOLDER_ICON,
     label,
@@ -44,12 +42,11 @@ function pointRect(event) {
  * Searching drops the structure and shows a flat, recency-sorted list.
  */
 export default function ConversationsPanel({ onLoadConversation, onNewConversation, activeConversationId }) {
-    const { addToast } = useToast();
     const {
-        items, setItems, loading, deleting, handleDelete, activity,
-        archiveConversation, unarchiveConversation,
-        folders, createFolder, renameFolder, setFolderIcon, deleteFolder, setConversationFolder,
+        items, loading, deleting, activity,
+        folders, createFolder, renameFolder, setFolderIcon, deleteFolder,
     } = useConversationCatalog();
+    const actions = useConversationListActions({ activeConversationId, onNewConversation });
     const [query, setQuery] = useState('');
     const needsYou = useNeedsYou(items);
     // Which row's context menu is open, plus the trigger rect to anchor it.
@@ -62,11 +59,7 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
     const [iconPicker, setIconPicker] = useState(null); // { folderId, rect } | null
     // Which folder's options menu is open, plus the trigger rect to anchor it.
     const [folderMenu, setFolderMenu] = useState(null); // { folderId, rect } | null
-    // Archived conversations load up front so their count shows on the
-    // collapsed header; the list is kept current locally by archive/restore.
     const [showArchived, setShowArchived] = useState(false);
-    const [archived, setArchived] = useState([]);
-    const [archivedLoaded, setArchivedLoaded] = useState(false);
 
     const closeMenu = useCallback(() => setMenu(null), []);
 
@@ -107,111 +100,32 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
         });
     }, []);
 
-    const patchConversation = useCallback(async (id, body) => {
-        try {
-            await fetch(`/api/conversations/sessions/${id}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body),
-            });
-        } catch (_) {
-            // The optimistic update already reflects the change; a failed
-            // write surfaces on the next refetch rather than blocking the UI.
-        }
-    }, []);
-
     const togglePin = useCallback((convo) => {
-        const pinned = !convo.pinned;
-        setItems((prev) => prev.map((c) => (
-            c.conversation_id === convo.conversation_id ? { ...c, pinned } : c
-        )));
         closeMenu();
-        patchConversation(convo.conversation_id, { pinned });
-    }, [setItems, closeMenu, patchConversation]);
+        actions.togglePin(convo);
+    }, [closeMenu, actions]);
 
     const submitRename = useCallback((convo, raw) => {
-        // Blank input reverts to the first-message fallback rather than saving
-        // an empty title.
-        const title = raw.trim().slice(0, MAX_TITLE_LEN);
         setRenamingId(null);
-        setItems((prev) => prev.map((c) => (
-            c.conversation_id === convo.conversation_id ? { ...c, title } : c
-        )));
-        patchConversation(convo.conversation_id, { title });
-    }, [setItems, patchConversation]);
+        actions.renameConversation(convo, raw);
+    }, [actions]);
 
     const deleteConversation = useCallback(async (id) => {
-        const result = await handleDelete(
-            id,
-            `/api/conversations/sessions/${id}`,
-            (s) => s.conversation_id !== id,
-        );
+        await actions.deleteConversation(id);
         closeMenu();
-        if (!result.ok) {
-            addToast(result.message, { type: result.status === 409 ? 'warn' : 'error' });
-            return;
-        }
-        clearChatDraft(id);
-        // Deleting the open conversation leaves nothing selected — start fresh.
-        if (id === activeConversationId) onNewConversation?.();
-    }, [handleDelete, closeMenu, addToast, activeConversationId, onNewConversation]);
+    }, [actions, closeMenu]);
 
     const moveToFolder = useCallback((convo, folderId) => {
-        setConversationFolder(convo.conversation_id, folderId);
+        actions.moveToFolder(convo, folderId);
         closeMenu();
-    }, [setConversationFolder, closeMenu]);
+    }, [actions, closeMenu]);
 
-    const archiveConvo = useCallback(async (convo) => {
+    const archiveConvo = useCallback((convo) => {
         closeMenu();
-        const id = convo.conversation_id;
-        const result = await archiveConversation(convo);
-        if (!result.ok) {
-            addToast(result.message, { type: result.status === 409 ? 'warn' : 'error' });
-            return;
-        }
-        // Mirror it into the archived list if that section is already loaded,
-        // so the count and rows stay current without a refetch.
-        if (archivedLoaded) {
-            setArchived((prev) => (
-                prev.some((c) => c.conversation_id === id) ? prev : [result.summary, ...prev]
-            ));
-        }
-        // Archiving the open conversation leaves nothing selected — start fresh.
-        if (id === activeConversationId) onNewConversation?.();
-    }, [closeMenu, archiveConversation, addToast, archivedLoaded, activeConversationId, onNewConversation]);
-
-    // Load the archived list up front so its count shows on the collapsed
-    // header — you can see how many are archived without expanding.
-    useEffect(() => {
-        let cancelled = false;
-        fetch('/api/conversations/archived')
-            .then((r) => (r.ok ? r.json() : []))
-            .then((data) => { if (!cancelled) { setArchived(data); setArchivedLoaded(true); } })
-            .catch(() => { if (!cancelled) setArchivedLoaded(true); });
-        return () => { cancelled = true; };
-    }, []);
+        actions.archiveConversation(convo);
+    }, [closeMenu, actions]);
 
     const toggleArchived = useCallback(() => setShowArchived((cur) => !cur), []);
-
-    const restoreArchived = useCallback((convo) => {
-        const id = convo.conversation_id;
-        setArchived((prev) => prev.filter((c) => c.conversation_id !== id));
-        unarchiveConversation(convo);
-    }, [unarchiveConversation]);
-
-    const deleteArchived = useCallback(async (id) => {
-        const result = await handleDelete(
-            id,
-            `/api/conversations/sessions/${id}`,
-            () => true, // the active list doesn't hold archived rows; nothing to filter
-        );
-        if (!result.ok) {
-            addToast(result.message, { type: result.status === 409 ? 'warn' : 'error' });
-            return;
-        }
-        clearChatDraft(id);
-        setArchived((prev) => prev.filter((c) => c.conversation_id !== id));
-    }, [handleDelete, addToast]);
 
     const submitNewFolder = useCallback((raw) => {
         setCreatingFolder(false);
@@ -461,12 +375,12 @@ export default function ConversationsPanel({ onLoadConversation, onNewConversati
 
             <ArchivedSection
                 open={showArchived}
-                loaded={archivedLoaded}
-                items={archived}
+                loaded={actions.archivedLoaded}
+                items={actions.archived}
                 deleting={deleting}
                 onToggle={toggleArchived}
-                onRestore={restoreArchived}
-                onDelete={deleteArchived}
+                onRestore={actions.restoreArchived}
+                onDelete={actions.deleteArchived}
             />
         </div>
     );

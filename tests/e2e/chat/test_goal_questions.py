@@ -8,7 +8,9 @@ import pytest
 from playwright.sync_api import Page, expect
 
 from tests.e2e._protocol import say, slow
+from tests.e2e.conftest import BASE_URL
 from tests.e2e.pages import ChatView
+from tests.e2e.pages.phone_app import PHONE_SCREEN, phone_app
 from tests.e2e.pages.goals_view import (
     choose, goal_conversation, read_goal, update_goal, update_questions, work_on,
 )
@@ -85,25 +87,28 @@ def test_goal_question_carousel_submits_all_drafts_and_preserves_transcript(goal
     expect(view.questions).to_be_visible()
     expect(view.composer).to_have_value('')
 
-    for width, label in [(1280, 'desktop'), (390, 'mobile')]:
-        page.set_viewport_size({'width': width, 'height': 900})
-        if width == 390:
-            page.get_by_role('button', name='Collapse sidebar', exact=True).click()
-            expect(page.get_by_test_id('sidebar')).to_have_css('width', '44px')
-        expect(view.questions).to_be_visible()
-        box = view.questions.bounding_box()
-        assert box and box['x'] >= 0 and box['x'] + box['width'] <= width
-        for name in ['Send answer', 'Skip for now']:
-            control = page.get_by_role('button', name=name, exact=True).bounding_box()
-            assert control and control['x'] >= 0 and control['x'] + control['width'] <= width
-        expand = page.get_by_test_id('composer-expand-btn')
-        if expand.is_visible():
-            expand_box = expand.bounding_box()
-            skip_box = page.get_by_role('button', name='Skip for now').bounding_box()
-            assert expand_box['y'] >= skip_box['y'] + skip_box['height']
-        page.screenshot(path=str(Path(output_path) / f'goal-questions-{label}.png'))
     page.set_viewport_size({'width': 1280, 'height': 900})
-    page.get_by_role('button', name='Expand sidebar', exact=True).click()
+    expect(view.questions).to_be_visible()
+    box = view.questions.bounding_box()
+    assert box and box['x'] >= 0 and box['x'] + box['width'] <= 1280
+    for name in ['Send answer', 'Skip for now']:
+        control = page.get_by_role('button', name=name, exact=True).bounding_box()
+        assert control and control['x'] >= 0 and control['x'] + control['width'] <= 1280
+    expand = page.get_by_test_id('composer-expand-btn')
+    if expand.is_visible():
+        expand_box = expand.bounding_box()
+        skip_box = page.get_by_role('button', name='Skip for now').bounding_box()
+        assert expand_box['y'] >= skip_box['y'] + skip_box['height']
+    page.screenshot(path=str(Path(output_path) / 'goal-questions-desktop.png'))
+    with phone_app(page.context.browser, BASE_URL) as phone:
+        phone.open_chat(view.conversation_id)
+        questions = phone.page.get_by_label('Goal questions', exact=True)
+        expect(questions).to_be_visible()
+        for target in [questions, *(phone.page.get_by_role('button', name=name, exact=True)
+                                    for name in ['Send answer', 'Skip for now'])]:
+            target_box = target.bounding_box()
+            assert target_box and target_box['x'] >= 0 and target_box['x'] + target_box['width'] <= PHONE_SCREEN['width']
+        phone.page.screenshot(path=str(Path(output_path) / 'goal-questions-phone.png'))
     page.get_by_role('button', name='Aetna Dental PPO', exact=True).click()
     expect(view.questions).to_contain_text('How far can you travel?')
     expect(view.composer).to_have_value('')
@@ -201,7 +206,7 @@ def test_goal_history_loads_older_work_on_demand_and_keeps_current_state_small(g
 
 
 def test_goal_layout_keeps_editor_actions_and_long_questions_within_viewport(goal_ui) -> None:
-    """Long goal content stays usable in a small pane and a short viewport."""
+    """Long goal content stays usable down to the smallest supported window."""
     view, page = goal_ui, goal_ui.page
     title = 'Review both connected mailboxes and their existing spam and junk folders'
     choice = 'Keep anything ambiguous in my inbox and ask me before moving it'
@@ -213,12 +218,8 @@ def test_goal_layout_keeps_editor_actions_and_long_questions_within_viewport(goa
         {'id': 'next', 'question': 'How often should I check?'},
     ) + choose('wait_for_input', 'I need to know how to handle promotions.', question_ids=['spam']), 'I have a question.')
     expect(view.questions).to_be_visible()
-    for width, height in [(1280, 900), (768, 700), (390, 700), (320, 568)]:
+    for width, height in [(1280, 900), (1024, 640)]:
         page.set_viewport_size({'width': width, 'height': height})
-        collapse = page.get_by_role('button', name='Collapse sidebar', exact=True)
-        if width < 500 and collapse.is_visible():
-            collapse.click()
-            expect(page.get_by_test_id('sidebar')).to_have_css('width', '44px')
         for name in [choice, 'Skip for now', 'Hide', 'Send answer']:
             box = page.get_by_role('button', name=name, exact=True).bounding_box()
             assert box and box['x'] >= 0 and box['x'] + box['width'] <= width, name
@@ -305,13 +306,12 @@ def test_goal_tab_follows_selected_chat_restores_and_keeps_chat_draft(goal_ui, o
     page.get_by_test_id('sidebar').get_by_test_id('goal-status').first.click()
     expect(view.details).to_contain_text('Grow the neighborhood newsletter')
     view.close()
-    page.set_viewport_size({'width': 390, 'height': 844})
-    page.get_by_role('button', name='Collapse sidebar', exact=True).click()
-    expect(page.get_by_test_id('sidebar')).to_have_css('width', '44px')
     view.open()
-    assert view.details.evaluate('(e) => e.scrollWidth <= e.clientWidth')
+    page.get_by_test_id('view-tab-actions-goal').click()
+    page.get_by_role('menuitem', name='Move to left tab group', exact=True).click()
     assert tab_group(page.get_by_test_id('view-tab-goal')) == tab_group(page.get_by_test_id('view-tab-destination:conversation'))
-    page.screenshot(path=str(Path(output_path) / 'goal-tab-mobile.png'), animations='disabled')
+    assert view.details.evaluate('(e) => e.scrollWidth <= e.clientWidth')
+    page.screenshot(path=str(Path(output_path) / 'goal-tab-shared-group.png'), animations='disabled')
     view.details.get_by_role('button', name='Open chat').click()
     expect(view.composer).to_be_visible()
     expect(page.get_by_test_id('message-assistant').filter(has_text='Planned the next edition.')).to_be_visible()
@@ -350,14 +350,13 @@ def test_goal_headline_shows_each_status_with_long_plan_text(goal_ui, output_pat
         {'id': 'q2', 'question': 'What is your preferred location?'},
     ) + choose('wait_for_input', 'I need your role and location preferences.', question_ids=['q1', 'q2']), 'Two questions.')
     check('questions', '2 questions for you')
-    page.set_viewport_size({'width': 390, 'height': 844})
-    collapse = page.get_by_role('button', name='Collapse sidebar', exact=True)
-    if collapse.is_visible():
-        collapse.click()
+    page.set_viewport_size({'width': 1024, 'height': 720})
+    view.open()
     expect(headline.get_by_text('2 questions', exact=True)).to_be_visible()
     expect(headline.get_by_text('2 questions for you', exact=True)).to_be_hidden()
     assert page.get_by_test_id('chat-title-bar').evaluate('(e) => e.scrollWidth <= e.clientWidth')
-    page.screenshot(path=str(Path(output_path) / 'goal-headline-questions-mobile.png'), animations='disabled')
+    page.screenshot(path=str(Path(output_path) / 'goal-headline-questions-narrow-pane.png'), animations='disabled')
+    view.close()
     page.set_viewport_size({'width': 1280, 'height': 720})
 
     view.send(read_goal() + update_questions({'id': 'q1', 'status': 'withdrawn'}, {'id': 'q2', 'status': 'withdrawn'})

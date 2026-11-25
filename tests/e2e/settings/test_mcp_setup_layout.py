@@ -8,7 +8,7 @@ from playwright.sync_api import expect
 from tests.e2e.pages.settings_page import SettingsPage
 
 
-@pytest.mark.parametrize("width", [1280, 390])
+@pytest.mark.parametrize("width", [1280, 1024])
 def test_mcp_signin_fields_spacing_and_keyboard_disclosure(page, width):
     page.set_viewport_size({"width": width, "height": 900})
     flow = SettingsPage(page).goto_integrations().integrations.open_add_flow()

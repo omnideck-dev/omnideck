@@ -17,7 +17,6 @@ import {
     useDesktopNavigationCommands,
 } from '../features/navigation/DesktopNavigation.jsx';
 import navigationItemStyles from '../features/navigation/sidebar/SidebarNavigationItem.module.css';
-import useIsMobileViewport from '../hooks/useIsMobileViewport.js';
 import useSidebarReorder from './useSidebarReorder.js';
 import styles from './Sidebar.module.css';
 
@@ -65,16 +64,11 @@ function _normalizeNavigationOrder(order) {
     return normalized;
 }
 
-// Honors an explicit stored preference either way; only the un-set default
-// depends on viewport size, so a mobile user who expands the sidebar keeps
-// it expanded on their next visit.
-function _readCollapsed(isMobile) {
+function _readCollapsed() {
     try {
-        const stored = localStorage.getItem(COLLAPSE_KEY);
-        if (stored !== null) return stored === '1';
-        return isMobile;
+        return localStorage.getItem(COLLAPSE_KEY) === '1';
     } catch {
-        return isMobile;
+        return false;
     }
 }
 
@@ -115,8 +109,7 @@ export default function Sidebar({
     const goals = useGoals();
     const { items: conversations } = useConversationCatalog();
     const needsYouCount = useNeedsYou(conversations).length;
-    const isMobile = useIsMobileViewport();
-    const [collapsed, setCollapsed] = useState(() => _readCollapsed(isMobile));
+    const [collapsed, setCollapsed] = useState(_readCollapsed);
     const [navigationOrder, setNavigationOrder] = useState(_readNavigationOrder);
     const [navigationMenu, setNavigationMenu] = useState(null);
     const closeNavigationMenu = useCallback(() => setNavigationMenu(null), []);

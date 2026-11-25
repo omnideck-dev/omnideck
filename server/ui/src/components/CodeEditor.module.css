@@ -1,7 +1,7 @@
 /* Fill the preview content area and let CodeMirror own its own scrolling. */
 .editor {
     height: 100%;
-    font-size: 13px;
+    font-size: var(--font-size-body);
 }
 
 .editor :global(.cm-editor) {

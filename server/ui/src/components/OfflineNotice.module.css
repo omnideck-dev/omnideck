@@ -9,7 +9,7 @@
   border: 1px solid var(--warning-muted);
   border-radius: var(--radius-md);
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-caption);
 }
 
 .notice i {
@@ -20,6 +20,6 @@
 .notice strong {
   color: var(--text-primary);
   font-family: var(--font-brand);
-  font-size: 11px;
+  font-size: var(--font-size-caption);
   letter-spacing: 0.02em;
 }

@@ -20,7 +20,7 @@
 .toolbarLeft {
     display: flex;
     align-items: center;
-    flex-shrink: 0;
+    min-width: 0;
 }
 
 .toolbarCenter {
@@ -40,12 +40,13 @@
 /* File pill (left side) */
 .filePill {
     display: flex;
+    min-width: 0;
     align-items: center;
     gap: 6px;
     padding: 4px 10px;
     background: var(--border-subtle);
     border-radius: var(--radius-sm);
-    font-size: 12px;
+    font-size: var(--font-size-small);
     color: var(--text-primary);
 }
 
@@ -69,7 +70,7 @@
     align-items: center;
     gap: 4px;
     padding: 4px 10px;
-    font-size: 12px;
+    font-size: var(--font-size-small);
     border: none;
     background: transparent;
     box-shadow: none;
@@ -99,7 +100,7 @@
     align-items: center;
     gap: 4px;
     padding: 4px 10px;
-    font-size: 12px;
+    font-size: var(--font-size-small);
     border: none;
     background: transparent;
     box-shadow: none;
@@ -136,7 +137,7 @@
     margin: 0;
     padding: 16px 20px;
     font-family: var(--font-code);
-    font-size: 13px;
+    font-size: var(--font-size-body);
     line-height: 1.6;
     color: var(--text-primary);
     white-space: pre-wrap;
@@ -147,7 +148,7 @@
 /* Markdown content */
 .markdownContent {
     padding: 20px 24px;
-    font-size: 14px;
+    font-size: var(--font-size-ui);
     line-height: 1.6;
     color: var(--text-primary);
 }
@@ -166,7 +167,7 @@
 
 .markdownContent code {
     font-family: var(--font-code);
-    font-size: 12px;
+    font-size: var(--font-size-small);
     background: var(--accent-muted);
     border-radius: 3px;
     padding: 1px 4px;
@@ -196,7 +197,7 @@
 .markdownContent table {
     border-collapse: collapse;
     width: 100%;
-    font-size: 13px;
+    font-size: var(--font-size-body);
 }
 
 .markdownContent th,
@@ -245,7 +246,7 @@
     padding: 20px;
     text-align: center;
     color: var(--text-secondary);
-    font-size: 13px;
+    font-size: var(--font-size-body);
 }
 
 /* Light theme overrides */

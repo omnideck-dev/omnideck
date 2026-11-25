@@ -1,5 +1,5 @@
 import { APP_EFFECT_TYPES } from './appEffectTypes.js';
-import type { Goal } from './activityMessages.generated';
+import type { ConversationSummary, Goal } from './activityMessages.generated';
 
 export type RunIdentity = { conversationId: string; runId: string };
 
@@ -60,6 +60,9 @@ export type AppEffectPayloads = {
     [APP_EFFECT_TYPES.GOALS_SNAPSHOT]: { goals: Goal[] };
     [APP_EFFECT_TYPES.GOALS_CHANGED]: { conversationId: string; goal: Goal };
     [APP_EFFECT_TYPES.GOALS_START_REQUESTED]: { conversationId: string; objective: string };
+    [APP_EFFECT_TYPES.CONVERSATIONS_RESYNC]: null;
+    [APP_EFFECT_TYPES.CONVERSATIONS_CHANGED]: { conversation: ConversationSummary; archived: boolean };
+    [APP_EFFECT_TYPES.CONVERSATIONS_REMOVED]: { conversationId: string };
 };
 
 export type AppEffectType = keyof AppEffectPayloads;

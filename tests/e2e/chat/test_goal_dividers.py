@@ -6,6 +6,8 @@ import pytest
 from playwright.sync_api import Locator, Page, expect
 
 from tests.e2e._protocol import say, slow
+from tests.e2e.conftest import BASE_URL
+from tests.e2e.pages.phone_app import PHONE_SCREEN, phone_app
 from tests.e2e.pages.goals_view import choose, future, goal_conversation, read_goal, update_questions, work_on
 
 
@@ -141,14 +143,12 @@ def test_dividers_fit_a_narrow_chat_and_show_the_time_on_hover(goal_ui, output_p
     page.reload()
     expect(view.dividers()).to_have_count(3)
     assert view.dividers().all_text_contents() == before
-    page.set_viewport_size({'width': 390, 'height': 844})
-    collapse = page.get_by_role('button', name='Collapse sidebar', exact=True)
-    if collapse.is_visible():
-        collapse.click()
-    for transition in ['run', 'waiting', 'completed']:
-        divider = view.dividers(transition)
-        divider.scroll_into_view_if_needed()
-        box = divider.bounding_box()
-        assert box['x'] >= 0 and box['x'] + box['width'] <= 390
-        assert divider.evaluate('(node) => node.scrollWidth <= node.clientWidth')
-    page.screenshot(path=str(Path(output_path) / 'goal-dividers-mobile.png'))
+    with phone_app(page.context.browser, BASE_URL) as phone:
+        phone.open_chat(view.conversation_id)
+        for transition in ['run', 'waiting', 'completed']:
+            divider = phone.chat.locator(f'[data-testid="goal-transition"][data-transition="{transition}"]')
+            divider.scroll_into_view_if_needed()
+            box = divider.bounding_box()
+            assert box['x'] >= 0 and box['x'] + box['width'] <= PHONE_SCREEN['width']
+            assert divider.evaluate('(node) => node.scrollWidth <= node.clientWidth')
+        phone.page.screenshot(path=str(Path(output_path) / 'goal-dividers-phone.png'))

@@ -18,3 +18,7 @@
 .addButton:disabled { opacity: 0.4; cursor: not-allowed; }
 .addButton:focus-visible { outline: none; box-shadow: var(--shadow-glow); }
 .addIcon { font-size: var(--font-size-heading); }
+
+@media (pointer: coarse) {
+    .addButton { width: 44px; height: 44px; }
+}

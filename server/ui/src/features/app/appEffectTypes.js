@@ -22,4 +22,7 @@ export const APP_EFFECT_TYPES = Object.freeze(/** @type {const} */ ({
     GOALS_SNAPSHOT: 'goals/snapshot',
     GOALS_CHANGED: 'goals/changed',
     GOALS_START_REQUESTED: 'goals/startRequested',
+    CONVERSATIONS_RESYNC: 'conversations/resync',
+    CONVERSATIONS_CHANGED: 'conversations/changed',
+    CONVERSATIONS_REMOVED: 'conversations/removed',
 }));

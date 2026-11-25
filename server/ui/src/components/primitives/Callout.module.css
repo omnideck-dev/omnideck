@@ -34,14 +34,14 @@
 
 .title {
     font-family: var(--font-brand);
-    font-size: 13px;
+    font-size: var(--font-size-body);
     font-weight: 600;
     letter-spacing: 0.02em;
     color: var(--text-primary);
 }
 
 .desc {
-    font-size: 12px;
+    font-size: var(--font-size-small);
     color: var(--text-secondary);
     line-height: 1.5;
 }
@@ -75,12 +75,12 @@
     background: var(--elevated);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
-    font-size: 12px;
+    font-size: var(--font-size-small);
 }
 
 .kind {
     font-family: var(--font-code);
-    font-size: 10px;
+    font-size: var(--font-size-label);
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--text-tertiary);
@@ -92,7 +92,7 @@
 
 .footnote {
     padding: var(--sp-2) var(--sp-4) var(--sp-3);
-    font-size: 11px;
+    font-size: var(--font-size-caption);
     color: var(--text-secondary);
     border-top: 1px dashed var(--border);
 }

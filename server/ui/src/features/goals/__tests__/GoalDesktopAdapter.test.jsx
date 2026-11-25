@@ -29,7 +29,6 @@ vi.mock('../../conversation/catalog/ConversationCatalog.jsx', () => ({
 vi.mock('../../navigation/DesktopNavigation.jsx', () => ({
     useDesktopNavigationCommands: () => ({ openConversation: state.openConversation }),
 }));
-vi.mock('../../../hooks/useIsMobileViewport.js', () => ({ default: () => false }));
 const appData = vi.hoisted(() => ({ value: { features: { goals: true }, featuresLoaded: true } }));
 vi.mock('../../../contexts/AppData.jsx', () => ({ useAppData: () => appData.value }));
 

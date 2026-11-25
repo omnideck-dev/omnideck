@@ -1,0 +1,16 @@
+.shell {
+    position: relative;
+    height: 100vh;
+    height: 100dvh;
+    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) 0 env(safe-area-inset-left, 0px);
+    overflow: hidden;
+    background: var(--canvas);
+}
+
+.screen {
+    height: 100%;
+}
+
+.screen[hidden] {
+    display: none;
+}

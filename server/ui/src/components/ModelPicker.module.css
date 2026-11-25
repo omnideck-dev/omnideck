@@ -17,7 +17,7 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
     color: var(--text-primary);
-    font-size: 13px;
+    font-size: var(--font-size-body);
     font-family: var(--font-body);
     text-align: left;
     cursor: pointer;
@@ -43,7 +43,7 @@
 
 .triggerProv {
     color: var(--text-tertiary);
-    font-size: 0.78rem;
+    font-size: var(--font-size-body);
     flex-shrink: 0;
 }
 
@@ -59,7 +59,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-family: var(--font-code);
-    font-size: 12px;
+    font-size: var(--font-size-small);
 }
 
 .triggerPlaceholder {
@@ -153,7 +153,7 @@
 
 .tab {
     flex-shrink: 0;
-    font-size: 0.78rem;
+    font-size: var(--font-size-body);
     font-weight: 500;
     padding: 6px 12px;
     border-radius: var(--radius-sm) var(--radius-sm) 0 0;
@@ -200,7 +200,7 @@
     min-width: 0;
     height: 32px;
     padding: 0 10px;
-    font-size: 13px;
+    font-size: var(--font-size-body);
     font-family: var(--font-body);
     background: var(--canvas);
     border: 1px solid var(--border);
@@ -277,7 +277,7 @@
     cursor: pointer;
     text-align: left;
     color: var(--text-primary);
-    font-size: 12px;
+    font-size: var(--font-size-small);
     font-family: var(--font-code);
     transition: background 80ms ease;
 }
@@ -310,7 +310,7 @@
 
 .badge {
     font-family: var(--font-brand);
-    font-size: 10px;
+    font-size: var(--font-size-label);
     padding: 1px var(--sp-1);
     background: var(--border);
     border-radius: var(--radius-sm);
@@ -320,7 +320,7 @@
 
 .capBadge {
     font-family: var(--font-brand);
-    font-size: 10px;
+    font-size: var(--font-size-label);
     padding: 1px var(--sp-1);
     background: var(--accent-muted);
     border-radius: var(--radius-sm);
@@ -330,7 +330,7 @@
 
 .empty {
     padding: 0.7rem 0.85rem;
-    font-size: 0.8rem;
+    font-size: var(--font-size-body);
     color: var(--text-tertiary);
     font-style: italic;
 }

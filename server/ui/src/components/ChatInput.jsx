@@ -28,7 +28,7 @@ function _base64Bytes(b64) {
 
 const NO_MESSAGES = [];
 
-function ChatInput({ onSend, onSendAnswers, queue = NO_MESSAGES, returned = NO_MESSAGES, onRemoveQueued, onReturnedConsumed, onStop, isStreaming, isOffline = false, stopRequested = false, attachment, draft, onDraftConsumed, selectedProfileId, onProfileChange, profileRefreshSignal, conversationId, onRequestGoal, goal }) {
+function ChatInput({ onSend, onSendAnswers, queue = NO_MESSAGES, returned = NO_MESSAGES, onRemoveQueued, onReturnedConsumed, onStop, isStreaming, isOffline = false, stopRequested = false, attachment, draft, onDraftConsumed, selectedProfileId, onProfileChange, profileRefreshSignal, conversationId, onRequestGoal, goal, submitOnEnter = true }) {
     const [chatMessage, setChatMessage] = useState(() => loadChatDraft(conversationId));
     const goalComposer = useGoalComposer({ goal, conversationId, queue, onSendAnswers });
     const answering = goalComposer.answering;
@@ -256,16 +256,19 @@ function ChatInput({ onSend, onSendAnswers, queue = NO_MESSAGES, returned = NO_M
                 return;
             }
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                e.preventDefault();
                 if (showSlashHint) {
+                    e.preventDefault();
                     pickSlashCommand(slashCommands[activeSlash].command);
                     return;
                 }
+                if (!submitOnEnter) return;
+                e.preventDefault();
                 handleSubmit(e);
             }
         },
         onPaste: handlePaste,
         placeholder,
+        enterKeyHint: submitOnEnter ? 'send' : 'enter',
         disabled: stopRequested,
     };
 

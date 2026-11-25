@@ -247,26 +247,3 @@
     border-color: var(--accent);
     box-shadow: var(--shadow-glow);
 }
-
-@media (max-width: 520px) {
-    .container {
-        padding: var(--sp-5) var(--sp-4);
-    }
-
-    .defaultAgentRow {
-        flex-wrap: wrap;
-    }
-
-    .defaultAgentRow .select {
-        width: calc(100% - 28px - var(--sp-3));
-        margin-left: calc(28px + var(--sp-3));
-    }
-
-    .modelBody {
-        margin-left: 0;
-    }
-
-    .numberInput {
-        width: 96px;
-    }
-}

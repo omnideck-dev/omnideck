@@ -128,7 +128,7 @@ def test_fake_integration_full_lifecycle(page: Page) -> None:
     # Both shared split-panel consumers must fit without horizontal clipping.
     original_viewport = page.viewport_size
     assert original_viewport is not None
-    for width in (1440, 700, 390):
+    for width in (1440, 1024):
         page.set_viewport_size({"width": width, "height": 900})
         tab.change_tools_button(_ID).scroll_into_view_if_needed()
         expect(tab.change_tools_button(_ID)).to_be_in_viewport()
@@ -141,7 +141,7 @@ def test_fake_integration_full_lifecycle(page: Page) -> None:
     tab.change_tools_button(_ID).click()
     # A contained collection must not regress to a dark toolbar band.
     picker = page.get_by_test_id("integration-operation-picker")
-    for width in (1440, 700, 390):
+    for width in (1440, 1024):
         page.set_viewport_size({"width": width, "height": 900})
         expect(page.get_by_role("button", name="Save changes")).to_be_in_viewport()
         assert picker.evaluate("element => element.scrollWidth <= element.clientWidth + 1")

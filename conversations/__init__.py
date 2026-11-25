@@ -10,7 +10,7 @@ from ._folders import (
     list_folders,
     update_folder,
 )
-from ._models import ConversationResumeState, ConversationSummary, Folder
+from ._models import ConversationChange, ConversationResumeState, ConversationSummary, Folder
 from ._terminal import TerminalWriter, load_terminal
 from ._store import (
     archive_conversation,
@@ -31,12 +31,14 @@ from ._store import (
     save_conversation_title,
     save_loaded_skills,
     save_preview_state,
+    subscribe_conversation_changes,
     unarchive_conversation,
 )
 from ._title_generation import generate_conversation_title
 
 __all__ = [
     "BrowserTabsWriter",
+    "ConversationChange",
     "ConversationResumeState",
     "ConversationScope",
     "ConversationStore",
@@ -70,6 +72,7 @@ __all__ = [
     "save_conversation_title",
     "save_loaded_skills",
     "save_preview_state",
+    "subscribe_conversation_changes",
     "unarchive_conversation",
     "update_folder",
 ]

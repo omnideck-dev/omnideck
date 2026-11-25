@@ -15,7 +15,7 @@
     padding: 0 14px;
     border-radius: var(--radius-md);
     font-family: var(--font-body);
-    font-size: 13px;
+    font-size: var(--font-size-body);
     font-weight: 500;
     white-space: nowrap;
     border: 1px solid transparent;
@@ -76,4 +76,9 @@
     padding-bottom: var(--sp-2);
     white-space: normal;
     overflow-wrap: anywhere;
+}
+
+@media (pointer: coarse) {
+    .btn { height: 44px; }
+    .wrap { min-height: 44px; }
 }

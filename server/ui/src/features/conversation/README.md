@@ -92,7 +92,9 @@ generated activity message types before it becomes an application effect:
 `activityReducer`; the goals state subscribes to the goal and run effects. The
 messages, decoder and reducer are included in the frontend TypeScript
 checking boundary. Native EventSource reconnects automatically; each
-connection starts with snapshots. The server caps each subscriber at 128
+connection starts with snapshots. Browsers can give up on a connection while a
+phone has the page paused, so the app opens a new one when the page becomes
+visible again or the browser comes back online and the old one has closed. The server caps each subscriber at 128
 pending updates and closes the connection on overflow or a socket write taking
 longer than 30 seconds. Disconnect cleanup removes observers without stopping
 runtime-owned work. The reducer reconciles known runs without restoring

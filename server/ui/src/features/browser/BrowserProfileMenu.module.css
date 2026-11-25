@@ -199,13 +199,3 @@
     flex: 0 0 auto;
     text-align: center;
 }
-
-@media (max-width: 640px) {
-    .triggerName {
-        display: none;
-    }
-
-    .trigger {
-        padding: 0 6px;
-    }
-}

@@ -29,7 +29,13 @@ people; this file is the index an agent greps **before** building UI.
    internal separators; do not box every subsection or alternate surface levels
    just to divide content. Preserve input boundaries, readable controls, hover
    feedback, and visible keyboard focus.
-7. These are app-wide design rules, not a record of which feature adopted them
+7. The full app has a 1024px minimum width and no narrow-screen layouts. Do not add
+   `max-width` media queries; size a component to its own space with a container
+   query when it must adapt. Phones load the separate phone app in
+   `features/phone/`, which reuses the shared components. Use `pointer: coarse`
+   rules in shared components to give touch screens 44px targets and 16px text in
+   fields, so phones do not zoom in when a field gets focus.
+8. These are app-wide design rules, not a record of which feature adopted them
    first. Update the relevant rule and showcase when a pattern changes; do not
    append contradictory feature-specific exceptions. Existing screens may lag
    behind the guide; apply the rules to new work and screens being revised.
@@ -54,7 +60,7 @@ app, it goes in `primitives/`. Otherwise it goes in `components/`.
 | Need | Component | Import | Use when |
 |---|---|---|---|
 | Text button | `Button` | `primitives/Button.jsx` | `filled` for one primary action/surface; `ghost` for quiet secondary actions, including Cancel beside Save and collection bulk actions; `outline` when a peer action needs stronger definition; `danger` for destructive actions. The API defaults to `outline`, so choose the variant explicitly. Icon via children: `<Button><Icon/> Label</Button>`. For async actions pass `loading` and optionally `loadingLabel`. Use `wrap` for content-driven choices with long labels; the button grows from its 32px minimum height. |
-| Icon-only button | `IconButton` | `primitives/IconButton.jsx` | `size="sm"` (28px), `md` (32px) beside text buttons; icon as child. Match ghost buttons: `--radius-md`, `--text-secondary`, `--surface` hover. |
+| Icon-only button | `IconButton` | `primitives/IconButton.jsx` | `size="sm"` (28px), `md` (32px) beside text buttons, `lg` (44px) in the phone app; icon as child. Match ghost buttons: `--radius-md`, `--text-secondary`, `--surface` hover. |
 | Icon picker popover | `IconPickerPopover` | `primitives/IconPickerPopover.jsx` | Curated Bootstrap icon selection shared by folders and profile identity controls. Anchor it with `anchorRef` or `anchorRect`; supply `icons`, `current`, `onPick`, and `onClose`. |
 | Select / dropdown | `Select` | `primitives/Select.jsx` | Canonical application-rendered select-only combobox. Pass `options`, `value`, `onChange`, and an accessible label. Native `<select>` is prohibited because host-rendered menus cannot satisfy the shared visual contract. |
 | Composer command hint | `SlashHint` | `components/SlashHint.jsx` | Hint above a composer while its text starts with `/`. Pass `id`, `commands=[{command, description}]`, `activeIndex` and `onPick(command)`. Focus stays in the text box. While the hint shows, the text box sets `aria-autocomplete="list"`, `aria-controls` to the hint and `aria-activedescendant` to the active option (`slashOptionId(id, index)`). Enter picks the active command, Escape hides the hint, and clicking a row picks it. Arrow keys move the active option only when there is more than one command. Hide it when no command is available. |
@@ -76,7 +82,7 @@ app, it goes in `primitives/`. Otherwise it goes in `components/`.
 | List row | `ListItem` | `components/ListItem.jsx` | `active`, `onClick`, optional `icon`, `name`/`description`/`badges` (or `children`). Rounded boundary with accent outline + muted background on selection; no feature-level restyling |
 | Expandable selected row | `ExpandableSelectionRow` | `components/ExpandableSelectionRow.jsx` | Selected skills, tools and integrations with wrapping `name`/`description`, leading `icon`, disclosed `children` and required `onRemove`. One centered header aligns the chevron and separate remove button in matching 32px slots. Row owns expansion and appearance; parent owns selection. |
 | Selected tool grid | `SelectionToolList` | `components/skills/SelectionToolList.jsx` | Read-only responsive columns inside an expanded selection row. MCP tools show titles only; native integration operations retain short descriptions. Clipped labels reveal plain text on hover, focus or tap through the shared Popover. No individual-tool disclosure or modal. |
-| Master-detail layout | `SplitPanel` | `components/SplitPanel.jsx` | `SplitPanel` + `.List` + `.Detail`; `.Header` takes a title as children and optional `actions`. Owns outer `--sp-5` gutters: hosts must not add duplicate outer padding. Spaced columns with one divider; list is 34% (min 260px), 250px below 860px. Below 640px, one stacked scroll area. **List-on-left/detail-on-right only** |
+| Master-detail layout | `SplitPanel` | `components/SplitPanel.jsx` | `SplitPanel` + `.List` + `.Detail`; `.Header` takes a title as children and optional `actions`. Owns outer `--sp-5` gutters: hosts must not add duplicate outer padding. Spaced columns with one divider; list is 34% (min 260px). **List-on-left/detail-on-right only** |
 | Connection status | `ConnectionStatus` | `components/ConnectionStatus.jsx` | Existing explicit status/test-result component used by provider settings. Do not add it as permanent healthy reassurance on revised screens; use Exception-first status below. Keep Configured distinct from verified Connected. Existing consumers have not all migrated. |
 | Draggable split resizer | `SplitHandle` | `components/SplitHandle.jsx` | `onDrag(position)` — for resizable splits (e.g. chat + preview) |
 | Tab strip | `TabStrip` | `components/TabStrip.jsx` | Accessible tab chrome with overflow scrolling, keyboard selection, close controls, and per-tab action menus. Pass `tabs`, `activeTab`, `onTabChange`, and `onCloseTab`; content is owned separately. |
@@ -94,7 +100,7 @@ uses it). These have **no shared primitive yet** — replicating is the establis
 pattern; consider extracting a primitive when 3 or more copies exist.
 | Pattern | Showcase section | How |
 |---|---|---|
-| Editor toolbar | `Editor Toolbar` | Leading ghost Back; trailing status, dirty-only ghost Discard, filled Save, then overflow. Anchor Save and overflow so transient feedback and Discard do not move them. New items use Create plus the item name and omit saved-item actions. Below 640px put status on a second, start-aligned line. Show success only after saving, fading out by 3s (no animation under reduced motion); unsaved/error feedback persists. |
+| Editor toolbar | `Editor Toolbar` | Leading ghost Back; trailing status, dirty-only ghost Discard, filled Save, then overflow. Anchor Save and overflow so transient feedback and Discard do not move them. New items use Create plus the item name and omit saved-item actions. Show success only after saving, fading out by 3s (no animation under reduced motion); unsaved/error feedback persists. |
 | Action menu | `Action Menu` | Use the `Menu` primitive. `Button variant="menuItem"` and `ConfirmButton appearance="menuItem"` own the row appearance. Left-aligned icon and label, full-width 32px rows, readable primary text and surface hover. Destructive actions go last, after a subtle divider. Keep the menu open while a confirmation is armed. Use an ellipsis on actions that open another dialog. |
 | Sidebar count pill | `Sidebar` | Only the Goals row has one: how many goals need the user. A small pill with `--warning` text on `--warning-muted`, 18px tall, 11px semibold, hidden at zero. Expanded, it sits at the row's right end; collapsed, a 14px version sits on the icon's top right corner. Tooltip "1 goal needs you" or "N goals need you"; the row's name becomes "Goals, N need you". No other row gets a count. |
 | Visually hidden text | none | Text only screen readers read, such as a plan step's status. Copy this rule into the module: `position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0`. |
@@ -155,5 +161,6 @@ Use the variable, never the literal.
 - **Z-index:** `--z-sticky` 10 · `--z-flyout` 100 · `--z-toast` 1000 · `--z-modal` 9999 · `--z-wizard` 10000 · `--z-tooltip` 10001
 - **Fonts:** `--font-brand` (mono wordmark/uppercase) · `--font-body` (UI) · `--font-code` (code/paths)
 - **Type sizes:** `--font-size-label` 10 · `--font-size-caption` 11 · `--font-size-small` 12 · `--font-size-body` 13 · `--font-size-ui` 14 · `--font-size-heading` 18
+- **Phone type sizes:** `--font-size-label` 12 · `--font-size-caption` 12 · `--font-size-small` 13 · `--font-size-body` 15 · `--font-size-ui` 16 · `--font-size-heading` 22, set in `features/phone/phoneTokens.css`. Text uses these tokens, never fixed pixel sizes, so shared components follow the phone values. Icon glyphs and the 16px touch-field rule keep fixed sizes.
 - **Layout:** `--header-height` 36 · `--sidebar-width` 44 · `--flyout-width` 270
 - **Motion:** `--ease` · `--ease-out` (use for transitions)

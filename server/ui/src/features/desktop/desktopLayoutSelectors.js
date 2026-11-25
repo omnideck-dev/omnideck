@@ -15,17 +15,17 @@ export function nextActiveViewIdAfterClose(tabGroup, closingViewId) {
     return remainingIds[index] || remainingIds[index - 1] || null;
 }
 
-/** Tab groups with room on screen; mobile shows left, or right if left is empty. */
-export function visibleTabGroupIds(model, isMobile) {
+/** Tab groups that hold views. */
+export function visibleTabGroupIds(model) {
     const left = model.tabGroups.left.viewIds.length > 0;
     const right = model.tabGroups.right.viewIds.length > 0;
-    return [left && 'left', right && (!isMobile || !left) && 'right'].filter(Boolean);
+    return [left && 'left', right && 'right'].filter(Boolean);
 }
 
 /** Derive presentation visibility without treating keyboard focus as visibility. */
-export function visibleViewIds(model, isMobile) {
+export function visibleViewIds(model) {
     if (model.fullscreenViewId) return [model.fullscreenViewId];
-    const activeIds = visibleTabGroupIds(model, isMobile)
+    const activeIds = visibleTabGroupIds(model)
         .map((id) => model.tabGroups[id].activeViewId);
     return Object.keys(model.openViewsById).filter((id) => (
         Boolean(model.floatingByViewId[id]) || activeIds.includes(id)

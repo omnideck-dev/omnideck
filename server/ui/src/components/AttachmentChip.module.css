@@ -47,7 +47,7 @@
   display: flex;
   align-items: baseline;
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--font-size-small);
   font-weight: 500;
   color: var(--text-primary);
 }
@@ -64,7 +64,7 @@
 
 .sub {
   font-family: var(--font-code);
-  font-size: 10px;
+  font-size: var(--font-size-label);
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
 }

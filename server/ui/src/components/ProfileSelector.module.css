@@ -1,6 +1,6 @@
 .select {
     min-width: 0;
-    --select-font-size: 13px;
+    --select-font-size: var(--font-size-body);
 }
 
 /* Style the trigger as a tinted pill chip, matching the composer's other

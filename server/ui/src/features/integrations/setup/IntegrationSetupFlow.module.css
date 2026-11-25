@@ -501,26 +501,3 @@
     gap: var(--sp-2);
     margin-left: auto;
 }
-
-@media (max-width: 720px) {
-    .progressStep + .progressStep::before {
-        width: 16px;
-        margin: 0 6px;
-    }
-
-    .progressStep > :last-child {
-        display: none;
-    }
-
-    .catalogGrid,
-    .connectionCard,
-    .fieldPair,
-    .reviewGrid {
-        grid-template-columns: 1fr;
-    }
-
-    .connectionCard > *,
-    .reviewTools {
-        grid-column: 1;
-    }
-}

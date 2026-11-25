@@ -12,13 +12,14 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from config import load_config
 
-from ._models import ConversationSummary
+from ._models import ConversationChange, ConversationSummary
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,49 @@ def _get_archived_conv_dir(conversation_id: str) -> Path:
     return _get_archived_dir() / conversation_id
 
 
+# -- Change notification -------------------------------------------------------
+
+_observers: list[Callable[[ConversationChange], None]] = []
+
+
+def subscribe_conversation_changes(observer: Callable[[ConversationChange], None]) -> Callable[[], None]:
+    """Observe changes to listed chats and return a subscription cleanup."""
+    _observers.append(observer)
+    return lambda: _observers.remove(observer)
+
+
+def _current_change(conversation_id: str) -> ConversationChange:
+    for conv_dir, archived in (
+        (_get_conv_dir(conversation_id), False),
+        (_get_archived_conv_dir(conversation_id), True),
+    ):
+        summary = _summarize_conversation(conv_dir)
+        if summary is not None:
+            return ConversationChange(conversation_id=conversation_id, summary=summary, archived=archived)
+    return ConversationChange(conversation_id=conversation_id)
+
+
+def notify_conversation_changed(conversation_id: str) -> None:
+    """Tell observers how a listed chat looks now. Chats nested below the top level are never listed."""
+    if not _observers or _get_conv_dir(conversation_id).parent != _get_conversations_dir():
+        return
+    try:
+        change = _current_change(conversation_id)
+    except Exception:
+        logger.exception("Could not read changed conversation %s", conversation_id)
+        return
+    for observer in tuple(_observers):
+        try:
+            observer(change)
+        except Exception:
+            logger.exception("Conversation change observer failed for %s", conversation_id)
+
+
+def is_root_user_message(event: dict[str, Any]) -> bool:
+    """Whether a persisted event opens or nudges a turn of the root agent."""
+    return event.get("type") == "user_message" and (event.get("agent_id") or "").count(".") == 2
+
+
 # -- Conversation metadata persistence ---------------------------------------
 
 
@@ -83,6 +127,11 @@ def load_loaded_skills(conversation_id: str) -> set[str]:
 
 def save_conversation_title(conversation_id: str, title: str) -> None:
     """Save or update the title for a conversation."""
+    _write_title(conversation_id, title)
+    notify_conversation_changed(conversation_id)
+
+
+def _write_title(conversation_id: str, title: str) -> None:
     conv_dir = _get_conv_dir(conversation_id)
     conv_dir.mkdir(parents=True, exist_ok=True)
 
@@ -121,6 +170,7 @@ def save_conversation_pinned(conversation_id: str, pinned: bool) -> None:
     tmp = metadata_path.with_suffix(".tmp")
     tmp.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
     tmp.replace(metadata_path)
+    notify_conversation_changed(conversation_id)
 
 
 def save_conversation_folder(conversation_id: str, folder_id: str | None) -> None:
@@ -151,6 +201,7 @@ def save_conversation_folder(conversation_id: str, folder_id: str | None) -> Non
     tmp = metadata_path.with_suffix(".tmp")
     tmp.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
     tmp.replace(metadata_path)
+    notify_conversation_changed(conversation_id)
 
 
 def clear_folder_from_conversations(folder_id: str) -> int:
@@ -265,13 +316,7 @@ def _summarize_conversation(entry: Path) -> ConversationSummary | None:
             e = json.loads(raw)
             if not first_event_ts:
                 first_event_ts = e.get("timestamp", "") or ""
-            # Count user messages only on the root agent so nudges to
-            # sub-agents don't inflate the turn count. Root agent ids look
-            # like ``root.<profile>.<n>``; sub-agents append further
-            # segments, so the depth is the number of dots minus two.
-            if e.get("type") == "user_message" and (
-                e.get("agent_id") or ""
-            ).count(".") == 2:
+            if is_root_user_message(e):
                 turn_count += 1
                 if not first_msg:
                     first_msg = e.get("content", "") or ""
@@ -347,8 +392,9 @@ def ensure_conversation(conversation_id: str, *, title: str, profile_id: str) ->
     if not events_path.exists():
         events_path.touch()
     if not load_conversation_metadata(conversation_id).get("title"):
-        save_conversation_title(conversation_id, title[:50])
+        _write_title(conversation_id, title[:50])
     save_conversation_profile(conversation_id, profile_id)
+    notify_conversation_changed(conversation_id)
 
 
 def _prune_empty_parents(conv_dir: Path) -> None:
@@ -381,6 +427,7 @@ def archive_conversation(conversation_id: str) -> bool:
         shutil.rmtree(dest)
     shutil.move(str(conv_dir), str(dest))
     _prune_empty_parents(conv_dir)
+    notify_conversation_changed(conversation_id)
     return True
 
 
@@ -400,6 +447,7 @@ def unarchive_conversation(conversation_id: str) -> bool:
         shutil.rmtree(dest)
     shutil.move(str(src), str(dest))
     _prune_empty_parents(src)
+    notify_conversation_changed(conversation_id)
     return True
 
 
@@ -412,5 +460,6 @@ def delete_conversation(conversation_id: str) -> bool:
         if conv_dir.exists():
             shutil.rmtree(conv_dir)
             _prune_empty_parents(conv_dir)
+            notify_conversation_changed(conversation_id)
             return True
     return False

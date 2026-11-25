@@ -2,14 +2,15 @@ import { useState, useEffect } from 'react';
 import styles from './FilePreview.module.css';
 import FileIcon from './icons/FileIcon.jsx';
 import ImageIcon from './icons/ImageIcon.jsx';
-import DownloadIcon from './icons/DownloadIcon.jsx';
 import SourceIcon from './icons/SourceIcon.jsx';
 import EyeIcon from './icons/EyeIcon.jsx';
 import CopyIcon from './icons/CopyIcon.jsx';
 import SaveIcon from './icons/SaveIcon.jsx';
 import RefreshIcon from './icons/RefreshIcon.jsx';
 import FileContentRenderer from './FileContentRenderer.jsx';
+import FileDownloadButton from './FileDownloadButton.jsx';
 import IconButton from './primitives/IconButton.jsx';
+import { useFileControls } from './FileControls.jsx';
 import useFileContent from '../hooks/useFileContent.js';
 
 function getFileIcon(contentType, filename) {
@@ -21,6 +22,8 @@ function getFileIcon(contentType, filename) {
     }
     return <FileIcon size={14} />;
 }
+
+const DESKTOP_PREVIEW = { Actions: FileDownloadButton };
 
 /**
  * A file preview rendered inside its stable artifact tab.
@@ -52,6 +55,7 @@ export default function FilePreview({ item }) {
         stale,
         refresh,
     } = useFileContent(item);
+    const { Actions } = useFileControls()?.preview ?? DESKTOP_PREVIEW;
 
     const [copied, setCopied] = useState(false);
     const onCopyClick = async () => {
@@ -154,15 +158,7 @@ export default function FilePreview({ item }) {
                             <CopyIcon size={14} />
                         </IconButton>
                     )}
-                    <IconButton
-                        size="sm"
-                        onClick={handleDownload}
-                        title="Download"
-                        aria-label="Download file"
-                        data-testid="file-download"
-                    >
-                        <DownloadIcon size={14} />
-                    </IconButton>
+                    {Actions && <Actions item={item} download={handleDownload} />}
                 </div>
             </div>
 

@@ -37,7 +37,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-full);
   font-family: var(--font-code);
-  font-size: 10.5px;
+  font-size: var(--font-size-caption);
   letter-spacing: 0.04em;
   color: var(--text-tertiary);
   transition: color 0.15s var(--ease), background 0.15s var(--ease);
@@ -64,7 +64,7 @@
 }
 
 .intro {
-  font-size: 13px;
+  font-size: var(--font-size-body);
   color: var(--text-secondary);
   margin: 0 0 var(--sp-4);
 }
@@ -81,14 +81,14 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   font-family: var(--font-code);
-  font-size: 11.5px;
+  font-size: var(--font-size-small);
   line-height: 1.6;
 }
 .stats dt {
   color: var(--text-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  font-size: 10px;
+  font-size: var(--font-size-label);
   margin: 0;
 }
 .stats dd {
@@ -107,14 +107,14 @@
 
 /* Content blocks */
 .blockLabel {
-  font-size: 13px;
+  font-size: var(--font-size-body);
   color: var(--text-primary);
   font-weight: 500;
   margin: var(--sp-4) 0 var(--sp-1);
 }
 .blockLabel:first-of-type { margin-top: 0; }
 .blockHelp {
-  font-size: 12px;
+  font-size: var(--font-size-small);
   color: var(--text-tertiary);
   margin: 0 0 var(--sp-2);
 }
@@ -125,7 +125,7 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   font-family: var(--font-code);
-  font-size: 12px;
+  font-size: var(--font-size-small);
   line-height: 1.55;
   color: var(--text-secondary);
   white-space: pre-wrap;

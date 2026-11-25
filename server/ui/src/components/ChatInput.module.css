@@ -46,7 +46,7 @@
   background: transparent;
   color: var(--text-primary);
   font-family: var(--font-body);
-  font-size: 13.5px;
+  font-size: var(--font-size-ui);
   /* Pinned to match LINE_HEIGHT_PX in JS (13.5 * 1.48 ≈ 20px per row). */
   line-height: 1.48;
   outline: none;
@@ -205,4 +205,10 @@
 .customInput.expandedInput {
   flex: 1;
   overflow-y: auto;
+}
+
+@media (pointer: coarse) {
+    .customInput { font-size: 16px; }
+    .sendButton { width: 44px; height: 44px; }
+    .expandButton { width: 44px; height: 44px; }
 }

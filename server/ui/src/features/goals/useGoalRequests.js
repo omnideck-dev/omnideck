@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { useConversationSessionState } from '../conversation/session/ConversationSession.jsx';
-import { useGoalDesktopActions } from './GoalDesktopAdapter.jsx';
 import { isGoalOpen, useGoals } from './GoalsState.jsx';
 
-export default function useGoalRequests(conversationId) {
+export default function useGoalRequests(conversationId, { openGoal } = {}) {
     const { enabled, goalsByConversation, startRequest, clearStartRequest } = useGoals();
     const { isOffline, stopRequested } = useConversationSessionState();
-    const { openGoal } = useGoalDesktopActions();
     const [request, setRequest] = useState(null);
 
     useEffect(() => {
@@ -23,7 +21,7 @@ export default function useGoalRequests(conversationId) {
     const requestGoal = useCallback((next = {}) => {
         if (!enabled || isOffline || stopRequested) return;
         if (isGoalOpen(goalsByConversation[conversationId]) && !next.objective?.trim()) {
-            openGoal(conversationId);
+            openGoal?.(conversationId);
             next.onStarted?.();
             return;
         }

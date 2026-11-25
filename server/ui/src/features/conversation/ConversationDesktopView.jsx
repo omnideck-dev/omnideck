@@ -69,7 +69,7 @@ export default function ConversationDesktopView({ view, tabGroupId }) {
     const navigationTarget = navigationTargetForView(view);
     const mode = navigationTarget?.kind || 'chat';
     const selectedAgentId = navigationTarget?.agentId || null;
-    const { request: goalRequest, requestGoal, closeRequest } = useGoalRequests(activeConversationId);
+    const { request: goalRequest, requestGoal, closeRequest } = useGoalRequests(activeConversationId, { openGoal });
 
     const handleSend = useCallback((message, attachments) => (
         sendMessage(message, attachments, selectedProfileId)

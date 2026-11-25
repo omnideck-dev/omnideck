@@ -148,7 +148,3 @@
 .empty > i { font-size: 36px; }
 .empty strong { color: var(--text-primary); }
 .error { color: var(--danger); }
-
-@media (max-width: 700px) {
-    .grid { grid-template-columns: 1fr; }
-}
