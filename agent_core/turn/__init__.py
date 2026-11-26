@@ -2,7 +2,6 @@
 
 This package provides:
 - ``AgentExecutor``: Execution engine driving the chat/tool loop.
-- ``turn_scope``: Async context manager for standalone execution bindings.
 - Accessors for the supplied execution context and cooperative stop signal.
 """
 
@@ -12,7 +11,6 @@ from agent_core.control import StopRequestedError
 from ._turn import (
     check_stop,
     get_conversation_id,
-    turn_scope,
 )
 
 __all__ = [
@@ -24,5 +22,4 @@ __all__ = [
     "ExecutionContext",
     "get_execution_context",
     "ExecutionResult",
-    "turn_scope",
 ]

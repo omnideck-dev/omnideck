@@ -2,8 +2,8 @@
 
 Exposes an asyncio-friendly API to publish AgentEvent events without threading
 a sink handle through every call. A contextvars.ContextVar holds the event
-sink bound for the current coroutine context (set by turn_scope for the
-duration of a turn); publish_event writes each event into it.
+sink bound for the current coroutine context; publish_event writes each
+event into it.
 
 Guidelines:
 - The bound target is an EventSink — structurally, anything with add_event.
@@ -50,7 +50,7 @@ class EventSink(Protocol):
     def unsubscribe(self, handler: Callable[[AgentEvent], object]) -> None: ...
 
 
-# Event sink bound for the current coroutine context. Set by turn_scope.
+# Event sink bound for the current coroutine context.
 # publish_event routes through the sink's add_event so the in-memory log is
 # updated synchronously before observers fan out — no race.
 _current_conversation: ContextVar[EventSink | None] = ContextVar("assistant_events_current_conversation", default=None)

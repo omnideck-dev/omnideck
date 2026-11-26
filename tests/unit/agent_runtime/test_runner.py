@@ -156,7 +156,7 @@ async def test_manager_stop_before_concrete_runner_starts_skips_setup(
 async def test_setup_failure_is_persisted_and_ends_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Fallible setup runs inside turn_scope after persistence is subscribed."""
+    """Fallible setup runs after persistence is subscribed."""
     conversation_id = "runner-setup-failure"
 
     def _explode(_profile_id: str) -> None:

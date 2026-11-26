@@ -6,7 +6,6 @@ invocation order, history mutation, and stop/error propagation.
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import AsyncGenerator, Callable
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -279,8 +278,7 @@ async def test_streaming_deltas_published(_patch_publish_event: MagicMock) -> No
     result = execution.output
 
     assert result == "Hello!"
-    # Two content delta events stream before the final response;
-    # turn_end belongs to turn_scope, not AgentExecutor.execute.
+    # Two content delta events stream before the final response.
     delta_calls = [
         c
         for c in _patch_publish_event.call_args_list
@@ -723,9 +721,7 @@ async def test_provider_error_publishes_error_event(_patch_publish_event: MagicM
 
 
 async def test_pre_set_external_stop_skips_provider_request() -> None:
-    """A stop recorded before turn_scope prevents the first provider call."""
-    from agent_core.turn import turn_scope
-
+    """A stop recorded before execution starts prevents the first provider call."""
     class _NeverCalledProvider:
         def __init__(self) -> None:
             self.calls = 0
@@ -735,25 +731,19 @@ async def test_pre_set_external_stop_skips_provider_request() -> None:
             yield _text_response("unreachable")
 
     provider = _NeverCalledProvider()
-    stop_event = asyncio.Event()
-    stop_event.set()
     history = ConversationHistory([{"role": "user", "content": "hi"}])
+    inputs = execution_inputs(provider, 1)
+    inputs["context"].control.stop()
 
-    async with turn_scope(
-        history,
-        conversation_id="c-early-stop",
-        stop_event=stop_event,
-    ):
-        with pytest.raises(StopRequestedError):
-            execution = await AgentExecutor().execute(history=history, agent=_make_agent(), **execution_inputs(provider, 1))
-            execution.raise_for_status()
+    with pytest.raises(StopRequestedError):
+        execution = await AgentExecutor().execute(history=history, agent=_make_agent(), **inputs)
+        execution.raise_for_status()
 
     assert provider.calls == 0
 
 
 async def test_stop_mid_stream_persists_partial_iteration(_patch_publish_event: MagicMock) -> None:
     """Stopping mid-stream persists the streamed-so-far text as a stopped iteration."""
-    from agent_core.turn import turn_scope
     from agent_core.control import get_execution_control
 
     class _StreamThenStop:
@@ -767,10 +757,9 @@ async def test_stop_mid_stream_persists_partial_iteration(_patch_publish_event: 
 
     history = ConversationHistory([{"role": "user", "content": "hi"}])
     provider = _StreamThenStop()
-    async with turn_scope(history, conversation_id="c-stop"):
-        with pytest.raises(StopRequestedError):
-            execution = await AgentExecutor().execute(history=history, agent=_make_agent(), **execution_inputs(provider, 1))
-            execution.raise_for_status()
+    with pytest.raises(StopRequestedError):
+        execution = await AgentExecutor().execute(history=history, agent=_make_agent(), **execution_inputs(provider, 1))
+        execution.raise_for_status()
 
     stopped = [
         c.args[0]
@@ -786,7 +775,6 @@ async def test_stop_during_thinking_only_stream_keeps_history_clean(_patch_publi
     iteration event but never derives into provider-facing history — an
     assistant message with no content and no tool calls would be rejected
     by OpenAI-style providers on the next turn."""
-    from agent_core.turn import turn_scope
     from agent_core.control import get_execution_control
 
     class _ThinkThenStop:
@@ -800,10 +788,9 @@ async def test_stop_during_thinking_only_stream_keeps_history_clean(_patch_publi
 
     history = ConversationHistory([{"role": "user", "content": "hi"}])
     provider = _ThinkThenStop()
-    async with turn_scope(history, conversation_id="c-think-stop"):
-        with pytest.raises(StopRequestedError):
-            execution = await AgentExecutor().execute(history=history, agent=_make_agent(), **execution_inputs(provider, 1))
-            execution.raise_for_status()
+    with pytest.raises(StopRequestedError):
+        execution = await AgentExecutor().execute(history=history, agent=_make_agent(), **execution_inputs(provider, 1))
+        execution.raise_for_status()
 
     # The event log keeps the partial for the UI...
     stopped = [
@@ -823,7 +810,6 @@ async def test_stop_after_final_delta_persists_full_answer(_patch_publish_event:
     """A stop landing between the final delta and the iteration publish (the
     after_model window) must not lose the fully-streamed answer."""
     from agent_core.hooks import StopHook
-    from agent_core.turn import turn_scope
     from agent_core.control import get_execution_control
 
     class _StreamAll:
@@ -839,10 +825,9 @@ async def test_stop_after_final_delta_persists_full_answer(_patch_publish_event:
 
     history = ConversationHistory([{"role": "user", "content": "hi"}])
     provider = _StreamAll()
-    async with turn_scope(history, conversation_id="c-late-stop"):
-        with pytest.raises(StopRequestedError):
-            execution = await AgentExecutor().execute(history=history, hooks=[StopHook()], agent=_make_agent(), **execution_inputs(provider, 1))
-            execution.raise_for_status()
+    with pytest.raises(StopRequestedError):
+        execution = await AgentExecutor().execute(history=history, hooks=[StopHook()], agent=_make_agent(), **execution_inputs(provider, 1))
+        execution.raise_for_status()
 
     stopped = [
         c.args[0]

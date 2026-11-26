@@ -261,8 +261,7 @@ class AgentExecutor:
                 streamed_thinking_parts: list[str] = []
                 try:
                     # Observe a stop that was requested before this iteration
-                    # began, including one set before turn_scope was entered.
-                    # No provider request or before-model setup should start.
+                    # began. No provider request or before-model setup should start.
                     check_stop()
 
                     # ── before_model hooks ───────────────────────────────────

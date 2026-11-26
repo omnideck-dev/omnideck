@@ -1,10 +1,10 @@
 # Skills: current limitations, and the case for adopting the Agent Skills standard
 
-**Status:** Direction-setting document for team discussion. Not an execution plan — no code changes are proposed to land from this document as-is. Companion to `plans/progressive_skill_loading.md` (the original design of the current skill-loading mechanism) and `plans/pack_system.md` §3 (Skill as a packable item kind).
+**Status:** Direction-setting document for team discussion. Not an execution plan — no code changes are proposed to land from this document as-is. Companion to `plans/pack_system.md` §3 (Skill as a packable item kind).
 
 ## 1. Motivation
 
-`plans/progressive_skill_loading.md` shipped the mechanism Omnideck uses today: skills as tool+prompt bundles, loaded mid-turn via `load_skill`. That plan explicitly named a tradeoff and accepted it as a risk to live with — "Extra round-trip: `load_skill` costs one LLM iteration before the model can use the loaded tools." That tradeoff, plus a few gaps that were out of scope for that plan, are worth revisiting now for three reasons:
+Progressive skill loading is the mechanism Omnideck uses today: skills as tool+prompt bundles, loaded mid-turn via `load_skill`. Its original design explicitly named a tradeoff and accepted it as a risk to live with — "Extra round-trip: `load_skill` costs one LLM iteration before the model can use the loaded tools." That tradeoff, plus a few gaps that were out of scope for that plan, are worth revisiting now for three reasons:
 
 1. Since that plan landed, **Agent Skills** — a format Anthropic originally shipped for Claude and then released as an open, cross-vendor standard — has been adopted by a long list of independent products (Claude Code, Cursor, VS Code Copilot, GitHub Copilot, Gemini CLI, OpenCode, Goose, Letta, ChatGPT/Codex, JetBrains Junie, and dozens more, per [agentskills.io](https://agentskills.io)). A live registry/marketplace (`skills.sh`, `npx skillsadd <owner/repo>`) already exists on top of it.
 2. `plans/pack_system.md` is about to design a distribution/packaging format for exactly this item kind. Reinventing a sixth manifest format for "Skill" specifically, at the moment an adopted open standard exists for nothing else, is worth deciding on purpose rather than by default.

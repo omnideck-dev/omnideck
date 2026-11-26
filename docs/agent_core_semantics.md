@@ -145,9 +145,7 @@ same rules. Child output becomes the parent's tool result; child status and
 usage remain individually available in `RunResult.executions`.
 
 `agent_span(execution=context)` binds the supplied identity and emits agent
-start/completion events. Cancellation reports `stopped`. The generic standalone
-agent core `turn_scope` remains a context-binding convenience; it owns no application
-run registry, remote-control map, persistence, or root terminal event.
+start/completion events. Cancellation reports `stopped`.
 
 ## Events and history
 
