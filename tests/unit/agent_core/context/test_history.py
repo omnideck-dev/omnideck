@@ -127,7 +127,7 @@ class TestDerivedMessages:
 
 @pytest.mark.unit
 class TestSeedAndHandle:
-    """seed_events + handle_event keep the in-memory log in sync."""
+    """seed_events + add_event keep the in-memory log in sync."""
 
     def test_seed_events_replaces_existing_log(self):
         h = ConversationHistory(conversation_id="test")
@@ -135,28 +135,10 @@ class TestSeedAndHandle:
         h.seed_events([_agent_started(), _user("second")])
         assert h.non_system_messages == [{"role": "user", "content": "second"}]
 
-    def test_handle_event_appends_to_log(self):
-        from agent_core.events import AgentEvent, UserMessagePayload
-        h = ConversationHistory(conversation_id="test", agent_id="test-agent")
-        h.seed_events([_agent_started()])
-        h.handle_event(AgentEvent(
-            payload=UserMessagePayload(type="user_message", content="live"),
-            agent_id="test-agent",
-        ))
-        assert h.non_system_messages == [{"role": "user", "content": "live"}]
-
-    def test_handle_event_filters_transient_types(self):
-        """Streaming content deltas + legacy tool_call don't enter the log."""
-        from agent_core.events import AgentEvent, ContentPayload, ToolCallPayload
-        h = ConversationHistory(conversation_id="test", agent_id="test-agent")
-        h.handle_event(AgentEvent(payload=ContentPayload(type="content", content="stream")))
-        h.handle_event(AgentEvent(payload=ToolCallPayload(type="tool_call", name="t")))
-        assert h.recorded_events == []
-
-    def test_handle_event_no_op_without_conversation_id(self):
+    def test_add_event_no_op_without_conversation_id(self):
         from agent_core.events import AgentEvent, UserMessagePayload
         h = ConversationHistory()
-        h.handle_event(AgentEvent(
+        h.add_event(AgentEvent(
             payload=UserMessagePayload(type="user_message", content="x"),
         ))
         assert h.recorded_events == []
@@ -420,7 +402,7 @@ def test_sub_history_subscribed_to_parent_receives_events():
     LLM view via the agent_id filter."""
     parent = ConversationHistory(conversation_id="c1")
     sub = ConversationHistory(conversation_id="c1", agent_id="sub-id")
-    parent.subscribe(sub.handle_event)
+    parent.subscribe(sub.add_event)
     # An event published into the parent (via the canonical add_event)
     # must show up in the sub's _events too.
     parent.add_event(AgentEvent(
@@ -445,12 +427,12 @@ def test_sub_history_subscribe_unsubscribe_lifecycle():
     not the second, and the parent's observer list goes back to empty."""
     parent = ConversationHistory(conversation_id="c1")
     sub = ConversationHistory(conversation_id="c1", agent_id="sub-id")
-    parent.subscribe(sub.handle_event)
+    parent.subscribe(sub.add_event)
     parent.add_event(AgentEvent(
         payload=UserMessagePayload(type="user_message", content="first"),
         agent_id="sub-id", agent_name="SUB", depth=1,
     ))
-    parent.unsubscribe(sub.handle_event)
+    parent.unsubscribe(sub.add_event)
     parent.add_event(AgentEvent(
         payload=UserMessagePayload(type="user_message", content="post"),
         agent_id="parent-id", agent_name="PARENT", depth=0,

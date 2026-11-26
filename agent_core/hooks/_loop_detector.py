@@ -53,14 +53,11 @@ class LoopDetector:
                     self._threshold,
                 )
                 self._recent.clear()
-                try:
-                    publish_event(AgentEvent(payload=UserMessagePayload(
-                        type="user_message",
-                        content=(
-                            "You are repeating the same tool call without making progress. "
-                            "Try a different approach, use a different tool, or change your arguments. "
-                            "If the current approach isn't working, move on to the next step."
-                        ),
-                    )))
-                except Exception:  # pragma: no cover - defensive
-                    logger.exception("Failed to publish loop-detector event")
+                publish_event(AgentEvent(payload=UserMessagePayload(
+                    type="user_message",
+                    content=(
+                        "You are repeating the same tool call without making progress. "
+                        "Try a different approach, use a different tool, or change your arguments. "
+                        "If the current approach isn't working, move on to the next step."
+                    ),
+                )))

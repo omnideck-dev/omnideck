@@ -6,10 +6,10 @@ import inspect
 import json
 import logging
 import types
-from typing import TYPE_CHECKING, Any, Protocol, TypeGuard, Union, get_args, get_origin, runtime_checkable
+from typing import TYPE_CHECKING, Any, TypeGuard, Union, get_args, get_origin
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping
+    from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -21,18 +21,10 @@ _BOOL_TRUE = frozenset({"true", "1", "yes"})
 _BOOL_FALSE = frozenset({"false", "0", "no"})
 
 
-@runtime_checkable
-class _HasDict(Protocol):
-    def dict(self) -> Mapping[str, object]:  # pragma: no cover - protocol
-        ...
-
-
 def _normalize_tool_result(obj: object) -> object:
     """Prepare tool results for JSON serialization by normalizing nested models."""
     if isinstance(obj, BaseModel):
         return _normalize_tool_result(obj.model_dump())
-    if isinstance(obj, _HasDict):
-        return _normalize_tool_result(obj.dict())
     if isinstance(obj, dict):
         return {k: _normalize_tool_result(v) for k, v in obj.items()}
     if isinstance(obj, list | tuple | set):
@@ -69,21 +61,15 @@ def _coerce_bool(value: Any) -> bool:
     return bool(value)
 
 
-def _validate_pydantic(model_type: type, value: Any) -> Any:
-    """JSON-parse (if string) then validate via Pydantic v2/v1."""
+def _validate_pydantic(model_type: type[BaseModel], value: Any) -> BaseModel:
+    """JSON-parse (if string) then validate via Pydantic."""
     if isinstance(value, str):
         value = json.loads(value)
-    if hasattr(model_type, "model_validate"):
-        return model_type.model_validate(value)
-    if hasattr(model_type, "parse_obj"):
-        return model_type.parse_obj(value)
-    return value
+    return model_type.model_validate(value)
 
 
-def _is_pydantic(tp: object) -> TypeGuard[type]:
-    return isinstance(tp, type) and (
-        hasattr(tp, "model_validate") or hasattr(tp, "parse_obj")
-    )
+def _is_pydantic(tp: object) -> TypeGuard[type[BaseModel]]:
+    return isinstance(tp, type) and issubclass(tp, BaseModel)
 
 
 def _coerce_value(expected_type: Any, value: Any) -> Any:
@@ -232,14 +218,11 @@ async def _execute_tool_call(
                     else:
                         arguments[k.strip()] = v.strip("\"'")
 
-    try:
-        publish_event(AgentEvent(payload=ToolCallPayload(
-            type="tool_call",
-            name=str(tool_name),
-            arguments=_summarize_arguments(arguments) if arguments else None,
-        )))
-    except Exception:  # pragma: no cover - defensive
-        logger.exception("Failed to publish tool_call event for tool '%s'", tool_name)
+    publish_event(AgentEvent(payload=ToolCallPayload(
+        type="tool_call",
+        name=str(tool_name),
+        arguments=_summarize_arguments(arguments) if arguments else None,
+    )))
 
     tool_func = next(
         (t for t in tools if getattr(t, "__name__", None) == tool_name),

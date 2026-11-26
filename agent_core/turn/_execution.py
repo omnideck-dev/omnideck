@@ -40,21 +40,18 @@ def _publish_iteration(
     stopped: bool = False,
 ) -> None:
     """Publish an iteration event. Logs but never raises on failure."""
-    try:
-        publish_event(
-            AgentEvent(
-                payload=IterationPayload(
-                    type="iteration",
-                    iteration_index=iteration_index,
-                    thinking=thinking,
-                    content=content,
-                    tool_calls=tool_calls or [],
-                    stopped=stopped,
-                )
+    publish_event(
+        AgentEvent(
+            payload=IterationPayload(
+                type="iteration",
+                iteration_index=iteration_index,
+                thinking=thinking,
+                content=content,
+                tool_calls=tool_calls or [],
+                stopped=stopped,
             )
         )
-    except Exception:  # pragma: no cover - defensive
-        logger.exception("Failed to publish iteration event")
+    )
 
 
 def _persist_partial(
@@ -82,7 +79,7 @@ def _persist_partial(
 
 
 async def _stream_chat_with_retries(
-    provider: Any,
+    provider: Provider,
     *,
     model: str,
     messages: list[dict[str, Any]],
@@ -148,8 +145,6 @@ async def _stream_chat_with_retries(
                 model,
             )
             raise
-    msg = "Failed to get chat response after retries."
-    raise ToolLoopError(msg)
 
 
 async def _run_tool_with_hooks(
@@ -183,19 +178,16 @@ async def _run_tool_with_hooks(
         if fn:
             tool_result = fn(tool_name, tool_arguments, tool_result)
 
-    try:
-        publish_event(
-            AgentEvent(
-                payload=ToolResultPayload(
-                    type="tool_result",
-                    tool_call_id=tool_call.id,
-                    tool_name=tool_name,
-                    content=str(tool_result) if tool_result is not None else "",
-                )
+    publish_event(
+        AgentEvent(
+            payload=ToolResultPayload(
+                type="tool_result",
+                tool_call_id=tool_call.id,
+                tool_name=tool_name,
+                content=str(tool_result) if tool_result is not None else "",
             )
         )
-    except Exception:  # pragma: no cover - defensive
-        logger.exception("Failed to publish tool_result event")
+    )
 
 
 class AgentExecutor:
@@ -287,19 +279,16 @@ class AgentExecutor:
                                 streamed_content_parts.append(chunk.content)
                             if chunk.thinking:
                                 streamed_thinking_parts.append(chunk.thinking)
-                            try:
-                                publish_event(
-                                    AgentEvent(
-                                        payload=ContentPayload(
-                                            type="content",
-                                            content=chunk.content,
-                                            thinking=chunk.thinking,
-                                            delta=True,
-                                        )
+                            publish_event(
+                                AgentEvent(
+                                    payload=ContentPayload(
+                                        type="content",
+                                        content=chunk.content,
+                                        thinking=chunk.thinking,
+                                        delta=True,
                                     )
                                 )
-                            except Exception:  # pragma: no cover - defensive
-                                logger.exception("Failed to publish delta event")
+                            )
                             # Check for a stop after each token so a stop is
                             # noticed mid-stream; the unwind handler below
                             # persists whatever already streamed.
@@ -310,9 +299,7 @@ class AgentExecutor:
                     if response is None:
                         raise ToolLoopError("No ChatResponse received from provider")
 
-                    usage = TokenUsage(
-                        **{key: getattr(usage, key) + getattr(response.usage, key) for key in TokenUsage.model_fields}
-                    )
+                    usage += response.usage
 
                     # ── after_model hooks (chain: each can rewrite response) ─
                     for hook in hooks:
@@ -334,18 +321,15 @@ class AgentExecutor:
                             tc.id = f"call_{uuid.uuid4().hex[:8]}"
                     # Emit full content only if no deltas were streamed (fallback path)
                     if not streamed_deltas:
-                        try:
-                            publish_event(
-                                AgentEvent(
-                                    payload=ContentPayload(
-                                        type="content",
-                                        content=content,
-                                        thinking=thinking,
-                                    )
+                        publish_event(
+                            AgentEvent(
+                                payload=ContentPayload(
+                                    type="content",
+                                    content=content,
+                                    thinking=thinking,
                                 )
                             )
-                        except Exception:  # pragma: no cover - defensive
-                            logger.exception("Failed to publish model AgentEvent event")
+                        )
                     _publish_iteration(
                         iteration - 1,
                         content=content,

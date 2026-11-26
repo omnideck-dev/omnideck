@@ -145,7 +145,7 @@ def _events_first_test_bridge(monkeypatch):
                 "agent_id": _TEST_AGENT_ID, "agent_name": _TEST_AGENT_NAME,
             })
             for h in tracked:
-                h.handle_event(enriched)
+                h.add_event(enriched)
         return fake_publish
 
     # Forward events from every site that publishes during the turn so
