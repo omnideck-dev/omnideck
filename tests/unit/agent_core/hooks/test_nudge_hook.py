@@ -16,7 +16,6 @@ from agent_core.events import (
 )
 from agent_core.hooks._nudge_hook import NudgeHook
 from agent_core.agent_capabilities import AgentCapabilities
-from agent_core.turn import turn_scope
 from agent_core.control import get_execution_control
 
 
@@ -42,16 +41,15 @@ async def test_nudge_hook_publishes_user_message_event_when_nudges_present():
     conv = ConversationHistory(conversation_id="c1")
     conv.subscribe(_handler)
 
-    async with turn_scope():
-        conv_token = set_current_conversation(conv)
-        try:
-            async with agent_span("Test", agent_capabilities=AgentCapabilities([])) as agent_id:
-                get_execution_control().nudge("first nudge")
-                get_execution_control().nudge("second nudge")
-                await hook.before_model(history, iteration=1, agent_name="Test")
-        finally:
-            reset_current_conversation(conv_token)
-            await conv.drain_observers()
+    conv_token = set_current_conversation(conv)
+    try:
+        async with agent_span("Test", agent_capabilities=AgentCapabilities([])):
+            get_execution_control().nudge("first nudge")
+            get_execution_control().nudge("second nudge")
+            await hook.before_model(history, iteration=1, agent_name="Test")
+    finally:
+        reset_current_conversation(conv_token)
+        await conv.drain_observers()
 
     nudge_events = [e.payload for e in captured if isinstance(e.payload, UserMessagePayload)]
     assert len(nudge_events) == 2
@@ -72,14 +70,13 @@ async def test_nudge_hook_emits_nothing_when_queue_empty():
     conv = ConversationHistory(conversation_id="c1")
     conv.subscribe(_handler)
 
-    async with turn_scope():
-        conv_token = set_current_conversation(conv)
-        try:
-            async with agent_span("Test", agent_capabilities=AgentCapabilities([])):
-                await hook.before_model(history, iteration=1, agent_name="Test")
-        finally:
-            reset_current_conversation(conv_token)
-            await conv.drain_observers()
+    conv_token = set_current_conversation(conv)
+    try:
+        async with agent_span("Test", agent_capabilities=AgentCapabilities([])):
+            await hook.before_model(history, iteration=1, agent_name="Test")
+    finally:
+        reset_current_conversation(conv_token)
+        await conv.drain_observers()
 
     assert not any(isinstance(e.payload, UserMessagePayload) for e in captured)
     assert history.messages == []

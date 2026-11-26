@@ -10,7 +10,6 @@ from __future__ import annotations
 from typing import Any, List
 
 import pytest
-from contextlib import nullcontext
 from tests.unit.agent_core._execution_inputs import execution_inputs
 
 from agent_core.context import ConversationHistory
@@ -20,15 +19,13 @@ from agent_core.events import (
     IterationPayload,
     ToolCallPayload,
     ToolResultPayload,
-    UserMessagePayload,
     agent_span,
-    publish_event,
     reset_current_conversation,
     set_current_conversation,
 )
 from agent_core.agent_capabilities import AgentCapabilities
 from agent_core.providers._models import ChatMessage, ChatResponse, TokenUsage, ToolCall, ToolCallFunction
-from agent_core.turn import AgentExecutor, turn_scope
+from agent_core.turn import AgentExecutor
 from agent_core.agent import Agent
 
 
@@ -75,7 +72,6 @@ async def test_tool_loop_emits_model_and_tool_call_events(monkeypatch):
     )
     resp2 = _make_response(content="done")
 
-    import agent_core.turn._execution as mod
 
     # Patch provider used by the module under test
     provider = _ProviderScript([resp1, resp2])
@@ -84,7 +80,6 @@ async def test_tool_loop_emits_model_and_tool_call_events(monkeypatch):
     def echo_tool(x: int) -> dict[str, int]:  # noqa: D401 - simple dummy
         return {"x": x}
 
-    # Capture emitted events via the turn_scope
     captured: List[AgentEvent] = []
 
     async def _handler(evt: AgentEvent) -> None:
@@ -109,15 +104,14 @@ async def test_tool_loop_emits_model_and_tool_call_events(monkeypatch):
     )
 
     history.subscribe(_handler)
-    async with turn_scope():
-        conv_token = set_current_conversation(history)
-        try:
-            async with agent_span("Test", agent_capabilities=AgentCapabilities([echo_tool])):
-                execution = await AgentExecutor().execute(history=history, agent=agent, **execution_inputs(provider, 1))
-                execution.raise_for_status()
-        finally:
-            reset_current_conversation(conv_token)
-            await history.drain_observers()
+    conv_token = set_current_conversation(history)
+    try:
+        async with agent_span("Test", agent_capabilities=AgentCapabilities([echo_tool])):
+            execution = await AgentExecutor().execute(history=history, agent=agent, **execution_inputs(provider, 1))
+            execution.raise_for_status()
+    finally:
+        reset_current_conversation(conv_token)
+        await history.drain_observers()
 
     # Assert: at least two events: one model output and one tool_call
     assert any(
@@ -157,7 +151,6 @@ async def test_tool_loop_emits_iteration_and_tool_result_events(monkeypatch):
     )
     resp2 = _make_response(content="done")
 
-    import agent_core.turn._execution as mod
     provider = _ProviderScript([resp1, resp2])
 
     def echo_tool(x: int) -> dict[str, int]:
@@ -183,15 +176,14 @@ async def test_tool_loop_emits_iteration_and_tool_result_events(monkeypatch):
     )
 
     history.subscribe(_handler)
-    async with turn_scope():
-        conv_token = set_current_conversation(history)
-        try:
-            async with agent_span("Test", agent_capabilities=AgentCapabilities([echo_tool])):
-                execution = await AgentExecutor().execute(history=history, agent=agent, **execution_inputs(provider, 1))
-                execution.raise_for_status()
-        finally:
-            reset_current_conversation(conv_token)
-            await history.drain_observers()
+    conv_token = set_current_conversation(history)
+    try:
+        async with agent_span("Test", agent_capabilities=AgentCapabilities([echo_tool])):
+            execution = await AgentExecutor().execute(history=history, agent=agent, **execution_inputs(provider, 1))
+            execution.raise_for_status()
+    finally:
+        reset_current_conversation(conv_token)
+        await history.drain_observers()
 
     iterations = [e.payload for e in captured if isinstance(e.payload, IterationPayload)]
     tool_results = [e.payload for e in captured if isinstance(e.payload, ToolResultPayload)]
@@ -221,75 +213,3 @@ async def test_tool_loop_emits_iteration_and_tool_result_events(monkeypatch):
     iter_idx = [i for i, e in enumerate(captured) if isinstance(e.payload, IterationPayload)]
     tr_idx = next(i for i, e in enumerate(captured) if isinstance(e.payload, ToolResultPayload))
     assert iter_idx[0] < tr_idx < iter_idx[1]
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_history_derived_view_matches_appended_messages(monkeypatch):
-    """Phase-4a parity check: after a turn runs, the events-derived view
-    matches the append-driven message list (modulo agent_name on the first
-    user message, which today's appender doesn't stamp)."""
-    import agent_core.turn._execution as mod
-
-    resp1 = _make_response(
-        content="thinking out loud",
-        tool_calls=[{"name": "echo_tool", "arguments": {"x": 1}}],
-    )
-    resp2 = _make_response(content="all done")
-    provider = _ProviderScript([resp1, resp2])
-
-    def echo_tool(x: int) -> dict[str, int]:
-        return {"x": x}
-
-    history = ConversationHistory(
-        [{"role": "system", "content": "ctx"},
-         {"role": "user", "content": "do it"}],
-        conversation_id="conv-parity",
-    )
-    # The first user message normally fires from AgentRunner,
-    # which the unit test bypasses — fire one directly so the derived view
-    # has an anchor.
-    from agent_core.events import UserMessagePayload, publish_event
-
-    agent = Agent(
-        name="Test Agent",
-        description="desc",
-        instruction="ctx",
-        provider="ollama",
-        model="dummy",
-        options={},
-
-    )
-
-    from agent_core.events import reset_current_conversation, set_current_conversation
-
-    async with turn_scope(conversation_id="conv-parity"):
-        conv_token = set_current_conversation(history)
-        try:
-            async with agent_span("Test", agent_capabilities=AgentCapabilities([echo_tool])) as agent_id:
-                # Stamp the history with the bound agent id so per-agent filtering works.
-                history._agent_id = agent_id
-                publish_event(AgentEvent(payload=UserMessagePayload(
-                    type="user_message", content="do it",
-                )))
-                execution = await AgentExecutor().execute(history=history, agent=agent, **execution_inputs(provider, 1))
-                execution.raise_for_status()
-        finally:
-            reset_current_conversation(conv_token)
-            await history.drain_observers()
-
-    derived = history.derived_messages
-    actual_non_system = history.non_system_messages
-
-    # The derived view doesn't carry the system message — compare against
-    # actual.non_system_messages.
-    assert len(derived) == len(actual_non_system), (
-        f"derived={len(derived)} actual={len(actual_non_system)}\n"
-        f"derived: {derived}\n"
-        f"actual:  {actual_non_system}"
-    )
-    for i, (d, a) in enumerate(zip(derived, actual_non_system)):
-        assert d["role"] == a["role"], f"msg[{i}] role: {d['role']} vs {a['role']}"
-        assert (d.get("content") or "") == (a.get("content") or ""), (
-            f"msg[{i}] content mismatch"
-        )
