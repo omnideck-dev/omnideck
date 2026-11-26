@@ -29,13 +29,10 @@ class BudgetGuard:
                 agent_name,
                 self._max,
             )
-            try:
-                publish_event(AgentEvent(payload=UserMessagePayload(
-                    type="user_message",
-                    content=(
-                        f"Tool call budget exhausted ({self._max} iterations). "
-                        "Wrap up and respond with the information you have."
-                    ),
-                )))
-            except Exception:  # pragma: no cover - defensive
-                logger.exception("Failed to publish budget-guard event")
+            publish_event(AgentEvent(payload=UserMessagePayload(
+                type="user_message",
+                content=(
+                    f"Tool call budget exhausted ({self._max} iterations). "
+                    "Wrap up and respond with the information you have."
+                ),
+            )))

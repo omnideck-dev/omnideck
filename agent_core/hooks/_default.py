@@ -20,18 +20,16 @@ from ._stop_hook import StopHook
 def default_hooks(
     agent: Agent,
     *,
-    max_iterations: int = 0,
     ctx_manager: ContextManager | None = None,
 ) -> list[Hook]:
     """Return the standard set of hooks used by all agents."""
     hooks: list[Hook] = [NudgeHook(), StopHook()]
-    if max_iterations > 0:
-        hooks.append(BudgetGuard(max_iterations))
+    if agent.max_iterations > 0:
+        hooks.append(BudgetGuard(agent.max_iterations))
     hooks.append(LoopDetector())
     hooks.append(LoggingHook(agent))
     hooks.append(LoadedSkillHook())
-    context_window = getattr(agent, "context_window", 0) or 0
-    hooks.append(ToolResultCapHook(context_window))
+    hooks.append(ToolResultCapHook(agent.context_window))
     if ctx_manager is not None:
-        hooks.append(ContextHook(ctx_manager, max_iterations=max_iterations))
+        hooks.append(ContextHook(ctx_manager, max_iterations=agent.max_iterations))
     return hooks

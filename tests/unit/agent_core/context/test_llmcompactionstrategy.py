@@ -125,9 +125,6 @@ async def test_compaction_does_not_mutate_history_directly():
         mock_summarize.return_value = ("Summary text.", "test-model")
         await strategy.apply(history, _make_stats(0.8))
 
-    # No mutation: the in-memory event log is unchanged because the
-    # CompactionPayload publish was mocked (in production it would
-    # flow back through handle_event).
     assert history.recorded_events == events_before
 
 

@@ -10,7 +10,7 @@ state:
   recorded interaction.
 - ``_events``: the in-memory copy of the persisted events.jsonl log.
   Populated at construction by ``seed_events`` and kept in sync with
-  the live dispatcher by ``handle_event``.
+  live events by ``add_event``.
 
 ``derived_messages`` runs ``build_llm_view`` against ``_events`` to
 produce the LLM-shaped message list for this agent. Callers who used
@@ -131,7 +131,7 @@ class ConversationHistory:
         """Replace the in-memory event log with *events*.
 
         Used at construction / resume time to populate from disk before
-        live events start arriving via ``handle_event``.
+        live events start arriving via ``add_event``.
         """
         self._events = list(events)
 
@@ -197,15 +197,6 @@ class ConversationHistory:
             await handler(event)
         except Exception:  # pragma: no cover - logged
             logger.exception("Unhandled exception in async observer")
-
-    def handle_event(self, event: AgentEvent) -> None:
-        """Backwards-compatible alias for ``add_event``.
-
-        Old code subscribed ``handle_event`` to a dispatcher. New code calls
-        ``add_event`` directly and subscribes other observers to the
-        conversation.
-        """
-        self.add_event(event)
 
     # -- dunder helpers ----------------------------------------------------
 

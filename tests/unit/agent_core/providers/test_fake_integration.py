@@ -55,13 +55,6 @@ async def test_directive_drives_tool_then_reply():
 
     token = _active_agent_capabilities.set(AgentCapabilities(base_tools=[run_bash_cmd]))
     try:
-        # NOTE: do not patch ``publish_event`` here. The events-first
-        # conftest bridge patches it with a forwarder that routes tool
-        # results into history via handle_event — the only path by which
-        # the loop's tool result reaches the history view. A no-op patch
-        # overrides that forwarder, so the tool result never lands, the
-        # fake planner re-emits the same BASH directive every iteration,
-        # and the loop spins forever.
         provider = FakeProvider()
         execution = await AgentExecutor().execute(history=history, hooks=[], agent=_agent(), **execution_inputs(provider, 1))
         execution.raise_for_status()

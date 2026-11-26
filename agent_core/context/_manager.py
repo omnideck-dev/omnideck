@@ -69,18 +69,15 @@ class ContextManager:
         stats = self.stats
         if logger.isEnabledFor(logging.DEBUG):
             _log_context_bar(stats, self._agent_name)
-        try:
-            publish_event(AgentEvent(payload=ContextUsagePayload(
-                type="context_usage",
-                context_used=stats.context_used,
-                context_limit=stats.context_limit,
-                fill_ratio=stats.fill_ratio,
-                compaction_threshold=self._compaction_threshold,
-                iteration=iteration,
-                max_iterations=max_iterations,
-            )))
-        except Exception:  # pragma: no cover - defensive
-            logger.exception("Failed to publish context usage event")
+        publish_event(AgentEvent(payload=ContextUsagePayload(
+            type="context_usage",
+            context_used=stats.context_used,
+            context_limit=stats.context_limit,
+            fill_ratio=stats.fill_ratio,
+            compaction_threshold=self._compaction_threshold,
+            iteration=iteration,
+            max_iterations=max_iterations,
+        )))
         await self._run_strategies(TriggerPoint.AFTER_MODEL_CALL)
 
     async def before_model(self) -> None:

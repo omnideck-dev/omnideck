@@ -127,7 +127,7 @@ class AgentRunner:
                     conversation_id=session.conversation_id, agent_id=context.execution_id
                 )
                 history = child_history
-                session.subscribe(history.handle_event)
+                session.subscribe(history.add_event)
             if history is None or session.conversation is None:
                 raise RuntimeError("RunSession has no prepared history")
             history.set_system_message(prepared.system_prompt)
@@ -139,7 +139,7 @@ class AgentRunner:
                 compaction_threshold=agent.compaction_threshold,
                 strategies=[LLMCompactionStrategy(threshold=agent.compaction_threshold)],
             )
-            hooks = default_hooks(agent, max_iterations=agent.max_iterations, ctx_manager=ctx_manager)
+            hooks = default_hooks(agent, ctx_manager=ctx_manager)
             hooks.append(ScratchpadHook())
             is_root = context.parent_execution_id is None
             if is_root:
@@ -208,7 +208,7 @@ class AgentRunner:
         finally:
             session.finish_execution(context, result)
             if child_history is not None:
-                session.unsubscribe(child_history.handle_event)
+                session.unsubscribe(child_history.add_event)
             if (
                 policy.persist_skills
                 and not cancelled

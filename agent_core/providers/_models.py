@@ -73,6 +73,11 @@ class TokenUsage(BaseModel):
     cache_read_tokens: int = 0
     cache_creation_tokens: int = 0
 
+    def __add__(self, other: "TokenUsage") -> "TokenUsage":
+        return TokenUsage(
+            **{key: getattr(self, key) + getattr(other, key) for key in TokenUsage.model_fields}
+        )
+
 
 class ChatDelta(BaseModel):
     """A single incremental token fragment from a streaming chat response."""
