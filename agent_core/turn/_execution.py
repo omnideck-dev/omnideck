@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from collections.abc import AsyncGenerator, Callable, Sequence
+from collections.abc import AsyncGenerator, Awaitable, Callable, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from agent_core.hooks._types import Hook
@@ -147,10 +148,34 @@ async def _stream_chat_with_retries(
             raise
 
 
+@dataclass(frozen=True)
+class _HookPhases:
+    turn_start: list[Callable[[str], None]]
+    before_model: list[Callable[[ConversationHistory, int, str], Awaitable[None]]]
+    after_model: list[Callable[[ChatResponse, ConversationHistory, int, str], Awaitable[ChatResponse]]]
+    before_tool: list[Callable[[str, dict[str, Any]], str | None]]
+    after_tool: list[Callable[[str, dict[str, Any], str], str]]
+    turn_end: list[Callable[[str | None, str], None]]
+
+    @classmethod
+    def from_hooks(cls, hooks: Sequence[Hook]) -> _HookPhases:
+        def collect(name: str) -> list[Any]:
+            return [fn for hook in hooks if (fn := getattr(hook, name, None))]
+
+        return cls(
+            turn_start=collect("on_turn_start"),
+            before_model=collect("before_model"),
+            after_model=collect("after_model"),
+            before_tool=collect("before_tool"),
+            after_tool=collect("after_tool"),
+            turn_end=collect("on_turn_end"),
+        )
+
+
 async def _run_tool_with_hooks(
-    tool_call: Any,
+    tool_call: ToolCall,
     tools: list[Callable[..., Any]],
-    hooks: Sequence[Hook],
+    phases: _HookPhases,
 ) -> None:
     """Execute a single tool call with before/after hooks.
 
@@ -161,22 +186,18 @@ async def _run_tool_with_hooks(
     tool_arguments = tool_call.function.arguments
 
     intercepted = None
-    for hook in hooks:
-        fn = getattr(hook, "before_tool", None)
-        if fn:
-            intercepted = fn(tool_name, tool_arguments)
-            if intercepted is not None:
-                break
+    for before_tool in phases.before_tool:
+        intercepted = before_tool(tool_name, tool_arguments)
+        if intercepted is not None:
+            break
 
     if intercepted is not None:
         tool_result = intercepted
     else:
         tool_result = await _execute_tool_call(tool_name, tool_arguments, tools)
 
-    for hook in hooks:
-        fn = getattr(hook, "after_tool", None)
-        if fn:
-            tool_result = fn(tool_name, tool_arguments, tool_result)
+    for after_tool in phases.after_tool:
+        tool_result = after_tool(tool_name, tool_arguments, tool_result)
 
     publish_event(
         AgentEvent(
@@ -208,230 +229,236 @@ class AgentExecutor:
             raise ValueError("max_parallel_tools must be positive")
         with context.bind(agent.name, capabilities):
             try:
-                return await self._execute(
+                return await _AgentRun(
                     history=history,
                     agent=agent,
                     capabilities=capabilities,
                     provider=provider,
-                    hooks=hooks or [],
+                    phases=_HookPhases.from_hooks(hooks or []),
                     max_parallel_tools=max_parallel_tools,
-                )
+                ).run()
             finally:
                 context.control.accepting_nudges = False
 
-    async def _execute(
+
+class _AgentRun:
+    def __init__(
         self,
         *,
         history: ConversationHistory,
         agent: Agent,
         capabilities: AgentCapabilities,
         provider: Provider,
-        hooks: Sequence[Hook],
+        phases: _HookPhases,
         max_parallel_tools: int,
-    ) -> ExecutionResult:
-        for hook in hooks:
-            fn = getattr(hook, "on_turn_start", None)
-            if fn:
-                fn(agent.name)
-
-        usage = TokenUsage()
+    ) -> None:
+        self._history = history
+        self._agent = agent
+        self._capabilities = capabilities
+        self._provider = provider
+        self._phases = phases
+        self._max_parallel_tools = max_parallel_tools
+        self._usage = TokenUsage()
         # Tracks the latest assistant content for the successful execution return
         # value and the on_turn_end hook payload. Persistence reads history, not
         # this variable.
-        final_content: str | None = None
-        iteration = 0
+        self._final_content: str | None = None
+        self._iteration = 0
+        # Accumulates this iteration's streamed output so it can be persisted
+        # if the turn is interrupted. Reset per iteration and cleared once the
+        # full iteration event publishes, so only genuinely unpersisted output
+        # is recovered.
+        self._streamed_content_parts: list[str] = []
+        self._streamed_thinking_parts: list[str] = []
+
+    async def run(self) -> ExecutionResult:
+        for on_turn_start in self._phases.turn_start:
+            on_turn_start(self._agent.name)
         try:
             while True:
-                iteration += 1
-                logger.debug("Tool loop iteration %d for agent '%s'", iteration, agent.name)
-
-                # Accumulates this iteration's streamed output so the unwind
-                # handlers below can persist it if the turn is interrupted.
-                # Reset per iteration and cleared once the full iteration event
-                # publishes, so only genuinely unpersisted output is recovered.
-                streamed_content_parts: list[str] = []
-                streamed_thinking_parts: list[str] = []
+                self._iteration += 1
+                logger.debug("Tool loop iteration %d for agent '%s'", self._iteration, self._agent.name)
+                self._streamed_content_parts = []
+                self._streamed_thinking_parts = []
                 try:
-                    # Observe a stop that was requested before this iteration
-                    # began. No provider request or before-model setup should start.
-                    check_stop()
+                    result = await self._step()
+                except StopRequestedError:
+                    return self._stopped()
+                except Exception as exc:
+                    return self._failed(exc)
+                if result is not None:
+                    return result
+        finally:
+            self._end_turn()
 
-                    # ── before_model hooks ───────────────────────────────────
-                    for hook in hooks:
-                        fn = getattr(hook, "before_model", None)
-                        if fn:
-                            await fn(history, iteration, agent.name)
+    async def _step(self) -> ExecutionResult | None:
+        # Observe a stop that was requested before this iteration
+        # began. No provider request or before-model setup should start.
+        check_stop()
+        for before_model in self._phases.before_model:
+            await before_model(self._history, self._iteration, self._agent.name)
 
-                    # Stream deltas to frontend as tokens arrive
-                    response: ChatResponse | None = None
-                    streamed_deltas = False
-                    async for chunk in _stream_chat_with_retries(
-                        provider,
-                        model=agent.model,
-                        messages=history.messages,
-                        tools=capabilities.tools,
-                        options=agent.options,
-                        think=agent.think,
-                    ):
-                        if isinstance(chunk, ChatDelta):
-                            streamed_deltas = True
-                            if chunk.content:
-                                streamed_content_parts.append(chunk.content)
-                            if chunk.thinking:
-                                streamed_thinking_parts.append(chunk.thinking)
-                            publish_event(
-                                AgentEvent(
-                                    payload=ContentPayload(
-                                        type="content",
-                                        content=chunk.content,
-                                        thinking=chunk.thinking,
-                                        delta=True,
-                                    )
-                                )
-                            )
-                            # Check for a stop after each token so a stop is
-                            # noticed mid-stream; the unwind handler below
-                            # persists whatever already streamed.
-                            check_stop()
-                        elif isinstance(chunk, ChatResponse):
-                            response = chunk
+        response, streamed_deltas = await self._call_model()
+        for after_model in self._phases.after_model:
+            response = await after_model(response, self._history, self._iteration, self._agent.name)
 
-                    if response is None:
-                        raise ToolLoopError("No ChatResponse received from provider")
+        tool_calls = self._publish_step(response, streamed_deltas)
+        if not tool_calls:
+            control = get_execution_control()
+            if control is not None and control.nudges:
+                return None
+            return ExecutionResult("success", self._final_content, response.done_reason, self._usage)
 
-                    usage += response.usage
+        await self._run_tools(tool_calls)
+        return None
 
-                    # ── after_model hooks (chain: each can rewrite response) ─
-                    for hook in hooks:
-                        fn = getattr(hook, "after_model", None)
-                        if fn:
-                            response = await fn(response, history, iteration, agent.name)
-
-                    content = response.message.content
-                    thinking = response.message.thinking
-                    tool_calls = response.message.tool_calls
-                    # Some providers (e.g. Ollama) don't issue tool_call ids.
-                    # Mint one synchronously so iteration events, tool_result
-                    # events, and the persisted assistant message all share a
-                    # stable identifier — otherwise parallel tool calls race
-                    # in publish order and the pairing back to the originating
-                    # call becomes positional and fragile.
-                    for tc in tool_calls or []:
-                        if not tc.id:
-                            tc.id = f"call_{uuid.uuid4().hex[:8]}"
-                    # Emit full content only if no deltas were streamed (fallback path)
-                    if not streamed_deltas:
-                        publish_event(
-                            AgentEvent(
-                                payload=ContentPayload(
-                                    type="content",
-                                    content=content,
-                                    thinking=thinking,
-                                )
-                            )
+    async def _call_model(self) -> tuple[ChatResponse, bool]:
+        response: ChatResponse | None = None
+        streamed_deltas = False
+        async for chunk in _stream_chat_with_retries(
+            self._provider,
+            model=self._agent.model,
+            messages=self._history.messages,
+            tools=self._capabilities.tools,
+            options=self._agent.options,
+            think=self._agent.think,
+        ):
+            if isinstance(chunk, ChatDelta):
+                streamed_deltas = True
+                if chunk.content:
+                    self._streamed_content_parts.append(chunk.content)
+                if chunk.thinking:
+                    self._streamed_thinking_parts.append(chunk.thinking)
+                publish_event(
+                    AgentEvent(
+                        payload=ContentPayload(
+                            type="content",
+                            content=chunk.content,
+                            thinking=chunk.thinking,
+                            delta=True,
                         )
-                    _publish_iteration(
-                        iteration - 1,
+                    )
+                )
+                # Check for a stop after each token so a stop is
+                # noticed mid-stream.
+                check_stop()
+            elif isinstance(chunk, ChatResponse):
+                response = chunk
+
+        if response is None:
+            raise ToolLoopError("No ChatResponse received from provider")
+
+        self._usage += response.usage
+        return response, streamed_deltas
+
+    def _publish_step(self, response: ChatResponse, streamed_deltas: bool) -> list[ToolCall]:
+        content = response.message.content
+        thinking = response.message.thinking
+        tool_calls = response.message.tool_calls or []
+        # Some providers (e.g. Ollama) don't issue tool_call ids.
+        # Mint one synchronously so iteration events, tool_result
+        # events, and the persisted assistant message all share a
+        # stable identifier — otherwise parallel tool calls race
+        # in publish order and the pairing back to the originating
+        # call becomes positional and fragile.
+        for tc in tool_calls:
+            if not tc.id:
+                tc.id = f"call_{uuid.uuid4().hex[:8]}"
+        if not streamed_deltas:
+            publish_event(
+                AgentEvent(
+                    payload=ContentPayload(
+                        type="content",
                         content=content,
                         thinking=thinking,
-                        tool_calls=[
-                            IterationToolCall(
-                                id=tc.id,
-                                name=tc.function.name,
-                                arguments=tc.function.arguments,
-                            )
-                            for tc in (tool_calls or [])
-                        ],
                     )
-                    # The iteration is fully persisted; clear the accumulators so
-                    # a later interruption (e.g. during tool execution) doesn't
-                    # re-persist this output as a partial.
-                    streamed_content_parts = []
-                    streamed_thinking_parts = []
-                    if content is not None:
-                        final_content = content
+                )
+            )
+        _publish_iteration(
+            self._iteration - 1,
+            content=content,
+            thinking=thinking,
+            tool_calls=[
+                IterationToolCall(
+                    id=tc.id,
+                    name=tc.function.name,
+                    arguments=tc.function.arguments,
+                )
+                for tc in tool_calls
+            ],
+        )
+        self._streamed_content_parts = []
+        self._streamed_thinking_parts = []
+        if content is not None:
+            self._final_content = content
+        return tool_calls
 
-                    if not tool_calls:
-                        control = get_execution_control()
-                        if control is not None and control.nudges:
-                            continue
-                        return ExecutionResult("success", final_content, response.done_reason, usage)
+    async def _run_tools(self, tool_calls: list[ToolCall]) -> None:
+        tool_names = [tc.function.name for tc in tool_calls]
+        logger.debug("Executing %d tool call(s) for '%s': %s", len(tool_calls), self._agent.name, tool_names)
 
-                    tool_names = [tc.function.name for tc in tool_calls]
-                    logger.debug("Executing %d tool call(s) for '%s': %s", len(tool_calls), agent.name, tool_names)
+        parallel = self._max_parallel_tools > 1 and len(tool_calls) > 1
+        if parallel:
+            logger.info(
+                "Running %d tool calls in parallel for '%s' (max_concurrent=%d)",
+                len(tool_calls),
+                self._agent.name,
+                self._max_parallel_tools,
+            )
+        semaphore = asyncio.Semaphore(self._max_parallel_tools if parallel else 1)
 
-                    parallel = max_parallel_tools > 1 and len(tool_calls) > 1
-                    if parallel:
-                        logger.info(
-                            "Running %d tool calls in parallel for '%s' (max_concurrent=%d)",
-                            len(tool_calls),
-                            agent.name,
-                            max_parallel_tools,
-                        )
-                    sem = asyncio.Semaphore(max_parallel_tools if parallel else 1)
+        async def run_one(tool_call: ToolCall) -> None:
+            async with semaphore:
+                await _run_tool_with_hooks(tool_call, self._capabilities.tools, self._phases)
 
-                    async def _run(
-                        tc_item: ToolCall,
-                        semaphore: asyncio.Semaphore,
-                    ) -> None:
-                        async with semaphore:
-                            await _run_tool_with_hooks(tc_item, capabilities.tools, hooks)
+        # A stopped child can raise while its siblings are still
+        # unwinding. Keep the parent scope (and its event observers)
+        # alive until the whole batch has finished, including on
+        # cancellation, then propagate the control/error outcome.
+        results = await asyncio.gather(*[run_one(tc) for tc in tool_calls], return_exceptions=True)
+        for result in results:
+            if isinstance(result, BaseException):
+                raise result
 
-                    # A stopped child can raise while its siblings are still
-                    # unwinding. Keep the parent scope (and its event observers)
-                    # alive until the whole batch has finished, including on
-                    # cancellation, then propagate the control/error outcome.
-                    results = await asyncio.gather(
-                        *[_run(tc, sem) for tc in tool_calls], return_exceptions=True,
-                    )
-                    for result in results:
-                        if isinstance(result, BaseException):
-                            raise result
+    def _keep_partial_output(self) -> None:
+        partial = _persist_partial(
+            self._streamed_content_parts,
+            self._streamed_thinking_parts,
+            self._iteration,
+        )
+        if partial is not None:
+            self._final_content = partial
 
-                except StopRequestedError:
-                    logger.info("Agent '%s' tool loop stopped by user request", agent.name)
-                    partial = _persist_partial(
-                        streamed_content_parts,
-                        streamed_thinking_parts,
-                        iteration,
-                    )
-                    if partial is not None:
-                        # Return the streamed partial and preserve the
-                        # on_turn_end hook payload.
-                        final_content = partial
-                    return ExecutionResult("stopped", final_content, "stopped", usage)
-                except Exception as exc:
-                    logger.exception("Unhandled exception in tool loop")
-                    # Keep whatever streamed before the failure — the user
-                    # already saw it, and the error event follows it.
-                    partial = _persist_partial(
-                        streamed_content_parts,
-                        streamed_thinking_parts,
-                        iteration,
-                    )
-                    if partial is not None:
-                        final_content = partial
-                    error_msg = (
-                        str(exc)
-                        if isinstance(exc, ProviderError)
-                        else "An error occurred while processing your message."
-                    )
-                    retryable = isinstance(exc, ProviderError) and exc.retryable
-                    publish_event(
-                        AgentEvent(
-                            payload=ErrorPayload(
-                                type="error",
-                                message=error_msg,
-                                retryable=retryable,
-                            )
-                        )
-                    )
-                    return ExecutionResult("error", final_content, "error", usage, error_msg, retryable)
-        finally:
-            for hook in hooks:
-                fn = getattr(hook, "on_turn_end", None)
-                if fn:
-                    try:
-                        fn(final_content, agent.name)
-                    except Exception:  # pragma: no cover - defensive
-                        logger.exception("on_turn_end hook failed")
+    def _stopped(self) -> ExecutionResult:
+        logger.info("Agent '%s' tool loop stopped by user request", self._agent.name)
+        self._keep_partial_output()
+        return ExecutionResult("stopped", self._final_content, "stopped", self._usage)
+
+    def _failed(self, exc: Exception) -> ExecutionResult:
+        logger.exception("Unhandled exception in tool loop")
+        # Keep whatever streamed before the failure — the user
+        # already saw it, and the error event follows it.
+        self._keep_partial_output()
+        error_msg = (
+            str(exc)
+            if isinstance(exc, ProviderError)
+            else "An error occurred while processing your message."
+        )
+        retryable = isinstance(exc, ProviderError) and exc.retryable
+        publish_event(
+            AgentEvent(
+                payload=ErrorPayload(
+                    type="error",
+                    message=error_msg,
+                    retryable=retryable,
+                )
+            )
+        )
+        return ExecutionResult("error", self._final_content, "error", self._usage, error_msg, retryable)
+
+    def _end_turn(self) -> None:
+        for on_turn_end in self._phases.turn_end:
+            try:
+                on_turn_end(self._final_content, self._agent.name)
+            except Exception:  # pragma: no cover - defensive
+                logger.exception("on_turn_end hook failed")
